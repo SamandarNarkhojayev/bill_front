@@ -45,15 +45,15 @@ npm version patch --no-git-tag-version
 
 ```bash
 git add .
-git commit -m "release: v1.0.2"
+git commit -m "release: v1.0.4"
 ```
 
 ### 3) Создать и отправить тег
 
 ```bash
-git tag v1.0.2
+git tag v1.0.4
 git push origin main
-git push origin v1.0.2
+git push origin v1.0.4
 ```
 
 > Тег обязательно должен быть в формате `v*`, иначе workflow релиза не запустится.
@@ -102,6 +102,29 @@ git push origin v1.0.2
 permissions:
   contents: write
   packages: write
+```
+
+### Ошибка `Not Found` при загрузке asset в Release
+
+Типичная причина в этом проекте: сборочные job (`win/mac/linux`) пытаются публиковать файлы через `electron-builder`,
+а затем `release` job повторно загружает те же ассеты. Из-за этого возникают конфликты и ошибка API по asset.
+
+Правильная схема:
+- в build-job только **собирать** и **загружать artifacts**;
+- публикацию в GitHub Release делать только в отдельном `release` job.
+
+В workflow для build-шагов используйте:
+
+```bash
+npm run dist:win -- --publish never
+npm run dist:mac -- --publish never
+npm run dist:linux -- --publish never
+```
+
+А в шаге релиза оставьте одну точку публикации (например `softprops/action-gh-release`) и включите перезапись:
+
+```yaml
+overwrite_files: true
 ```
 
 ### Ошибка `validateConfiguration` (app-builder-lib)
