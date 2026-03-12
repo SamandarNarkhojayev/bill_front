@@ -2,8 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -15,8 +17,9 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #f3f4f6;
-  color: #1f2937;
+  background-color: #0a0f1c;
+  color: #e2e8f0;
+  overflow: hidden;
 }
 
 #root {

@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Получить текущие состояния реле
     getRelayStates: () => ipcRenderer.invoke('arduino:get-relay-states'),
     
+    // Получить INFO (количество реле, пины)
+    getInfo: () => ipcRenderer.invoke('arduino:get-info'),
+    
     // Подписка на события
     onRelayChanged: (callback) => {
       ipcRenderer.on('arduino:relay-changed', (event, data) => callback(data));
@@ -46,6 +49,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('arduino:message', (event, message) => callback(message));
     },
     
+    onInfo: (callback) => {
+      ipcRenderer.on('arduino:info', (event, info) => callback(info));
+    },
+    
     onError: (callback) => {
       ipcRenderer.on('arduino:error', (event, error) => callback(error));
     },
@@ -58,6 +65,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeAllListeners: (channel) => {
       ipcRenderer.removeAllListeners(`arduino:${channel}`);
     }
+  },
+
+  // Printer API
+  printer: {
+    // Печать чека
+    printReceipt: (receiptHTML) => ipcRenderer.invoke('print:receipt', receiptHTML),
+    
+    // Получить список принтеров
+    getPrinters: () => ipcRenderer.invoke('print:get-printers')
   }
 });
 

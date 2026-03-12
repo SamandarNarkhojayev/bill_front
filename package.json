@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -11,12 +11,70 @@
     "electron": "NODE_ENV=production electron .",
     "electron:dev": "NODE_ENV=development electron .",
     "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\"",
-    "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\""
+    "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\"",
+    "dist": "vite build && electron-builder",
+    "dist:win": "vite build && electron-builder --win",
+    "dist:mac": "vite build && electron-builder --mac",
+    "dist:linux": "vite build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.billiard.club",
+    "productName": "Biliardo (automation for billiard club)",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/icon.png"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "public/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "public/icon.png",
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Бильярдный Клуб",
+      "installerHeaderIcon": "public/icon.ico",
+      "language": "1049"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/serialport/**/*"
+    ]
   },
   "dependencies": {
+    "lucide-react": "^0.577.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "serialport": "^13.0.0"
+    "serialport": "^13.0.0",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
@@ -27,6 +85,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
     "electron": "^38.3.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",

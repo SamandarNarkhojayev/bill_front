@@ -6,8 +6,13 @@ class ArduinoService {
     this.port = null;
     this.parser = null;
     this.isConnected = false;
+    this.isConnecting = false;
+    this.connectPromise = null;
+    this.connectedPortPath = null;
     this.relayStates = [false, false, false, false];
+    this.relayInfo = null; // { count, relays: [{ number, pin, state }] }
     this.eventHandlers = {};
+    this._infoResolve = null;
   }
 
   // Найти доступные Serial порты
@@ -44,29 +49,41 @@ class ArduinoService {
   // Подключиться к Arduino
   async connect(portPath) {
     try {
+      if (this.isConnected && this.connectedPortPath === portPath) {
+        return;
+      }
+
+      if (this.isConnecting && this.connectPromise) {
+        return this.connectPromise;
+      }
+
       if (this.isConnected) {
         await this.disconnect();
       }
 
       console.log(`Попытка подключения к порту: ${portPath}`);
 
-      this.port = new SerialPort({
-        path: portPath,
-        baudRate: 115200,
-        autoOpen: false
-      });
+      this.isConnecting = true;
+      this.connectPromise = new Promise((resolve, reject) => {
+        this.port = new SerialPort({
+          path: portPath,
+          baudRate: 115200,
+          autoOpen: false
+        });
 
-      this.parser = this.port.pipe(new ReadlineParser({ delimiter: '\n' }));
+        this.parser = this.port.pipe(new ReadlineParser({ delimiter: '\n' }));
 
-      return new Promise((resolve, reject) => {
         this.port.open((err) => {
           if (err) {
             console.error(`Ошибка открытия порта ${portPath}:`, err);
+            this.port = null;
+            this.parser = null;
             reject(new Error(`Ошибка открытия порта: ${err.message}`));
             return;
           }
 
           this.isConnected = true;
+          this.connectedPortPath = portPath;
           console.log(`✅ Подключено к Arduino на ${portPath}`);
 
           // Обработка входящих данных
@@ -89,18 +106,33 @@ class ArduinoService {
             this.emit('disconnect');
           });
 
-          // Запросить текущий статус реле через 2 секунды
+          // Запросить текущий статус и информацию о реле через 2 секунды
           setTimeout(() => {
             console.log('Запрос статуса реле...');
             this.sendCommand('STATUS');
+            // Запросить INFO для определения количества реле
+            setTimeout(() => {
+              console.log('Запрос INFO...');
+              this.getInfo().then((info) => {
+                console.log('Arduino INFO:', info);
+                this.emit('info', info);
+              }).catch((err) => {
+                console.log('INFO не поддерживается:', err.message);
+              });
+            }, 1000);
           }, 2000);
 
           resolve();
         });
       });
+
+      return await this.connectPromise;
     } catch (error) {
       console.error('Ошибка подключения к Arduino:', error);
       throw new Error(`Ошибка подключения к Arduino: ${error.message}`);
+    } finally {
+      this.isConnecting = false;
+      this.connectPromise = null;
     }
   }
 
@@ -110,11 +142,21 @@ class ArduinoService {
       return new Promise((resolve) => {
         this.port.close(() => {
           this.isConnected = false;
+          this.isConnecting = false;
+          this.connectedPortPath = null;
+          this.port = null;
+          this.parser = null;
           console.log('🔌 Отключено от Arduino');
           resolve();
         });
       });
     }
+
+    this.isConnected = false;
+    this.isConnecting = false;
+    this.connectedPortPath = null;
+    this.port = null;
+    this.parser = null;
   }
 
   // Отправить команду Arduino
@@ -129,12 +171,33 @@ class ArduinoService {
 
   // Управление реле
   setRelay(relayNumber, state) {
-    if (relayNumber < 1 || relayNumber > 4) {
-      throw new Error('Номер реле должен быть от 1 до 4');
+    const maxRelay = this.relayInfo ? this.relayInfo.count : 16;
+    if (relayNumber < 1 || relayNumber > maxRelay) {
+      throw new Error(`Номер реле должен быть от 1 до ${maxRelay}`);
     }
 
     const command = `RELAY${relayNumber}_${state ? 'ON' : 'OFF'}`;
     this.sendCommand(command);
+  }
+
+  // Запросить INFO (количество реле, пины, состояния)
+  getInfo() {
+    return new Promise((resolve, reject) => {
+      if (!this.isConnected || !this.port) {
+        reject(new Error('Arduino не подключено'));
+        return;
+      }
+      this._infoResolve = resolve;
+      this._infoLines = [];
+      this._infoExpectedCount = null;
+      this.sendCommand('INFO');
+      // Таймаут 3 секунды
+      this._infoTimeout = setTimeout(() => {
+        this._infoResolve = null;
+        this._infoLines = [];
+        reject(new Error('INFO timeout'));
+      }, 3000);
+    });
   }
 
   // Получить статус всех реле
@@ -175,6 +238,41 @@ class ArduinoService {
         this.relayStates[relayIndex] = state;
         this.emit('buttonPressed', { relay: relayIndex + 1, state });
         this.emit('relayChanged', { relay: relayIndex + 1, state });
+      }
+    }
+    
+    // Обработка INFO ответа
+    else if (message.startsWith('RELAYS:')) {
+      const count = parseInt(message.replace('RELAYS:', '').trim());
+      if (this._infoResolve) {
+        this._infoExpectedCount = count;
+        this._infoLines = [];
+      }
+    }
+    else if (message.startsWith('RELAY') && message.includes('PIN=') && this._infoResolve) {
+      // Формат: RELAY1 PIN=3 STATE=OFF
+      const match = message.match(/RELAY(\d+)\s+PIN=(\d+)\s+STATE=(ON|OFF)/);
+      if (match) {
+        this._infoLines.push({
+          number: parseInt(match[1]),
+          pin: parseInt(match[2]),
+          state: match[3] === 'ON'
+        });
+        // Если собрали все реле — резолвим
+        if (this._infoExpectedCount && this._infoLines.length >= this._infoExpectedCount) {
+          clearTimeout(this._infoTimeout);
+          const info = {
+            count: this._infoExpectedCount,
+            relays: [...this._infoLines]
+          };
+          this.relayInfo = info;
+          // Обновляем relayStates под новое количество
+          this.relayStates = info.relays.map(r => r.state);
+          const resolve = this._infoResolve;
+          this._infoResolve = null;
+          this._infoLines = [];
+          resolve(info);
+        }
       }
     }
     

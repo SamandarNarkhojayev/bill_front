@@ -1,65 +1,78 @@
-import { useState } from 'react'
-import ArduinoControl from './components/ArduinoControl'
+import { useEffect } from 'react'
+import { useStore } from './store/useStore'
+import Sidebar from './components/Sidebar'
+import Dashboard from './components/Dashboard'
+import BarPage from './components/BarPage'
+import ReportsPage from './components/ReportsPage'
+import SettingsPage from './components/SettingsPage'
+import ToastContainer from './components/ToastContainer'
+import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/arduino'
 import './App.css'
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'arduino' | 'billiard'>('arduino')
+  const { currentPage, updateTableFromRelay, syncTablesFromArduino, settings, sidebarCollapsed } = useStore()
+
+  // Применяем тему
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', settings.theme)
+    document.body.setAttribute('data-theme', settings.theme)
+  }, [settings.theme])
+
+  // Подписка на события Arduino для синхронизации столов
+  useEffect(() => {
+    if (!window.electronAPI?.arduino) return
+
+    const arduino = window.electronAPI.arduino
+
+    arduino.onRelayChanged((data: RelayChangeEvent) => {
+      updateTableFromRelay(data.relay, data.state)
+    })
+
+    arduino.onStatusUpdate((states: boolean[]) => {
+      states.forEach((state, index) => {
+        updateTableFromRelay(index + 1, state)
+      })
+    })
+
+    arduino.onButtonPressed((data: ButtonPressEvent) => {
+      updateTableFromRelay(data.relay, data.state)
+    })
+
+    arduino.onInfo((info: RelayInfo) => {
+      console.log('Arduino INFO received:', info)
+      syncTablesFromArduino(info.count, info.relays)
+    })
+
+    return () => {
+      arduino.removeAllListeners('relay-changed')
+      arduino.removeAllListeners('status-update')
+      arduino.removeAllListeners('button-pressed')
+      arduino.removeAllListeners('info')
+    }
+  }, [updateTableFromRelay, syncTablesFromArduino])
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <Dashboard />
+      case 'bar':
+        return <BarPage />
+      case 'reports':
+        return <ReportsPage />
+      case 'settings':
+        return <SettingsPage />
+      default:
+        return <Dashboard />
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Навигация */}
-      <nav className="bg-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">Billiard Control System</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setActiveTab('arduino')}
-                className={`px-4 py-2 rounded-md font-medium ${
-                  activeTab === 'arduino'
-                    ? 'bg-blue-500 text-white'
-                    : 'text-gray-700 hover:text-blue-500'
-                }`}
-              >
-                Arduino
-              </button>
-              <button
-                onClick={() => setActiveTab('billiard')}
-                className={`px-4 py-2 rounded-md font-medium ${
-                  activeTab === 'billiard'
-                    ? 'bg-blue-500 text-white'
-                    : 'text-gray-700 hover:text-blue-500'
-                }`}
-              >
-                Бильярд
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Основной контент */}
-      <main className="py-6">
-        {activeTab === 'arduino' && <ArduinoControl />}
-        {activeTab === 'billiard' && (
-          <div className="max-w-4xl mx-auto p-6 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Бильярд</h2>
-            <p className="text-gray-600">Функции управления бильярдом будут добавлены здесь</p>
-            <div className="mt-8 p-8 bg-white rounded-lg shadow">
-              <h3 className="text-lg font-semibold mb-4">Возможные функции:</h3>
-              <ul className="text-left space-y-2">
-                <li>• Управление освещением стола</li>
-                <li>• Счетчик очков</li>
-                <li>• Таймер игры</li>
-                <li>• Выбор режима игры</li>
-                <li>• Статистика игр</li>
-              </ul>
-            </div>
-          </div>
-        )}
+    <div className={`app ${settings.theme === 'light' ? 'theme-light' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar />
+      <main className="main-content">
+        {renderPage()}
       </main>
+      <ToastContainer />
     </div>
   )
 }
