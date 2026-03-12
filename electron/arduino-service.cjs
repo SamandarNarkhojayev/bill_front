@@ -1,8 +1,16 @@
-const { SerialPort } = require('serialport');
-const { ReadlineParser } = require('@serialport/parser-readline');
+let SerialPort = null;
+let ReadlineParser = null;
+
+try {
+  ({ SerialPort } = require('serialport'));
+  ({ ReadlineParser } = require('@serialport/parser-readline'));
+} catch (error) {
+  console.error('[Arduino] Serial modules are unavailable:', error.message);
+}
 
 class ArduinoService {
   constructor() {
+    this.serialAvailable = Boolean(SerialPort && ReadlineParser);
     this.port = null;
     this.parser = null;
     this.isConnected = false;
@@ -17,29 +25,56 @@ class ArduinoService {
 
   // Найти доступные Serial порты
   async listPorts() {
+    if (!this.serialAvailable) {
+      return [];
+    }
+
     try {
       const ports = await SerialPort.list();
       console.log('Все найденные порты:', ports);
-      
-      // Фильтрация портов - ищем Arduino/ESP32 устройства
-      const filtered = ports.filter(port => {
-        // Проверяем по имени порта (usbmodem, usbserial, wchusbserial)
-        const isUsbPort = /usb(modem|serial)/i.test(port.path);
-        
-        // Проверяем по производителю
-        const isArduinoManufacturer = port.manufacturer && 
-          (port.manufacturer.includes('Arduino') || 
-           port.manufacturer.includes('ESP') ||
-           port.manufacturer.includes('CH340') ||
-           port.manufacturer.includes('CP210') ||
-           port.manufacturer.includes('Silicon Labs') ||
-           port.manufacturer.includes('FTDI'));
-        
-        return isUsbPort || isArduinoManufacturer;
+
+      const filtered = ports.filter((port) => {
+        const manufacturer = (port.manufacturer || '').toLowerCase();
+        const product = (port.product || '').toLowerCase();
+        const pathName = (port.path || '').toLowerCase();
+        const vendorId = (port.vendorId || '').toLowerCase();
+        const productId = (port.productId || '').toLowerCase();
+        const pnpId = (port.pnpId || '').toLowerCase();
+
+        // Проверяем Biliardo (ESP32 реле) с новыми USB параметрами
+        const isBiliardoDevice = manufacturer.includes('biliardo') || product.includes('biliardo-automatic');
+
+        const isUsbPortName =
+          /usb(modem|serial)/i.test(pathName) ||
+          /^com\d+$/i.test(pathName) ||
+          pathName.includes('ttyusb') ||
+          pathName.includes('ttyacm');
+
+        const isKnownManufacturer =
+          manufacturer.includes('arduino') ||
+          manufacturer.includes('esp') ||
+          manufacturer.includes('espressif') ||
+          manufacturer.includes('ch340') ||
+          manufacturer.includes('cp210') ||
+          manufacturer.includes('silicon labs') ||
+          manufacturer.includes('wch') ||
+          manufacturer.includes('ftdi');
+
+        const isKnownVendor = ['2341', '2a03', '1a86', '10c4', '0403', '303a'].includes(vendorId);
+        const isKnownProduct = ['ea60', '7523', '6001'].includes(productId);
+        const isKnownPnpId =
+          pnpId.includes('vid_2341') ||
+          pnpId.includes('vid_2a03') ||
+          pnpId.includes('vid_1a86') ||
+          pnpId.includes('vid_10c4') ||
+          pnpId.includes('vid_0403') ||
+          pnpId.includes('vid_303a');
+
+        return isBiliardoDevice || isUsbPortName || isKnownManufacturer || isKnownVendor || isKnownProduct || isKnownPnpId;
       });
-      
+
       console.log('Отфильтрованные порты:', filtered);
-      return filtered.length > 0 ? filtered : ports; // Если ничего не найдено, возвращаем все
+      return filtered.length > 0 ? filtered : ports;
     } catch (error) {
       console.error('Ошибка получения списка портов:', error);
       return [];
@@ -48,6 +83,10 @@ class ArduinoService {
 
   // Подключиться к Arduino
   async connect(portPath) {
+    if (!this.serialAvailable) {
+      throw new Error('SerialPort модуль недоступен в этой сборке');
+    }
+
     try {
       if (this.isConnected && this.connectedPortPath === portPath) {
         return;

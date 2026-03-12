@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const ArduinoService = require('./arduino-service.cjs');
 
@@ -6,6 +6,43 @@ const ArduinoService = require('./arduino-service.cjs');
 const arduino = new ArduinoService();
 let autoConnectInProgress = false;
 let autoConnectRetryTimer = null;
+
+function isLikelyArduinoPort(port) {
+  const manufacturer = (port.manufacturer || '').toLowerCase();
+  const product = (port.product || '').toLowerCase();
+  const pathName = (port.path || '').toLowerCase();
+  const vendorId = (port.vendorId || '').toLowerCase();
+  const productId = (port.productId || '').toLowerCase();
+  const pnpId = (port.pnpId || '').toLowerCase();
+
+  // Проверяем новые Biliardo USB параметры
+  if (manufacturer.includes('biliardo') || product.includes('biliardo-automatic')) {
+    return true;
+  }
+
+  const knownVendors = new Set(['2341', '2a03', '1a86', '10c4', '0403', '303a']);
+  const knownProducts = new Set(['ea60', '7523', '6001']);
+
+  return (
+    manufacturer.includes('arduino') ||
+    manufacturer.includes('espressif') ||
+    manufacturer.includes('silicon') ||
+    manufacturer.includes('wch') ||
+    manufacturer.includes('ch340') ||
+    manufacturer.includes('cp210') ||
+    knownVendors.has(vendorId) ||
+    knownProducts.has(productId) ||
+    pnpId.includes('vid_2341') ||
+    pnpId.includes('vid_2a03') ||
+    pnpId.includes('vid_1a86') ||
+    pnpId.includes('vid_10c4') ||
+    pnpId.includes('vid_0403') ||
+    pnpId.includes('vid_303a') ||
+    pathName.includes('usbserial') ||
+    pathName.includes('usbmodem') ||
+    /^com\d+$/i.test(pathName)
+  );
+}
 
 function scheduleAutoConnectRetry(ms) {
   if (autoConnectRetryTimer) return;
@@ -20,12 +57,18 @@ function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs')
     }
   });
+
+  if (process.platform !== 'darwin') {
+    mainWindow.setMenuBarVisibility(false);
+    Menu.setApplicationMenu(null);
+  }
 
   // В режиме разработки загружаем из Vite dev server
   if (process.env.NODE_ENV === 'development') {
@@ -55,23 +98,7 @@ async function autoConnectArduino() {
   autoConnectInProgress = true;
   try {
     const ports = await arduino.listPorts();
-    const arduinoPort = ports.find((p) =>
-      (p.manufacturer && (
-        p.manufacturer.toLowerCase().includes('arduino') ||
-        p.manufacturer.toLowerCase().includes('espressif') ||
-        p.manufacturer.toLowerCase().includes('silicon') ||
-        p.manufacturer.toLowerCase().includes('ch340') ||
-        p.manufacturer.toLowerCase().includes('cp210')
-      )) ||
-      p.vendorId === '10C4' ||
-      p.vendorId === '1A86' ||
-      (p.path && (
-        p.path.includes('usbserial') ||
-        p.path.includes('usbmodem') ||
-        p.path.includes('ttyUSB') ||
-        p.path.includes('ttyACM')
-      ))
-    );
+    const arduinoPort = ports.find((p) => isLikelyArduinoPort(p));
 
     if (arduinoPort) {
       await arduino.connect(arduinoPort.path);
