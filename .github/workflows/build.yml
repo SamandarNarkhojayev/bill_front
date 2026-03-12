@@ -6,6 +6,10 @@ on:
       - 'v*'        # Запускается при пуше тега v1.0.0, v1.2.3 и т.д.
   workflow_dispatch:  # Ручной запуск из интерфейса GitHub
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   # ─────────────────────────────────────────
   # Windows — .exe установщик
