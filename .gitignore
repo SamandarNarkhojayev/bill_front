@@ -13,7 +13,7 @@ dist-ssr
 *.local
 release
 build
-.github
+
 
 # Editor directories and files
 .vscode/*
