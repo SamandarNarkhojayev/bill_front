@@ -104,6 +104,18 @@ permissions:
   packages: write
 ```
 
+### Ошибка `validateConfiguration` (app-builder-lib)
+
+Проверьте `build` в [package.json](package.json):
+- не должно быть неизвестных полей внутри платформенных блоков (`build.win`, `build.mac`, `build.linux`);
+- в этом проекте поле `author` должно быть в корне `package.json`, а не внутри `build.linux`.
+
+Для детальной диагностики локально:
+
+```bash
+npx electron-builder --debug
+```
+
 ### Проверка не работает в dev
 
 Это нормально. В dev-режиме updater отключён.

@@ -1,7 +1,11 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "author": {
+    "name": "Samandar Narkhojayev",
+    "email": "samandara200603@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/SamandarNarkhojayev/bill_front.git"
@@ -61,11 +65,7 @@
     "linux": {
       "target": ["AppImage", "deb"],
       "icon": "public/icon.png",
-      "category": "Utility",
-        "author": {
-          "name": "Ваше Имя",
-          "email": "your.email@example.com"
-}
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": false,
