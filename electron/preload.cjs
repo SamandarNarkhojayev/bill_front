@@ -74,6 +74,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // Получить список принтеров
     getPrinters: () => ipcRenderer.invoke('print:get-printers')
+  },
+
+  // App Updater API
+  updater: {
+    getState: () => ipcRenderer.invoke('updater:get-state'),
+    checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+    downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+    installUpdate: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (callback) => {
+      ipcRenderer.on('updater:status', (event, payload) => callback(payload));
+    },
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('updater:status');
+    }
   }
 });
 

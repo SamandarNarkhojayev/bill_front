@@ -9,6 +9,8 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Users,
+  LogOut,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { PageType } from '../types';
@@ -17,11 +19,12 @@ const menuItems: { id: PageType; label: string; icon: React.ReactNode }[] = [
   { id: 'dashboard', label: 'Столы', icon: <LayoutDashboard size={20} /> },
   { id: 'bar', label: 'Бар', icon: <Wine size={20} /> },
   { id: 'reports', label: 'Отчёты', icon: <BarChart3 size={20} /> },
+  { id: 'users', label: 'Пользователи', icon: <Users size={20} /> },
   { id: 'settings', label: 'Настройки', icon: <Settings size={20} /> },
 ];
 
 const Sidebar: React.FC = () => {
-  const { currentPage, setCurrentPage, settings, updateSettings, tables, sidebarCollapsed, toggleSidebar } = useStore();
+  const { currentPage, setCurrentPage, settings, updateSettings, tables, sidebarCollapsed, toggleSidebar, logout, currentUser } = useStore();
 
   const occupiedTables = tables.filter((t) => t.status === 'occupied').length;
   const totalTables = tables.length;
@@ -29,6 +32,9 @@ const Sidebar: React.FC = () => {
   const toggleTheme = () => {
     updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
   };
+
+  const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+  const visibleMenuItems = menuItems.filter((item) => item.id !== 'users' || canManageUsers);
 
   return (
     <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -45,7 +51,7 @@ const Sidebar: React.FC = () => {
 
       {/* Навигация */}
       <nav className="sidebar-nav">
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setCurrentPage(item.id)}
@@ -79,8 +85,13 @@ const Sidebar: React.FC = () => {
           <span className="sidebar-collapse-label">{sidebarCollapsed ? 'Развернуть' : 'Свернуть'}</span>
         </button>
 
+        <button className="sidebar-logout-btn" onClick={logout} title="Выйти">
+          <LogOut size={18} />
+          <span>Выйти</span>
+        </button>
 
-        <div className="sidebar-stats">
+
+        {/* <div className="sidebar-stats">
           <div className="sidebar-stat">
             <span className="sidebar-stat-label">Занято столов</span>
             <span className="sidebar-stat-value text-emerald-400">
@@ -93,8 +104,8 @@ const Sidebar: React.FC = () => {
               {totalTables - occupiedTables}
             </span>
           </div>
-        </div>
-        <div className="sidebar-version">v2.0.0</div>
+        </div> */}
+        <div className="sidebar-version">v{__APP_VERSION__}</div>
       </div>
     </aside>
   );

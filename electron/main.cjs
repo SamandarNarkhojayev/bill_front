@@ -1,11 +1,159 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
+const { autoUpdater } = require('electron-updater');
 const ArduinoService = require('./arduino-service.cjs');
 
 // Создаем экземпляр Arduino сервиса
 const arduino = new ArduinoService();
 let autoConnectInProgress = false;
 let autoConnectRetryTimer = null;
+
+let updaterInitialized = false;
+let updaterState = {
+  status: 'idle',
+  message: 'Ожидание проверки обновлений',
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  percent: null,
+};
+
+function broadcastUpdaterState() {
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('updater:status', updaterState);
+    }
+  });
+}
+
+function setUpdaterState(partial) {
+  updaterState = {
+    ...updaterState,
+    ...partial,
+    currentVersion: app.getVersion(),
+  };
+  broadcastUpdaterState();
+}
+
+function getUpdaterRepoConfig() {
+  // 1) Явная конфигурация через env (приоритет)
+  if (process.env.UPDATE_REPO_OWNER && process.env.UPDATE_REPO_NAME) {
+    return {
+      owner: process.env.UPDATE_REPO_OWNER,
+      repo: process.env.UPDATE_REPO_NAME,
+    };
+  }
+
+  // 2) Авто-определение из package.json -> repository
+  try {
+    const pkg = require(path.join(app.getAppPath(), 'package.json'));
+    const repositoryField = pkg?.repository;
+    const rawRepo = typeof repositoryField === 'string'
+      ? repositoryField
+      : repositoryField?.url;
+
+    if (!rawRepo) return null;
+
+    const normalized = String(rawRepo).trim();
+    const match = normalized.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+    if (!match) return null;
+
+    return { owner: match[1], repo: match[2] };
+  } catch {
+    return null;
+  }
+}
+
+function isUpdaterConfigured() {
+  return !!getUpdaterRepoConfig();
+}
+
+function initUpdater() {
+  if (updaterInitialized) return;
+  updaterInitialized = true;
+
+  if (!app.isPackaged) {
+    setUpdaterState({
+      status: 'unsupported',
+      message: 'Обновления доступны только в установленной версии приложения',
+    });
+    return;
+  }
+
+  if (!isUpdaterConfigured()) {
+    setUpdaterState({
+      status: 'error',
+      message: 'Обновления не настроены (нужны UPDATE_REPO_OWNER и UPDATE_REPO_NAME)',
+    });
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  const repoConfig = getUpdaterRepoConfig();
+  if (!repoConfig) {
+    setUpdaterState({
+      status: 'error',
+      message: 'Не удалось определить GitHub-репозиторий для обновлений',
+    });
+    return;
+  }
+
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: repoConfig.owner,
+    repo: repoConfig.repo,
+    private: false,
+  });
+
+  autoUpdater.on('checking-for-update', () => {
+    setUpdaterState({ status: 'checking', message: 'Проверка обновлений...' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    setUpdaterState({
+      status: 'available',
+      message: `Доступна версия ${info.version}`,
+      availableVersion: info.version,
+      percent: 0,
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    setUpdaterState({
+      status: 'not-available',
+      message: 'У вас установлена последняя версия',
+      availableVersion: null,
+      percent: null,
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    setUpdaterState({
+      status: 'downloading',
+      message: `Загрузка обновления: ${Math.round(progress.percent)}%`,
+      percent: progress.percent,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdaterState({
+      status: 'downloaded',
+      message: `Обновление ${info.version} загружено. Нажмите «Установить».`,
+      availableVersion: info.version,
+      percent: 100,
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    setUpdaterState({
+      status: 'error',
+      message: `Ошибка обновления: ${error?.message || 'unknown error'}`,
+      percent: null,
+    });
+  });
+}
 
 function isLikelyArduinoPort(port) {
   const manufacturer = (port.manufacturer || '').toLowerCase();
@@ -79,14 +227,69 @@ function createWindow() {
     // В production загружаем собранные файлы
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.webContents.send('updater:status', updaterState);
+  });
 }
 
 // Этот метод будет вызван когда Electron закончит
 // инициализацию и будет готов создавать окна браузера
 app.whenReady().then(() => {
+  initUpdater();
   createWindow();
   // Авто-подключение Arduino
   autoConnectArduino();
+});
+
+// === Updater IPC обработчики ===
+ipcMain.handle('updater:get-state', () => updaterState);
+
+ipcMain.handle('updater:check', async () => {
+  if (!app.isPackaged) {
+    setUpdaterState({
+      status: 'unsupported',
+      message: 'Проверка обновлений доступна только в установленной версии приложения',
+    });
+    return { success: false, reason: 'not-packaged' };
+  }
+
+  if (!isUpdaterConfigured()) {
+    setUpdaterState({
+      status: 'error',
+      message: 'Обновления не настроены (нужны UPDATE_REPO_OWNER и UPDATE_REPO_NAME)',
+    });
+    return { success: false, reason: 'not-configured' };
+  }
+
+  try {
+    await autoUpdater.checkForUpdates();
+    return { success: true };
+  } catch (error) {
+    setUpdaterState({
+      status: 'error',
+      message: `Ошибка проверки обновлений: ${error?.message || 'unknown error'}`,
+    });
+    return { success: false, reason: 'check-failed' };
+  }
+});
+
+ipcMain.handle('updater:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    setUpdaterState({
+      status: 'error',
+      message: `Ошибка загрузки обновления: ${error?.message || 'unknown error'}`,
+    });
+    return { success: false };
+  }
+});
+
+ipcMain.handle('updater:install', () => {
+  setTimeout(() => autoUpdater.quitAndInstall(), 200);
+  return { success: true };
 });
 
 // Авто-подключение Arduino при запуске

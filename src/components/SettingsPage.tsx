@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings,
   Save,
@@ -9,13 +9,24 @@ import {
   Trash2,
   Cpu,
   Printer,
+  Download,
+  RefreshCw,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import type { UpdaterState } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, sessionHistory } = useStore();
+  const { settings, updateSettings, sessionHistory, currentUser } = useStore();
   const [localSettings, setLocalSettings] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
+  const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+  const [updater, setUpdater] = useState<UpdaterState>({
+    status: 'idle',
+    message: 'Ожидание проверки обновлений',
+    currentVersion: __APP_VERSION__,
+    availableVersion: null,
+    percent: null,
+  });
 
   const handleSave = () => {
     updateSettings(localSettings);
@@ -28,6 +39,10 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleFactoryReset = () => {
+    if (!canDeleteData) {
+      return;
+    }
+
     const confirmed = window.confirm(
       'Сбросить приложение к заводским настройкам? Это удалит сохранённые настройки, меню бара, категории, ревизии и историю.'
     );
@@ -42,6 +57,32 @@ const SettingsPage: React.FC = () => {
     const newTables = [...localSettings.tables];
     newTables[index] = { ...newTables[index], [field]: value };
     setLocalSettings((prev) => ({ ...prev, tables: newTables }));
+  };
+
+  useEffect(() => {
+    const updaterApi = window.electronAPI?.updater;
+    if (!updaterApi) return;
+
+    updaterApi.getState().then(setUpdater).catch(() => null);
+    updaterApi.onStatus(setUpdater);
+
+    return () => {
+      updaterApi.removeAllListeners();
+    };
+  }, []);
+
+  const handleCheckUpdates = async () => {
+    await window.electronAPI?.updater?.checkForUpdates();
+  };
+
+  const handleDownloadUpdate = async () => {
+    await window.electronAPI?.updater?.downloadUpdate();
+  };
+
+  const handleInstallUpdate = async () => {
+    const confirmed = window.confirm('Установить обновление сейчас? Приложение перезапустится.');
+    if (!confirmed) return;
+    await window.electronAPI?.updater?.installUpdate();
   };
 
 
@@ -207,11 +248,56 @@ const SettingsPage: React.FC = () => {
             <div className="settings-info">
               <p>Записей в истории: <strong>{sessionHistory.length}</strong></p>
               <p>Полный сброс вернёт приложение к значениям по умолчанию при следующем старте.</p>
+              {!canDeleteData && (
+                <p>Удаление данных доступно только администратору или разработчику.</p>
+              )}
             </div>
-            <button onClick={handleFactoryReset} className="btn btn-danger">
+            <button onClick={handleFactoryReset} className="btn btn-danger" disabled={!canDeleteData}>
               <Trash2 size={16} />
               Сбросить приложение
             </button>
+          </div>
+        </div>
+
+        {/* Обновления */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <RefreshCw size={18} />
+            Обновление приложения
+          </h3>
+          <div className="settings-fields">
+            <div className="settings-info">
+              <p>Текущая версия: <strong>v{updater.currentVersion || __APP_VERSION__}</strong></p>
+              {updater.availableVersion && (
+                <p>Доступная версия: <strong>v{updater.availableVersion}</strong></p>
+              )}
+              <p>{updater.message}</p>
+            </div>
+
+            <div className="page-header-actions" style={{ justifyContent: 'flex-start' }}>
+              <button
+                onClick={handleCheckUpdates}
+                className="btn btn-ghost"
+                disabled={updater.status === 'checking' || updater.status === 'downloading'}
+              >
+                <RefreshCw size={16} />
+                Проверить обновления
+              </button>
+
+              {updater.status === 'available' && (
+                <button onClick={handleDownloadUpdate} className="btn btn-primary">
+                  <Download size={16} />
+                  Скачать обновление
+                </button>
+              )}
+
+              {updater.status === 'downloaded' && (
+                <button onClick={handleInstallUpdate} className="btn btn-primary">
+                  <RefreshCw size={16} />
+                  Установить и перезапустить
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

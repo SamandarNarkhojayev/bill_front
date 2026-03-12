@@ -65,11 +65,29 @@ export interface PrinterAPI {
   getPrinters(): Promise<PrinterInfo[]>;
 }
 
+export interface UpdaterState {
+  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
+  message: string;
+  currentVersion: string;
+  availableVersion: string | null;
+  percent: number | null;
+}
+
+export interface UpdaterAPI {
+  getState(): Promise<UpdaterState>;
+  checkForUpdates(): Promise<{ success: boolean; reason?: string }>;
+  downloadUpdate(): Promise<{ success: boolean }>;
+  installUpdate(): Promise<{ success: boolean }>;
+  onStatus(callback: (state: UpdaterState) => void): void;
+  removeAllListeners(): void;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       arduino?: ArduinoAPI;
       printer?: PrinterAPI;
+      updater?: UpdaterAPI;
     };
   }
 }

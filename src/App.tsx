@@ -1,16 +1,20 @@
 import { useEffect } from 'react'
 import { useStore } from './store/useStore'
+import LoginPage from './components/LoginPage'
+import AppHeader from './components/AppHeader'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import BarPage from './components/BarPage'
 import ReportsPage from './components/ReportsPage'
 import SettingsPage from './components/SettingsPage'
+import UsersPage from './components/UsersPage'
 import ToastContainer from './components/ToastContainer'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/arduino'
 import './App.css'
 
 function App() {
-  const { currentPage, updateTableFromRelay, syncTablesFromArduino, settings, sidebarCollapsed } = useStore()
+  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, settings, sidebarCollapsed, currentUser } = useStore()
+  const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
 
   // Применяем тему
   useEffect(() => {
@@ -61,16 +65,31 @@ function App() {
         return <ReportsPage />
       case 'settings':
         return <SettingsPage />
+      case 'users':
+        return canManageUsers ? <UsersPage /> : <Dashboard />
       default:
         return <Dashboard />
     }
+  }
+
+  // Если не авторизован — показываем страницу входа
+  if (!isAuthenticated) {
+    return (
+      <>
+        <LoginPage />
+        <ToastContainer />
+      </>
+    )
   }
 
   return (
     <div className={`app ${settings.theme === 'light' ? 'theme-light' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar />
       <main className="main-content">
-        {renderPage()}
+        <AppHeader />
+        <div className="main-content-body">
+          {renderPage()}
+        </div>
       </main>
       <ToastContainer />
     </div>

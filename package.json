@@ -1,7 +1,11 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SamandarNarkhojayev/bill_front.git"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -45,6 +49,10 @@
         {
           "target": "dmg",
           "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
         }
       ],
       "icon": "public/icon.png",
@@ -53,7 +61,11 @@
     "linux": {
       "target": ["AppImage", "deb"],
       "icon": "public/icon.png",
-      "category": "Utility"
+      "category": "Utility",
+        "author": {
+          "name": "Ваше Имя",
+          "email": "your.email@example.com"
+}
     },
     "nsis": {
       "oneClick": false,
@@ -71,6 +83,7 @@
     ]
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "lucide-react": "^0.577.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

@@ -1,3 +1,27 @@
+// ===== АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ =====
+
+export type UserRole = 'developer' | 'admin' | 'user';
+
+export interface User {
+  id: string;
+  username: string;
+  password: string; // хеш пароля (простой, для локального хранения)
+  displayName: string;
+  role: UserRole;
+  createdAt: number;
+  createdBy: string | null; // id пользователя-создателя
+  isActive: boolean;
+}
+
+export interface Shift {
+  id: string;
+  userId: string;
+  userName: string;
+  startTime: number;
+  endTime: number | null;
+  isActive: boolean;
+}
+
 // ===== БИЛЬЯРДНЫЕ СТОЛЫ =====
 
 export type TableStatus = 'free' | 'occupied' | 'reserved' | 'maintenance';
@@ -138,7 +162,7 @@ export interface TableSettings {
 
 // ===== НАВИГАЦИЯ =====
 
-export type PageType = 'dashboard' | 'bar' | 'reports' | 'settings';
+export type PageType = 'dashboard' | 'bar' | 'reports' | 'settings' | 'users';
 
 // ===== ТОСТЫ =====
 

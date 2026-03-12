@@ -14,10 +14,48 @@ import type {
   PageType,
   SessionMode,
   ToastMessage,
+  User,
+  UserRole,
+  Shift,
 } from '../types';
 
 // ===== ГЕНЕРАЦИЯ ID =====
 const generateId = () => Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+
+// ===== Простое хеширование пароля (для локального хранения) =====
+const hashPassword = (password: string): string => {
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return 'h_' + Math.abs(hash).toString(36) + '_' + password.length;
+};
+
+// ===== ПОЛЬЗОВАТЕЛИ ПО УМОЛЧАНИЮ =====
+const defaultUsers: User[] = [
+  {
+    id: 'dev-001',
+    username: 'developer',
+    password: hashPassword('dev2026'),
+    displayName: 'Разработчик',
+    role: 'developer',
+    createdAt: Date.now(),
+    createdBy: null,
+    isActive: true,
+  },
+  {
+    id: 'admin-001',
+    username: 'admin',
+    password: hashPassword('admin2026'),
+    displayName: 'Администратор',
+    role: 'admin',
+    createdAt: Date.now(),
+    createdBy: null,
+    isActive: true,
+  },
+];
 
 const calculateSessionTableCost = (
   startTime: number,
@@ -97,6 +135,23 @@ const defaultTables: BilliardTable[] = defaultSettings.tables.map((t) => ({
 
 // ===== ИНТЕРФЕЙС STORE =====
 interface AppStore {
+  // Авторизация
+  isAuthenticated: boolean;
+  currentUser: User | null;
+  users: User[];
+  login: (username: string, password: string) => boolean;
+  logout: () => void;
+  addUser: (username: string, password: string, displayName: string, role: UserRole) => boolean;
+  updateUser: (id: string, updates: Partial<Pick<User, 'displayName' | 'role' | 'isActive'>>) => void;
+  changeUserPassword: (id: string, newPassword: string) => void;
+  removeUser: (id: string) => void;
+
+  // Смены
+  currentShift: Shift | null;
+  shiftHistory: Shift[];
+  startShift: () => void;
+  endShift: () => void;
+
   currentPage: PageType;
   setCurrentPage: (page: PageType) => void;
   sidebarCollapsed: boolean;
@@ -149,6 +204,98 @@ interface AppStore {
 export const useStore = create<AppStore>()(
   persist(
     (set, get) => ({
+      // ===== АВТОРИЗАЦИЯ =====
+      isAuthenticated: false,
+      currentUser: null,
+      users: defaultUsers,
+
+      login: (username, password) => {
+        const hashedPass = hashPassword(password);
+        const user = get().users.find(
+          (u) => u.username === username && u.password === hashedPass && u.isActive
+        );
+        if (user) {
+          set({ isAuthenticated: true, currentUser: user });
+          return true;
+        }
+        return false;
+      },
+
+      logout: () => {
+        const shift = get().currentShift;
+        if (shift?.isActive) {
+          get().endShift();
+        }
+        set({ isAuthenticated: false, currentUser: null, currentPage: 'dashboard' });
+      },
+
+      addUser: (username, password, displayName, role) => {
+        const existing = get().users.find((u) => u.username === username);
+        if (existing) return false;
+        const currentUser = get().currentUser;
+        const newUser: User = {
+          id: generateId(),
+          username,
+          password: hashPassword(password),
+          displayName,
+          role,
+          createdAt: Date.now(),
+          createdBy: currentUser?.id || null,
+          isActive: true,
+        };
+        set((state) => ({ users: [...state.users, newUser] }));
+        return true;
+      },
+
+      updateUser: (id, updates) => {
+        set((state) => ({
+          users: state.users.map((u) => (u.id === id ? { ...u, ...updates } : u)),
+        }));
+      },
+
+      changeUserPassword: (id, newPassword) => {
+        set((state) => ({
+          users: state.users.map((u) =>
+            u.id === id ? { ...u, password: hashPassword(newPassword) } : u
+          ),
+        }));
+      },
+
+      removeUser: (id) => {
+        set((state) => ({
+          users: state.users.filter((u) => u.id !== id),
+        }));
+      },
+
+      // ===== СМЕНЫ =====
+      currentShift: null,
+      shiftHistory: [],
+
+      startShift: () => {
+        const user = get().currentUser;
+        if (!user) return;
+        const shift: Shift = {
+          id: generateId(),
+          userId: user.id,
+          userName: user.displayName,
+          startTime: Date.now(),
+          endTime: null,
+          isActive: true,
+        };
+        set({ currentShift: shift });
+      },
+
+      endShift: () => {
+        const shift = get().currentShift;
+        if (!shift) return;
+        const ended = { ...shift, endTime: Date.now(), isActive: false };
+        set((state) => ({
+          currentShift: null,
+          shiftHistory: [ended, ...state.shiftHistory],
+        }));
+      },
+
+      // ===== НАВИГАЦИЯ =====
       currentPage: 'dashboard',
       setCurrentPage: (page) => set({ currentPage: page }),
 
@@ -560,15 +707,25 @@ export const useStore = create<AppStore>()(
         barCategories: state.barCategories,
         inventoryRevisions: state.inventoryRevisions,
         sidebarCollapsed: state.sidebarCollapsed,
+        users: state.users,
+        shiftHistory: state.shiftHistory,
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppStore>;
         const merged = { ...currentState, ...persisted };
+        // Авторизация всегда сбрасывается при перезапуске
+        merged.isAuthenticated = false;
+        merged.currentUser = null;
+        merged.currentShift = null;
         merged.settings = {
           ...currentState.settings,
           ...persisted.settings,
           currency: 'тг',
         };
+        // Если нет пользователей — используем дефолтных
+        if (!persisted.users || persisted.users.length === 0) {
+          merged.users = defaultUsers;
+        }
         if (persisted.settings?.tables) {
           merged.tables = persisted.settings.tables.map((st) => ({
             id: st.id,

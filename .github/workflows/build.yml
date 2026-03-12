@@ -38,7 +38,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.yml
+            release/*.blockmap
           retention-days: 30
 
   # ─────────────────────────────────────────
@@ -68,7 +71,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: release/*.dmg
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.yml
+            release/*.blockmap
           retention-days: 30
 
   # ─────────────────────────────────────────
@@ -106,6 +113,8 @@ jobs:
           path: |
             release/*.AppImage
             release/*.deb
+            release/*.yml
+            release/*.blockmap
           retention-days: 30
 
   # ─────────────────────────────────────────
@@ -145,9 +154,16 @@ jobs:
           prerelease: false
           files: |
             artifacts/windows/*.exe
+            artifacts/windows/*.yml
+            artifacts/windows/*.blockmap
             artifacts/macos/*.dmg
+            artifacts/macos/*.zip
+            artifacts/macos/*.yml
+            artifacts/macos/*.blockmap
             artifacts/linux/*.AppImage
             artifacts/linux/*.deb
+            artifacts/linux/*.yml
+            artifacts/linux/*.blockmap
           body: |
             ## Бильярдный Клуб ${{ github.ref_name }}
 
