@@ -190,6 +190,17 @@ UPDATE_REPO_TOKEN=<github_token_with_repo_read>
 
 Тогда updater читает напрямую `latest.yml` / `latest-mac.yml`, без парсинга HTML/Atom GitHub Releases.
 
+### Ошибка загрузки обновления: `status 404` на `...-arm64-mac.zip`
+
+Если старая установленная версия (например `v1.0.5`) пытается скачать файл с legacy-именем,
+а в релизе лежат файлы с другим шаблоном имени, будет 404.
+
+В текущем workflow добавлены alias-ассеты совместимости для mac zip/blockmap,
+чтобы старые клиенты тоже могли скачать обновление.
+
+Если релиз уже опубликован без alias-файлов, нужно выпустить новый тег (например `v1.0.8`) с текущим workflow,
+или вручную добавить missing asset в существующий release.
+
 ### Ошибка `validateConfiguration` (app-builder-lib)
 
 Проверьте `build` в [package.json](package.json):
@@ -205,6 +216,29 @@ npx electron-builder --debug
 ### Проверка не работает в dev
 
 Это нормально. В dev-режиме updater отключён.
+
+### macOS: «Apple не удалось подтвердить, что файл не содержит вредоносного ПО»
+
+Это сообщение Gatekeeper. Обычно появляется у сборок из GitHub, если приложение не подписано и не нотариализовано Apple.
+
+Быстрый запуск (для теста):
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/Biliardo*.dmg
+```
+
+После установки (если нужно):
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Biliardo (automation for billiard club).app"
+```
+
+Или открыть через Finder: правый клик по приложению → Open.
+
+Правильное решение для продакшн-дистрибуции:
+- включить подпись `Developer ID Application`;
+- включить notarization в CI (Apple credentials в GitHub Secrets);
+- выпускать только подписанные/нотариализованные `.dmg/.zip`.
 
 ---
 
