@@ -18,6 +18,7 @@
 
 Проверьте, что настроено:
 
+- Репозиторий GitHub с релизами открыт (public) — для текущей схемы автообновления это рекомендуемый вариант.
 - В [package.json](package.json) есть `repository` с GitHub URL репозитория.
 - В workflow [build.yml](.github/workflows/build.yml) в релиз попадают:
   - установщики (`.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`)
@@ -126,6 +127,29 @@ npm run dist:linux -- --publish never
 ```yaml
 overwrite_files: true
 ```
+
+### Ошибка проверки обновлений: `404 ... releases.atom`
+
+Если в приложении ошибка вида:
+
+`GET https://github.com/<owner>/<repo>/releases.atom -> 404`
+
+значит обычно одно из двух:
+
+1. Репозиторий с релизами приватный (для анонимного доступа GitHub отдаёт 404).
+2. Неверный `owner/repo` в `repository` (или в `UPDATE_REPO_OWNER/UPDATE_REPO_NAME`).
+
+Решения:
+
+- Рекомендуемо для клиентских обновлений: сделать репозиторий релизов **public**. Если репозиторий публичный, дополнительные токены приложению не нужны.
+- Если репозиторий должен быть private — задайте при запуске приложения:
+
+```bash
+UPDATE_REPO_PRIVATE=true
+UPDATE_REPO_TOKEN=<github_token_with_repo_read>
+```
+
+И убедитесь, что токен имеет доступ к релизам.
 
 ### Ошибка `validateConfiguration` (app-builder-lib)
 

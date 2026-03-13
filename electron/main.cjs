@@ -68,6 +68,10 @@ function isUpdaterConfigured() {
   return !!getUpdaterRepoConfig();
 }
 
+function isTrue(value) {
+  return String(value).toLowerCase() === 'true';
+}
+
 function initUpdater() {
   if (updaterInitialized) return;
   updaterInitialized = true;
@@ -100,11 +104,15 @@ function initUpdater() {
     return;
   }
 
+  const isPrivateRepo = isTrue(process.env.UPDATE_REPO_PRIVATE);
+  const updateToken = process.env.UPDATE_REPO_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+
   autoUpdater.setFeedURL({
     provider: 'github',
     owner: repoConfig.owner,
     repo: repoConfig.repo,
-    private: false,
+    private: isPrivateRepo,
+    token: isPrivateRepo ? updateToken : undefined,
   });
 
   autoUpdater.on('checking-for-update', () => {
@@ -147,9 +155,15 @@ function initUpdater() {
   });
 
   autoUpdater.on('error', (error) => {
+    const rawMessage = String(error?.message || 'unknown error');
+    const isGithub404 = rawMessage.includes('releases.atom') && rawMessage.includes('404');
+    const message = isGithub404
+      ? 'Ошибка обновления: GitHub вернул 404 для releases.atom. Проверьте, что репозиторий публичный, либо задайте UPDATE_REPO_PRIVATE=true и UPDATE_REPO_TOKEN.'
+      : `Ошибка обновления: ${rawMessage}`;
+
     setUpdaterState({
       status: 'error',
-      message: `Ошибка обновления: ${error?.message || 'unknown error'}`,
+      message,
       percent: null,
     });
   });
