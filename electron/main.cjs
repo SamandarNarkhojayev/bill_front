@@ -72,6 +72,14 @@ function isTrue(value) {
   return String(value).toLowerCase() === 'true';
 }
 
+function getGenericUpdateUrl(repoConfig) {
+  if (!repoConfig) return null;
+  if (process.env.UPDATE_GENERIC_URL) {
+    return process.env.UPDATE_GENERIC_URL;
+  }
+  return `https://github.com/${repoConfig.owner}/${repoConfig.repo}/releases/latest/download`;
+}
+
 function initUpdater() {
   if (updaterInitialized) return;
   updaterInitialized = true;
@@ -107,13 +115,20 @@ function initUpdater() {
   const isPrivateRepo = isTrue(process.env.UPDATE_REPO_PRIVATE);
   const updateToken = process.env.UPDATE_REPO_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: repoConfig.owner,
-    repo: repoConfig.repo,
-    private: isPrivateRepo,
-    token: isPrivateRepo ? updateToken : undefined,
-  });
+  if (isPrivateRepo) {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: repoConfig.owner,
+      repo: repoConfig.repo,
+      private: true,
+      token: updateToken,
+    });
+  } else {
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: getGenericUpdateUrl(repoConfig),
+    });
+  }
 
   autoUpdater.on('checking-for-update', () => {
     setUpdaterState({ status: 'checking', message: 'Проверка обновлений...' });
@@ -157,9 +172,12 @@ function initUpdater() {
   autoUpdater.on('error', (error) => {
     const rawMessage = String(error?.message || 'unknown error');
     const isGithub404 = rawMessage.includes('releases.atom') && rawMessage.includes('404');
+    const isGithub406 = rawMessage.includes('releases/latest') && rawMessage.includes('406');
     const message = isGithub404
       ? 'Ошибка обновления: GitHub вернул 404 для releases.atom. Проверьте, что репозиторий публичный, либо задайте UPDATE_REPO_PRIVATE=true и UPDATE_REPO_TOKEN.'
-      : `Ошибка обновления: ${rawMessage}`;
+      : isGithub406
+        ? 'Ошибка обновления: GitHub provider вернул 406 при поиске latest release. Для public-репозитория используйте generic provider через releases/latest/download.'
+        : `Ошибка обновления: ${rawMessage}`;
 
     setUpdaterState({
       status: 'error',

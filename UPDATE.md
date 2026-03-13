@@ -19,6 +19,7 @@
 Проверьте, что настроено:
 
 - Репозиторий GitHub с релизами открыт (public) — для текущей схемы автообновления это рекомендуемый вариант.
+- Для public-репозитория приложение использует `generic`-канал обновлений через `releases/latest/download`.
 - В [package.json](package.json) есть `repository` с GitHub URL репозитория.
 - В workflow [build.yml](.github/workflows/build.yml) в релиз попадают:
   - установщики (`.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`)
@@ -46,15 +47,15 @@ npm version patch --no-git-tag-version
 
 ```bash
 git add .
-git commit -m "release: v1.0.4"
+git commit -m "release: v1.0.5"
 ```
 
 ### 3) Создать и отправить тег
 
 ```bash
-git tag v1.0.4
+git tag v1.0.5
 git push origin main
-git push origin v1.0.4
+git push origin v1.0.5
 ```
 
 > Тег обязательно должен быть в формате `v*`, иначе workflow релиза не запустится.
@@ -122,10 +123,10 @@ npm run dist:mac -- --publish never
 npm run dist:linux -- --publish never
 ```
 
-А в шаге релиза оставьте одну точку публикации (например `softprops/action-gh-release`) и включите перезапись:
+A в шаге релиза оставьте одну точку публикации и используйте загрузку с перезаписью (`gh release upload --clobber`):
 
-```yaml
-overwrite_files: true
+```bash
+gh release upload "$TAG" "$FILE" --clobber
 ```
 
 ### Ошибка проверки обновлений: `404 ... releases.atom`
@@ -150,6 +151,17 @@ UPDATE_REPO_TOKEN=<github_token_with_repo_read>
 ```
 
 И убедитесь, что токен имеет доступ к релизам.
+
+### Ошибка проверки обновлений: `406 ... releases/latest`
+
+Если `electron-updater` использует GitHub provider, он может нестабильно обращаться к страницам GitHub Releases (`releases.atom`, `releases/latest`).
+
+Для public-репозитория в этом проекте используется более стабильная схема:
+
+- `provider: generic`
+- URL: `https://github.com/SamandarNarkhojayev/bill_front/releases/latest/download`
+
+Тогда updater читает напрямую `latest.yml` / `latest-mac.yml`, без парсинга HTML/Atom GitHub Releases.
 
 ### Ошибка `validateConfiguration` (app-builder-lib)
 
