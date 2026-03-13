@@ -8,8 +8,20 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // Arduino API
   arduino: {
-    // Получить список доступных портов
+    // Получить список доступных портов (отфильтрованные)
     listPorts: () => ipcRenderer.invoke('arduino:list-ports'),
+    
+    // Получить ВСЕ порты (для ручного выбора в настройках)
+    listAllPorts: () => ipcRenderer.invoke('arduino:list-all-ports'),
+    
+    // Сохранить выбранный порт
+    savePort: (portPath) => ipcRenderer.invoke('arduino:save-port', portPath),
+    
+    // Получить сохранённый порт
+    getSavedPort: () => ipcRenderer.invoke('arduino:get-saved-port'),
+    
+    // Переподключиться (используя сохранённый порт)
+    reconnect: () => ipcRenderer.invoke('arduino:reconnect'),
     
     // Подключиться к Arduino
     connect: (portPath) => ipcRenderer.invoke('arduino:connect', portPath),

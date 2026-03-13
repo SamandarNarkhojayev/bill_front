@@ -2754,7 +2754,7 @@
 [data-theme="light"] .bar-menu-card,
 [data-theme="light"] .bar-menu-item {
   background: #ffffff;
-  border-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .stat-card:hover,
@@ -2835,7 +2835,7 @@
 [data-theme="light"] .amount-selector,
 [data-theme="light"] .unlimited-info {
   background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .time-preset-btn,
@@ -2892,9 +2892,23 @@
   border-bottom-color: rgba(0, 0, 0, 0.06);
 }
 
+[data-theme="light"] .bar-cat-card {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .bar-cat-card:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="light"] .bar-cat-card-name {
+  color: #1e293b;
+}
+[data-theme="light"] .bar-cat-card-count {
+  color: #475569;
+}
+
 [data-theme="light"] .bar-category-btn {
-  border-color: rgba(0, 0, 0, 0.08);
-  color: #64748b;
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #475569;
 }
 
 [data-theme="light"] .bar-category-btn:hover {
@@ -2902,8 +2916,8 @@
 }
 
 [data-theme="light"] .category-filter {
-  border-color: rgba(0, 0, 0, 0.08);
-  color: #64748b;
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #475569;
 }
 
 [data-theme="light"] .category-filter:hover {
@@ -2918,6 +2932,66 @@
 [data-theme="light"] .bar-menu-card:hover,
 [data-theme="light"] .bar-menu-item:hover {
   background: #f8fafc;
+}
+
+/* Bar menu row v2 (light) */
+[data-theme="light"] .bar-menu-row-v2 {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .bar-menu-row-v2:hover {
+  background: #f8fafc;
+}
+[data-theme="light"] .bar-menu-row-name {
+  color: #1e293b;
+}
+[data-theme="light"] .bar-menu-row-price {
+  color: #d97706;
+}
+[data-theme="light"] .bar-menu-row-cost {
+  color: #64748b;
+}
+[data-theme="light"] .bar-menu-edit-card {
+  background: #fffbeb;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Stock table (light) */
+[data-theme="light"] .bar-stock-table {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .bar-stock-header {
+  background: #f8fafc;
+  color: #475569;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .bar-stock-row {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .bar-stock-row:hover {
+  background: #f8fafc;
+}
+[data-theme="light"] .bar-stock-cell-product {
+  color: #1e293b;
+}
+[data-theme="light"] .bar-stock-cell-cost {
+  color: #475569;
+}
+
+/* Inventory stat cards (light) */
+[data-theme="light"] .bar-inv-stat {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .bar-inv-stat-label {
+  color: #475569;
+}
+
+/* Revision (light) */
+[data-theme="light"] .bar-revision-history {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 /* Reports table */
@@ -2977,7 +3051,7 @@
 /* End session */
 [data-theme="light"] .end-session-item {
   background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="light"] .end-session-total {
@@ -2985,8 +3059,8 @@
 }
 
 [data-theme="light"] .end-session-order-item {
-  color: #64748b;
-  border-bottom-color: rgba(0, 0, 0, 0.04);
+  color: #475569;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
 /* Session on card */
@@ -2997,8 +3071,8 @@
 /* Ghost button */
 [data-theme="light"] .btn-ghost {
   background: rgba(0, 0, 0, 0.04);
-  color: #64748b;
-  border-color: rgba(0, 0, 0, 0.1);
+  color: #475569;
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .btn-ghost:hover:not(:disabled) {
@@ -3027,12 +3101,12 @@
 /* Menu management */
 [data-theme="light"] .add-item-form {
   background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .menu-list-item {
   background: #f8fafc;
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="light"] .menu-list-item:hover {
@@ -3989,8 +4063,8 @@
 
 [data-theme="light"] .login-card {
   background: white;
-  border-color: rgba(0, 0, 0, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="light"] .login-title {
@@ -4010,12 +4084,12 @@
 
 [data-theme="light"] .app-header {
   background: rgba(255, 255, 255, 0.8);
-  border-bottom-color: rgba(0, 0, 0, 0.06);
+  border-bottom-color: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="light"] .header-user-btn {
   background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="light"] .header-user-name {
@@ -4024,13 +4098,13 @@
 
 [data-theme="light"] .header-user-menu {
   background: white;
-  border-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .user-card {
   background: white;
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 [data-theme="light"] .user-card-name,
@@ -4040,7 +4114,7 @@
 
 [data-theme="light"] .modal-card {
   background: white;
-  border-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="light"] .modal-header h3 {

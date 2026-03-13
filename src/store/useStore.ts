@@ -114,6 +114,7 @@ const defaultSettings: AppSettings = {
   autoLightOff: true,
   soundEnabled: true,
   autoPrintReceipt: false,
+  savedPortPath: null,
   tables: [
     { id: 1, name: 'Стол №1', relayNumber: 1, pricePerHour: 2000, isActive: true },
     { id: 2, name: 'Стол №2', relayNumber: 2, pricePerHour: 2000, isActive: true },

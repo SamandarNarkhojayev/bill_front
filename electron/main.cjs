@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const ArduinoService = require('./arduino-service.cjs');
 
@@ -7,6 +8,28 @@ const ArduinoService = require('./arduino-service.cjs');
 const arduino = new ArduinoService();
 let autoConnectInProgress = false;
 let autoConnectRetryTimer = null;
+
+// ===== Сохранённый порт (файл в userData) =====
+function getSavedPortFile() {
+  return path.join(app.getPath('userData'), 'saved-port.json');
+}
+
+function loadSavedPort() {
+  try {
+    const data = JSON.parse(fs.readFileSync(getSavedPortFile(), 'utf8'));
+    return data.portPath || null;
+  } catch {
+    return null;
+  }
+}
+
+function persistSavedPort(portPath) {
+  try {
+    fs.writeFileSync(getSavedPortFile(), JSON.stringify({ portPath }), 'utf8');
+  } catch (err) {
+    console.error('[Arduino] Failed to save port:', err.message);
+  }
+}
 
 let updaterInitialized = false;
 let updaterState = {
@@ -194,9 +217,22 @@ function isLikelyArduinoPort(port) {
   const vendorId = (port.vendorId || '').toLowerCase();
   const productId = (port.productId || '').toLowerCase();
   const pnpId = (port.pnpId || '').toLowerCase();
+  const friendlyName = (port.friendlyName || '').toLowerCase();
 
   // Проверяем новые Biliardo USB параметры
   if (manufacturer.includes('biliardo') || product.includes('biliardo-automatic')) {
+    return true;
+  }
+
+  // ESP32 на Windows отображается как "USB JTAG/serial debug unit"
+  if (
+    friendlyName.includes('usb jtag') ||
+    friendlyName.includes('serial debug unit') ||
+    product.includes('usb jtag') ||
+    product.includes('serial debug unit') ||
+    pnpId.includes('usb jtag') ||
+    (manufacturer.includes('espressif') && product.includes('jtag'))
+  ) {
     return true;
   }
 
@@ -324,6 +360,10 @@ ipcMain.handle('updater:install', () => {
   return { success: true };
 });
 
+// Сохранённый порт (загружается из файла в userData при старте)
+let savedPortPath = loadSavedPort();
+console.log('[Arduino] Loaded saved port:', savedPortPath);
+
 // Авто-подключение Arduino при запуске
 async function autoConnectArduino() {
   if (autoConnectInProgress || arduino.isArduinoConnected()) {
@@ -332,8 +372,45 @@ async function autoConnectArduino() {
 
   autoConnectInProgress = true;
   try {
-    const ports = await arduino.listPorts();
-    const arduinoPort = ports.find((p) => isLikelyArduinoPort(p));
+    const allPorts = await arduino.listAllPorts();
+    let targetPort = null;
+
+    // 1) Приоритет: сохранённый вручную порт
+    if (savedPortPath) {
+      targetPort = allPorts.find((p) => p.path === savedPortPath);
+      if (targetPort) {
+        console.log('[Arduino] Using saved port:', savedPortPath);
+      } else {
+        console.log('[Arduino] Saved port not found:', savedPortPath, '— falling back to auto-detect');
+      }
+    }
+
+    // 2) Автопоиск: ESP32 "USB JTAG/serial debug unit"
+    if (!targetPort) {
+      targetPort = allPorts.find((p) => {
+        const product = (p.product || '').toLowerCase();
+        const friendlyName = (p.friendlyName || '').toLowerCase();
+        const pnpId = (p.pnpId || '').toLowerCase();
+        return (
+          friendlyName.includes('usb jtag') ||
+          friendlyName.includes('serial debug unit') ||
+          product.includes('usb jtag') ||
+          product.includes('serial debug unit') ||
+          pnpId.includes('jtag')
+        );
+      });
+      if (targetPort) {
+        console.log('[Arduino] Found ESP32 USB JTAG device:', targetPort.path);
+      }
+    }
+
+    // 3) Стандартный автопоиск по известным производителям
+    if (!targetPort) {
+      const filtered = await arduino.listPorts();
+      targetPort = filtered.find((p) => isLikelyArduinoPort(p));
+    }
+
+    const arduinoPort = targetPort;
 
     if (arduinoPort) {
       await arduino.connect(arduinoPort.path);
@@ -385,12 +462,53 @@ app.on('activate', () => {
 
 // === Arduino IPC обработчики ===
 
-// Получить список доступных Serial портов
+// Получить список доступных Serial портов (отфильтрованные)
 ipcMain.handle('arduino:list-ports', async () => {
   try {
     return await arduino.listPorts();
   } catch (error) {
     throw new Error(`Ошибка получения портов: ${error.message}`);
+  }
+});
+
+// Получить ВСЕ Serial порты (для ручного выбора в настройках)
+ipcMain.handle('arduino:list-all-ports', async () => {
+  try {
+    return await arduino.listAllPorts();
+  } catch (error) {
+    throw new Error(`Ошибка получения портов: ${error.message}`);
+  }
+});
+
+// Сохранить выбранный порт
+ipcMain.handle('arduino:save-port', (event, portPath) => {
+  savedPortPath = portPath;
+  persistSavedPort(portPath);
+  console.log('[Arduino] Port saved:', portPath);
+  return { success: true };
+});
+
+// Получить сохранённый порт
+ipcMain.handle('arduino:get-saved-port', () => {
+  return savedPortPath;
+});
+
+// Переподключиться к сохранённому порту
+ipcMain.handle('arduino:reconnect', async () => {
+  try {
+    if (arduino.isArduinoConnected()) {
+      await arduino.disconnect();
+    }
+    // Сбрасываем таймер и запускаем автоподключение заново
+    if (autoConnectRetryTimer) {
+      clearTimeout(autoConnectRetryTimer);
+      autoConnectRetryTimer = null;
+    }
+    autoConnectInProgress = false;
+    await autoConnectArduino();
+    return { success: true, connected: arduino.isArduinoConnected() };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Settings,
   Save,
@@ -11,9 +11,13 @@ import {
   Printer,
   Download,
   RefreshCw,
+  Usb,
+  Unplug,
+  Plug,
+  Search,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { UpdaterState } from '../types/arduino';
+import type { UpdaterState, SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
   const { settings, updateSettings, sessionHistory, currentUser } = useStore();
@@ -27,6 +31,133 @@ const SettingsPage: React.FC = () => {
     availableVersion: null,
     percent: null,
   });
+
+  // ===== Состояния для Serial-порта =====
+  const [allPorts, setAllPorts] = useState<SerialPortInfo[]>([]);
+  const [selectedPortPath, setSelectedPortPath] = useState<string | null>(localSettings.savedPortPath || null);
+  const [isArduinoConnected, setIsArduinoConnected] = useState(false);
+  const [portLoading, setPortLoading] = useState(false);
+  const [portStatus, setPortStatus] = useState<string>('');
+
+  const loadAllPorts = useCallback(async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api) return;
+    setPortLoading(true);
+    try {
+      const ports = await api.listAllPorts();
+      setAllPorts(ports);
+      const connected = await api.isConnected();
+      setIsArduinoConnected(connected);
+    } catch {
+      setAllPorts([]);
+    } finally {
+      setPortLoading(false);
+    }
+  }, []);
+
+  const handleSavePort = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api) return;
+
+    // Сохраняем в main process
+    await api.savePort(selectedPortPath);
+    // Сохраняем в настройки (zustand persist)
+    updateSettings({ savedPortPath: selectedPortPath });
+    setLocalSettings((prev) => ({ ...prev, savedPortPath: selectedPortPath }));
+    setPortStatus(selectedPortPath ? `Порт ${selectedPortPath} сохранён` : 'Порт сброшен (авто-поиск)');
+    setTimeout(() => setPortStatus(''), 3000);
+  };
+
+  const handleConnectToPort = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api || !selectedPortPath) return;
+    setPortLoading(true);
+    setPortStatus('');
+    try {
+      // Сохраняем порт + переподключаемся
+      await api.savePort(selectedPortPath);
+      updateSettings({ savedPortPath: selectedPortPath });
+      setLocalSettings((prev) => ({ ...prev, savedPortPath: selectedPortPath }));
+
+      // Отключаемся от текущего и подключаемся к новому
+      if (isArduinoConnected) {
+        await api.disconnect();
+      }
+      await api.connect(selectedPortPath);
+      setIsArduinoConnected(true);
+      setPortStatus(`✅ Подключено к ${selectedPortPath}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPortStatus(`❌ Ошибка: ${msg}`);
+      setIsArduinoConnected(false);
+    } finally {
+      setPortLoading(false);
+      setTimeout(() => setPortStatus(''), 5000);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api) return;
+    try {
+      await api.disconnect();
+      setIsArduinoConnected(false);
+      setPortStatus('Устройство отключено');
+      setTimeout(() => setPortStatus(''), 3000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleResetPort = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api) return;
+    setSelectedPortPath(null);
+    await api.savePort(null);
+    updateSettings({ savedPortPath: null });
+    setLocalSettings((prev) => ({ ...prev, savedPortPath: null }));
+    setPortStatus('Порт сброшен. Будет использован авто-поиск.');
+    setTimeout(() => setPortStatus(''), 3000);
+  };
+
+  const handleAutoSearch = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api) return;
+    setPortLoading(true);
+    setPortStatus('Поиск ESP32 устройства...');
+    try {
+      // Сбрасываем ручной порт, чтобы автопоиск сработал
+      await api.savePort(null);
+      updateSettings({ savedPortPath: null });
+      setLocalSettings((prev) => ({ ...prev, savedPortPath: null }));
+      setSelectedPortPath(null);
+
+      const result = await api.reconnect();
+      if (result.connected) {
+        const connected = await api.isConnected();
+        setIsArduinoConnected(connected);
+        setPortStatus('✅ Устройство найдено и подключено автоматически!');
+      } else {
+        setPortStatus('❌ Устройство не найдено. Выберите порт вручную.');
+      }
+      await loadAllPorts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPortStatus(`❌ Ошибка: ${msg}`);
+    } finally {
+      setPortLoading(false);
+      setTimeout(() => setPortStatus(''), 5000);
+    }
+  };
+
+  // Загружаем порты при монтировании
+  useEffect(() => {
+    loadAllPorts();
+    // Загружаем сохранённый порт из main process
+    window.electronAPI?.arduino?.getSavedPort().then((port) => {
+      if (port) setSelectedPortPath(port);
+    });
+  }, [loadAllPorts]);
 
   const handleSave = () => {
     updateSettings(localSettings);
@@ -299,6 +430,88 @@ const SettingsPage: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Порт устройства */}
+        <div className="settings-section settings-section-full">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h3 className="settings-section-title" style={{ margin: 0 }}>
+              <Usb size={16} />
+              Порт ESP32
+              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, color: isArduinoConnected ? '#22c55e' : '#ef4444' }}>
+                {isArduinoConnected ? '● подключено' : '● не подключено'}
+              </span>
+              {localSettings.savedPortPath && (
+                <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8, color: '#64748b' }}>
+                  ({localSettings.savedPortPath})
+                </span>
+              )}
+            </h3>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={handleAutoSearch} className="btn btn-ghost" disabled={portLoading} style={{ padding: '4px 10px', fontSize: 12 }}>
+                <Search size={13} />
+                Автопоиск
+              </button>
+              <button onClick={loadAllPorts} className="btn btn-ghost" disabled={portLoading} style={{ padding: '4px 10px', fontSize: 12 }}>
+                <RefreshCw size={13} className={portLoading ? 'animate-spin' : ''} />
+                Обновить
+              </button>
+              {isArduinoConnected && (
+                <button onClick={handleDisconnect} className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 12 }}>
+                  <Unplug size={13} />
+                  Отключить
+                </button>
+              )}
+              {localSettings.savedPortPath && (
+                <button onClick={handleResetPort} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }}>
+                  <RotateCcw size={13} />
+                  Сброс
+                </button>
+              )}
+            </div>
+          </div>
+
+          {portStatus && (
+            <p style={{ fontSize: 12, marginTop: 8, color: portStatus.startsWith('✅') ? '#22c55e' : portStatus.startsWith('❌') ? '#ef4444' : '#94a3b8' }}>
+              {portStatus}
+            </p>
+          )}
+
+          {allPorts.length > 0 ? (
+            <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={selectedPortPath || ''}
+                onChange={(e) => setSelectedPortPath(e.target.value || null)}
+                className="form-input"
+                style={{ flex: 1, minWidth: 180, maxWidth: 360, fontSize: 13, padding: '6px 10px' }}
+              >
+                <option value="">— выберите порт —</option>
+                {allPorts.map((port) => {
+                  const hint = [port.manufacturer, port.product, port.friendlyName].filter(Boolean).join(' · ');
+                  const isJtag = (port.product || '').toLowerCase().includes('jtag') || (port.friendlyName || '').toLowerCase().includes('jtag');
+                  const isBiliardo = (port.manufacturer || '').toLowerCase().includes('biliardo');
+                  const tag = isBiliardo ? ' ★ Biliardo' : isJtag ? ' ★ ESP32' : '';
+                  return (
+                    <option key={port.path} value={port.path}>
+                      {port.path}{hint ? ` (${hint})` : ''}{tag}
+                    </option>
+                  );
+                })}
+              </select>
+              <button onClick={handleConnectToPort} className="btn btn-primary" disabled={!selectedPortPath || portLoading} style={{ padding: '6px 12px', fontSize: 12 }}>
+                <Plug size={13} />
+                Подключить
+              </button>
+              <button onClick={handleSavePort} className="btn btn-ghost" disabled={!selectedPortPath} style={{ padding: '6px 12px', fontSize: 12 }}>
+                <Save size={13} />
+                Сохранить
+              </button>
+            </div>
+          ) : (
+            <p style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
+              {portLoading ? 'Поиск...' : 'Нет портов. Подключите ESP32.'}
+            </p>
+          )}
         </div>
       </div>
     </div>

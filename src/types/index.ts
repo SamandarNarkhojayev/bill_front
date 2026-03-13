@@ -149,6 +149,7 @@ export interface AppSettings {
   autoLightOff: boolean; // Автоматически выключать свет при завершении сессии
   soundEnabled: boolean;
   autoPrintReceipt: boolean; // Автоматически печатать чек при закрытии стола
+  savedPortPath: string | null; // Вручную сохранённый порт (приоритет при подключении)
   tables: TableSettings[];
 }
 

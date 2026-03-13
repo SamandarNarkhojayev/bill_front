@@ -7,6 +7,8 @@ export interface SerialPort {
   locationId?: string;
   vendorId?: string;
   productId?: string;
+  product?: string;
+  friendlyName?: string;
 }
 
 export interface RelayChangeEvent {
@@ -32,6 +34,10 @@ export interface RelayInfo {
 
 export interface ArduinoAPI {
   listPorts(): Promise<SerialPort[]>;
+  listAllPorts(): Promise<SerialPort[]>;
+  savePort(portPath: string | null): Promise<{ success: boolean }>;
+  getSavedPort(): Promise<string | null>;
+  reconnect(): Promise<{ success: boolean; connected: boolean }>;
   connect(portPath: string): Promise<{ success: boolean }>;
   disconnect(): Promise<{ success: boolean }>;
   setRelay(relayNumber: number, state: boolean): Promise<{ success: boolean }>;

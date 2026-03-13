@@ -23,6 +23,20 @@ class ArduinoService {
     this._infoResolve = null;
   }
 
+  // Получить ВСЕ Serial порты без фильтрации
+  async listAllPorts() {
+    if (!this.serialAvailable) {
+      return [];
+    }
+    try {
+      const ports = await SerialPort.list();
+      return ports;
+    } catch (error) {
+      console.error('Ошибка получения списка портов:', error);
+      return [];
+    }
+  }
+
   // Найти доступные Serial порты
   async listPorts() {
     if (!this.serialAvailable) {
