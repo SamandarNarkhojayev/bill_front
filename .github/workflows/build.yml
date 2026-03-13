@@ -122,6 +122,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download Windows build
         uses: actions/download-artifact@v4
         with:
@@ -147,22 +150,22 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           TITLE="Бильярдный Клуб ${GITHUB_REF_NAME}"
 
-          cat > release-notes.md <<EOF
-          ## Бильярдный Клуб ${GITHUB_REF_NAME}
+          printf '%s\n' \
+            "## Бильярдный Клуб ${GITHUB_REF_NAME}" \
+            "" \
+            "### Скачать" \
+            "| Платформа | Файл |" \
+            "|-----------|------|" \
+            '| 🪟 Windows | `*Setup*.exe` |' \
+            '| 🍎 macOS Intel | `*.dmg` |' \
+            '| 🍎 macOS Apple Silicon | `*arm64.dmg` |' \
+            '| 🐧 Linux | `*.AppImage` или `*.deb` |' \
+            > release-notes.md
 
-          ### Скачать
-          | Платформа | Файл |
-          |-----------|------|
-          | 🪟 Windows | `*Setup*.exe` |
-          | 🍎 macOS Intel | `*.dmg` |
-          | 🍎 macOS Apple Silicon | `*arm64.dmg` |
-          | 🐧 Linux | `*.AppImage` или `*.deb` |
-          EOF
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file release-notes.md
           else
-            gh release create "$TAG" --title "$TITLE" --notes-file release-notes.md
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file release-notes.md
           fi
 
       - name: Upload Release Assets
@@ -179,5 +182,5 @@ jobs:
             -name '*.yml' -o \
             -name '*.blockmap' \
           \) -print0 | while IFS= read -r -d '' file; do
-            gh release upload "$TAG" "$file" --clobber
+            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
           done

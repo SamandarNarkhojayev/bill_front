@@ -30,6 +30,33 @@
 
 ## Пошаговый выпуск обновления
 
+### Быстрый способ (автоматически)
+
+Теперь можно выпустить релиз одной командой:
+
+```bash
+npm run release -- patch
+```
+
+Или:
+
+```bash
+npm run release -- minor
+npm run release -- major
+npm run release -- 1.0.7
+```
+
+Скрипт автоматически:
+- обновляет версию в `package.json` и `package-lock.json`;
+- запускает `npx tsc --noEmit`;
+- коммитит текущие изменения;
+- создаёт тег `v<version>`;
+- пушит ветку и тег в `origin`.
+
+> Перед запуском убедитесь, что в рабочем дереве только те изменения, которые должны попасть в релиз.
+
+Если хотите всё делать вручную — используйте шаги ниже.
+
 ### 1) Обновить версию
 
 Увеличьте версию в [package.json](package.json), например:
@@ -123,10 +150,10 @@ npm run dist:mac -- --publish never
 npm run dist:linux -- --publish never
 ```
 
-A в шаге релиза оставьте одну точку публикации и используйте загрузку с перезаписью (`gh release upload --clobber`):
+A в шаге релиза оставьте одну точку публикации и используйте загрузку с перезаписью (`gh release upload --repo ... --clobber`):
 
 ```bash
-gh release upload "$TAG" "$FILE" --clobber
+gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --clobber
 ```
 
 ### Ошибка проверки обновлений: `404 ... releases.atom`

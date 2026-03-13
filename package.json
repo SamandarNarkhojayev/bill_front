@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -16,6 +16,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "release": "bash ./scripts/release.sh",
     "electron": "NODE_ENV=production electron .",
     "electron:dev": "NODE_ENV=development electron .",
     "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\"",
@@ -49,7 +50,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "public/icon.png"
@@ -58,18 +61,27 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "public/icon.png",
       "category": "public.app-category.utilities"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "public/icon.png",
       "category": "Utility"
     },
