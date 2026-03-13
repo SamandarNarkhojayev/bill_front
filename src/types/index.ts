@@ -150,6 +150,10 @@ export interface AppSettings {
   soundEnabled: boolean;
   autoPrintReceipt: boolean; // Автоматически печатать чек при закрытии стола
   savedPortPath: string | null; // Вручную сохранённый порт (приоритет при подключении)
+  // Настройки размера чека
+  receiptWidthMm: number;    // Ширина чека в мм (по умолчанию 80)
+  receiptFontSize: number;   // Базовый размер шрифта в px (по умолчанию 14)
+  receiptPaddingMm: number;  // Внутренний отступ в мм (по умолчанию 5)
   tables: TableSettings[];
 }
 

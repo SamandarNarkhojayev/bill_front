@@ -12,6 +12,10 @@ interface ReceiptData {
   barCost: number;
   totalCost: number;
   currency: string;
+  // Настройки размера (опциональные, есть дефолты)
+  receiptWidthMm?: number;
+  receiptFontSize?: number;
+  receiptPaddingMm?: number;
 }
 
 const formatDateTime = (timestamp: number): string => {
@@ -62,7 +66,10 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     barOrders,
     barCost,
     totalCost,
-    currency
+    currency,
+    receiptWidthMm = 80,
+    receiptFontSize = 14,
+    receiptPaddingMm = 5,
   } = data;
 
   const barItemsHTML = barOrders.length > 0
@@ -81,6 +88,10 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
 <head>
   <meta charset="UTF-8">
   <style>
+    @page {
+      size: ${receiptWidthMm}mm auto;
+      margin: 0;
+    }
     * {
       margin: 0;
       padding: 0;
@@ -88,9 +99,9 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     }
     body {
       font-family: 'Courier New', monospace;
-      font-size: 12px;
-      width: 80mm;
-      padding: 5mm;
+      font-size: ${receiptFontSize}px;
+      width: ${receiptWidthMm}mm;
+      padding: ${receiptPaddingMm}mm;
       background: white;
       color: black;
     }
@@ -99,33 +110,34 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     }
     .header {
       text-align: center;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       border-bottom: 1px dashed #000;
-      padding-bottom: 10px;
+      padding-bottom: 12px;
     }
     .club-name {
-      font-size: 16px;
+      font-size: ${receiptFontSize + 4}px;
       font-weight: bold;
-      margin-bottom: 5px;
+      margin-bottom: 6px;
     }
     .date {
-      font-size: 11px;
+      font-size: ${receiptFontSize - 2}px;
       color: #333;
     }
     .section {
-      margin: 10px 0;
-      padding: 8px 0;
+      margin: 12px 0;
+      padding: 10px 0;
       border-bottom: 1px dashed #000;
     }
     .section-title {
       font-weight: bold;
-      margin-bottom: 5px;
-      font-size: 12px;
+      margin-bottom: 6px;
+      font-size: ${receiptFontSize}px;
     }
     .row {
       display: flex;
       justify-content: space-between;
-      margin: 3px 0;
+      margin: 4px 0;
+      font-size: ${receiptFontSize - 1}px;
     }
     .row-label {
       color: #333;
@@ -136,35 +148,35 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 11px;
+      font-size: ${receiptFontSize - 2}px;
     }
     th {
       text-align: left;
       border-bottom: 1px solid #000;
-      padding: 3px 0;
-      font-size: 10px;
+      padding: 4px 0;
+      font-size: ${receiptFontSize - 3}px;
     }
     .total-section {
-      margin-top: 10px;
-      padding-top: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
       border-top: 2px solid #000;
     }
     .total-row {
       display: flex;
       justify-content: space-between;
-      font-size: 16px;
+      font-size: ${receiptFontSize + 4}px;
       font-weight: bold;
-      margin-top: 5px;
+      margin-top: 6px;
     }
     .footer {
       text-align: center;
-      margin-top: 15px;
-      font-size: 10px;
+      margin-top: 18px;
+      font-size: ${receiptFontSize - 3}px;
       color: #666;
     }
     .divider {
       border-bottom: 1px dashed #000;
-      margin: 8px 0;
+      margin: 10px 0;
     }
   </style>
 </head>
@@ -248,7 +260,8 @@ export const printReceipt = async (data: ReceiptData): Promise<boolean> => {
 
   try {
     const html = generateReceiptHTML(data);
-    await window.electronAPI.printer.printReceipt(html);
+    const widthMm = data.receiptWidthMm || 80;
+    await window.electronAPI.printer.printReceipt(html, widthMm);
     return true;
   } catch (error) {
     console.error('Print error:', error);

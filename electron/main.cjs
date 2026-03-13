@@ -460,6 +460,47 @@ app.on('activate', () => {
   }
 });
 
+// === Файловое хранилище (замена localStorage) ===
+function getStorePath() {
+  return path.join(app.getPath('userData'), 'app-storage.json');
+}
+
+function readStorage() {
+  try {
+    if (fs.existsSync(getStorePath())) {
+      return JSON.parse(fs.readFileSync(getStorePath(), 'utf8'));
+    }
+  } catch (err) {
+    console.error('[Storage] Read error:', err.message);
+  }
+  return {};
+}
+
+function writeStorage(store) {
+  try {
+    fs.writeFileSync(getStorePath(), JSON.stringify(store), 'utf8');
+  } catch (err) {
+    console.error('[Storage] Write error:', err.message);
+  }
+}
+
+ipcMain.handle('store:get', (_event, key) => {
+  const store = readStorage();
+  return store[key] ?? null;
+});
+
+ipcMain.handle('store:set', (_event, key, value) => {
+  const store = readStorage();
+  store[key] = value;
+  writeStorage(store);
+});
+
+ipcMain.handle('store:remove', (_event, key) => {
+  const store = readStorage();
+  delete store[key];
+  writeStorage(store);
+});
+
 // === Arduino IPC обработчики ===
 
 // Получить список доступных Serial портов (отфильтрованные)
@@ -599,12 +640,13 @@ ipcMain.handle('arduino:get-info', async () => {
 });
 
 // === Печать чека ===
-ipcMain.handle('print:receipt', async (event, receiptHTML) => {
+ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm) => {
   try {
+    const paperWidth = widthMm || 80; // мм, по умолчанию 80
     // Создаем невидимое окно для печати
     const printWindow = new BrowserWindow({
-      width: 300,
-      height: 600,
+      width: Math.max(400, Math.round(paperWidth * 4)),
+      height: 900,
       show: false,
       webPreferences: {
         nodeIntegration: false,
@@ -616,14 +658,16 @@ ipcMain.handle('print:receipt', async (event, receiptHTML) => {
     await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(receiptHTML)}`);
 
     // Даём время на рендеринг
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Печатаем
     printWindow.webContents.print(
       {
         silent: false, // Показать диалог выбора принтера
         printBackground: true,
-        margins: { marginType: 'none' }
+        margins: { marginType: 'none' },
+        pageSize: { width: paperWidth * 1000, height: 297000 }, // ширина в микронах
+        scaleFactor: 100,
       },
       (success, failureReason) => {
         printWindow.close();

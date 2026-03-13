@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { playOrderSound } from '../utils/sounds';
 import type {
   BilliardTable,
@@ -115,6 +115,9 @@ const defaultSettings: AppSettings = {
   soundEnabled: true,
   autoPrintReceipt: false,
   savedPortPath: null,
+  receiptWidthMm: 80,
+  receiptFontSize: 14,
+  receiptPaddingMm: 5,
   tables: [
     { id: 1, name: 'Стол №1', relayNumber: 1, pricePerHour: 2000, isActive: true },
     { id: 2, name: 'Стол №2', relayNumber: 2, pricePerHour: 2000, isActive: true },
@@ -200,6 +203,45 @@ interface AppStore {
   openModal: (modal: string, data?: Record<string, unknown>) => void;
   closeModal: () => void;
 }
+
+// ===== НАДЁЖНОЕ ФАЙЛОВОЕ ХРАНИЛИЩЕ (через IPC в Electron) =====
+const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
+  getItem: async (name: string): Promise<string | null> => {
+    try {
+      if (window.electronAPI?.store) {
+        const value = await window.electronAPI.store.get(name);
+        return value ?? null;
+      }
+    } catch (err) {
+      console.error('[Storage] getItem error:', err);
+    }
+    // Fallback на localStorage (dev-mode без Electron)
+    return localStorage.getItem(name);
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    try {
+      if (window.electronAPI?.store) {
+        await window.electronAPI.store.set(name, value);
+        return;
+      }
+    } catch (err) {
+      console.error('[Storage] setItem error:', err);
+    }
+    // Fallback на localStorage
+    localStorage.setItem(name, value);
+  },
+  removeItem: async (name: string): Promise<void> => {
+    try {
+      if (window.electronAPI?.store) {
+        await window.electronAPI.store.remove(name);
+        return;
+      }
+    } catch (err) {
+      console.error('[Storage] removeItem error:', err);
+    }
+    localStorage.removeItem(name);
+  },
+}));
 
 // ===== STORE =====
 export const useStore = create<AppStore>()(
@@ -700,6 +742,7 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: 'billiard-club-storage',
+      storage: electronFileStorage,
       partialize: (state) => ({
         sessionHistory: state.sessionHistory,
         completedOrders: state.completedOrders,
@@ -712,33 +755,54 @@ export const useStore = create<AppStore>()(
         shiftHistory: state.shiftHistory,
       }),
       merge: (persistedState, currentState) => {
-        const persisted = persistedState as Partial<AppStore>;
-        const merged = { ...currentState, ...persisted };
-        // Авторизация всегда сбрасывается при перезапуске
-        merged.isAuthenticated = false;
-        merged.currentUser = null;
-        merged.currentShift = null;
-        merged.settings = {
-          ...currentState.settings,
-          ...persisted.settings,
-          currency: 'тг',
+        // Если нет сохранённых данных — используем текущее состояние (дефолтное)
+        if (!persistedState) {
+          console.log('[Store] No persisted state found, using defaults');
+          return currentState;
+        }
+        try {
+          const persisted = persistedState as Partial<AppStore>;
+          const merged = { ...currentState, ...persisted };
+          // Авторизация всегда сбрасывается при перезапуске
+          merged.isAuthenticated = false;
+          merged.currentUser = null;
+          merged.currentShift = null;
+          merged.settings = {
+            ...currentState.settings,
+            ...(persisted.settings || {}),
+            currency: 'тг',
+          };
+          // Если нет пользователей — используем дефолтных
+          if (!persisted.users || persisted.users.length === 0) {
+            merged.users = defaultUsers;
+          }
+          if (persisted.settings?.tables) {
+            merged.tables = persisted.settings.tables.map((st) => ({
+              id: st.id,
+              name: st.name,
+              relayNumber: st.relayNumber,
+              status: 'free' as const,
+              lightOn: false,
+              pricePerHour: st.pricePerHour,
+              currentSession: null,
+            }));
+          }
+          console.log('[Store] Rehydrated from persistent storage');
+          return merged as AppStore;
+        } catch (err) {
+          console.error('[Store] Merge error, using defaults:', err);
+          return currentState;
+        }
+      },
+      onRehydrateStorage: () => {
+        console.log('[Store] Starting rehydration...');
+        return (state, error) => {
+          if (error) {
+            console.error('[Store] Rehydration error:', error);
+          } else {
+            console.log('[Store] Rehydration complete, sessions:', state?.sessionHistory?.length ?? 0);
+          }
         };
-        // Если нет пользователей — используем дефолтных
-        if (!persisted.users || persisted.users.length === 0) {
-          merged.users = defaultUsers;
-        }
-        if (persisted.settings?.tables) {
-          merged.tables = persisted.settings.tables.map((st) => ({
-            id: st.id,
-            name: st.name,
-            relayNumber: st.relayNumber,
-            status: 'free' as const,
-            lightOn: false,
-            pricePerHour: st.pricePerHour,
-            currentSession: null,
-          }));
-        }
-        return merged as AppStore;
       },
     }
   )

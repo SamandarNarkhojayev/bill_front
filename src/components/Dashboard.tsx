@@ -298,7 +298,10 @@ const Dashboard: React.FC = () => {
         barOrders: session.barOrders,
         barCost,
         totalCost: tableCost + barCost,
-        currency: settings.currency
+        currency: settings.currency,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
       });
     }
 

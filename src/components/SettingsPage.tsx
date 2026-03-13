@@ -181,6 +181,10 @@ const SettingsPage: React.FC = () => {
     if (!confirmed) return;
 
     localStorage.removeItem('billiard-club-storage');
+    // Также очищаем файловое хранилище (Electron)
+    if (window.electronAPI?.store) {
+      window.electronAPI.store.remove('billiard-club-storage').catch(() => {});
+    }
     window.location.reload();
   };
 
@@ -366,6 +370,101 @@ const SettingsPage: React.FC = () => {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Настройки чека */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <Printer size={18} />
+            Размер чека
+          </h3>
+          <div className="settings-fields">
+            <div className="settings-field">
+              <label className="settings-label">Ширина бумаги (мм)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="range"
+                  min={40}
+                  max={120}
+                  step={1}
+                  value={localSettings.receiptWidthMm}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptWidthMm: Number(e.target.value) }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="number"
+                  min={40}
+                  max={120}
+                  value={localSettings.receiptWidthMm}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptWidthMm: Math.max(40, Math.min(120, Number(e.target.value))) }))
+                  }
+                  className="form-input form-input-sm"
+                  style={{ width: 70, textAlign: 'center' }}
+                />
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>мм</span>
+              </div>
+              <p className="settings-hint">Стандарт: 58мм (узкий) или 80мм (широкий)</p>
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Размер шрифта (px)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="range"
+                  min={8}
+                  max={24}
+                  step={1}
+                  value={localSettings.receiptFontSize}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptFontSize: Number(e.target.value) }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="number"
+                  min={8}
+                  max={24}
+                  value={localSettings.receiptFontSize}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptFontSize: Math.max(8, Math.min(24, Number(e.target.value))) }))
+                  }
+                  className="form-input form-input-sm"
+                  style={{ width: 70, textAlign: 'center' }}
+                />
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>px</span>
+              </div>
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Отступы (мм)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={15}
+                  step={1}
+                  value={localSettings.receiptPaddingMm}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptPaddingMm: Number(e.target.value) }))
+                  }
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={15}
+                  value={localSettings.receiptPaddingMm}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, receiptPaddingMm: Math.max(0, Math.min(15, Number(e.target.value))) }))
+                  }
+                  className="form-input form-input-sm"
+                  style={{ width: 70, textAlign: 'center' }}
+                />
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>мм</span>
+              </div>
+            </div>
           </div>
         </div>
 

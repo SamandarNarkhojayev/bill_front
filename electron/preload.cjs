@@ -81,8 +81,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Printer API
   printer: {
-    // Печать чека
-    printReceipt: (receiptHTML) => ipcRenderer.invoke('print:receipt', receiptHTML),
+    // Печать чека (receiptHTML — строка HTML, widthMm — ширина в мм)
+    printReceipt: (receiptHTML, widthMm) => ipcRenderer.invoke('print:receipt', receiptHTML, widthMm),
     
     // Получить список принтеров
     getPrinters: () => ipcRenderer.invoke('print:get-printers')
@@ -100,6 +100,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeAllListeners: () => {
       ipcRenderer.removeAllListeners('updater:status');
     }
+  },
+
+  // Persistent Storage API (файловое хранилище через main-процесс)
+  store: {
+    get: (key) => ipcRenderer.invoke('store:get', key),
+    set: (key, value) => ipcRenderer.invoke('store:set', key, value),
+    remove: (key) => ipcRenderer.invoke('store:remove', key),
   }
 });
 
