@@ -174,32 +174,9 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          # Compatibility aliases for legacy updater (old versions expected dashed names)
-          VERSION="${GITHUB_REF_NAME#v}"
-          SRC_PREFIX="artifacts/macos/Biliardo.automation.for.billiard.club.-${VERSION}"
-          DST_PREFIX="artifacts/macos/Biliardo-(automation-for-billiard-club)-${VERSION}"
-          SRC_WIN="artifacts/windows/Biliardo.automation.for.billiard.club.Setup.${VERSION}.exe"
-          DST_WIN="artifacts/windows/Biliardo-(automation-for-billiard-club)-Setup-${VERSION}.exe"
-
-          if [[ -f "${SRC_PREFIX}-arm64-mac.zip" ]]; then
-            cp -f "${SRC_PREFIX}-arm64-mac.zip" "${DST_PREFIX}-arm64-mac.zip"
-          fi
-          if [[ -f "${SRC_PREFIX}-arm64-mac.zip.blockmap" ]]; then
-            cp -f "${SRC_PREFIX}-arm64-mac.zip.blockmap" "${DST_PREFIX}-arm64-mac.zip.blockmap"
-          fi
-          if [[ -f "${SRC_PREFIX}-mac.zip" ]]; then
-            cp -f "${SRC_PREFIX}-mac.zip" "${DST_PREFIX}-mac.zip"
-          fi
-          if [[ -f "${SRC_PREFIX}-mac.zip.blockmap" ]]; then
-            cp -f "${SRC_PREFIX}-mac.zip.blockmap" "${DST_PREFIX}-mac.zip.blockmap"
-          fi
-
-          if [[ -f "${SRC_WIN}" ]]; then
-            cp -f "${SRC_WIN}" "${DST_WIN}"
-          fi
-          if [[ -f "${SRC_WIN}.blockmap" ]]; then
-            cp -f "${SRC_WIN}.blockmap" "${DST_WIN}.blockmap"
-          fi
+          echo "=== Artifacts ==="
+          find artifacts -type f | head -50
+          echo "================="
 
           find artifacts -maxdepth 2 -type f \( \
             -name '*.exe' -o \

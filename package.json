@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "1.0.10",
+  "version": "1.0.11",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -58,6 +58,7 @@
       "icon": "public/icon.png"
     },
     "mac": {
+      "artifactName": "Biliardo-${version}-${arch}-mac.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -78,6 +79,7 @@
       "category": "public.app-category.utilities"
     },
     "linux": {
+      "artifactName": "Biliardo-${version}-${arch}.${ext}",
       "target": [
         "AppImage",
         "deb"
@@ -86,6 +88,7 @@
       "category": "Utility"
     },
     "nsis": {
+      "artifactName": "Biliardo-Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
