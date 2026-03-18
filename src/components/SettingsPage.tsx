@@ -38,6 +38,84 @@ const SettingsPage: React.FC = () => {
   const [isArduinoConnected, setIsArduinoConnected] = useState(false);
   const [portLoading, setPortLoading] = useState(false);
   const [portStatus, setPortStatus] = useState<string>('');
+  const [isRelayTestRunning, setIsRelayTestRunning] = useState(false);
+  const [relayTestMode, setRelayTestMode] = useState<'ultra' | 'fast' | 'medium' | 'slow'>('medium');
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const handleRelayMusicTest = async () => {
+    const api = window.electronAPI?.arduino;
+    if (!api || isRelayTestRunning) return;
+
+    setIsRelayTestRunning(true);
+    setPortStatus('🎵 Тест реле запущен...');
+
+    try {
+      const connected = await api.isConnected();
+      if (!connected) {
+        setPortStatus('❌ Arduino не подключен');
+        return;
+      }
+
+      const relayNumbers = Array.from(
+        new Set(
+          localSettings.tables
+            .filter((t) => t.isActive)
+            .map((t) => t.relayNumber)
+        )
+      ).sort((a, b) => a - b);
+
+      const availableRelays = relayNumbers.length > 0 ? relayNumbers : [1, 2, 3, 4, 5, 6];
+
+      const speedConfig: Record<'ultra' | 'fast' | 'medium' | 'slow', { onMs: number; offMs: number; label: string }> = {
+        ultra: { onMs: 45, offMs: 30, label: 'ультра быстрый' },
+        fast: { onMs: 90, offMs: 55, label: 'быстрый' },
+        medium: { onMs: 140, offMs: 80, label: 'средний' },
+        slow: { onMs: 220, offMs: 140, label: 'медленный' },
+      };
+      const speed = speedConfig[relayTestMode];
+
+      setPortStatus(`🎵 Тест реле: ${speed.label}`);
+
+      // «Музыкальный» порядок: подъём + спуск + акценты
+      const pattern = [
+        ...availableRelays,
+        ...[...availableRelays].reverse(),
+        availableRelays[0],
+        availableRelays[Math.floor(availableRelays.length / 2)],
+        availableRelays[availableRelays.length - 1],
+      ].filter((relay): relay is number => typeof relay === 'number');
+
+      for (const relay of pattern) {
+        await api.setRelay(relay, true);
+        await sleep(speed.onMs);
+        await api.setRelay(relay, false);
+        await sleep(speed.offMs);
+      }
+
+      setPortStatus('✅ Тест реле завершён');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPortStatus(`❌ Ошибка теста: ${msg}`);
+    } finally {
+      // Страховка: выключаем все активные реле после теста
+      try {
+        const api2 = window.electronAPI?.arduino;
+        if (api2) {
+          const relayNumbers = Array.from(
+            new Set(localSettings.tables.filter((t) => t.isActive).map((t) => t.relayNumber))
+          );
+          const relays = relayNumbers.length > 0 ? relayNumbers : [1, 2, 3, 4, 5, 6];
+          await Promise.all(relays.map((relay) => api2.setRelay(relay, false).catch(() => undefined)));
+        }
+      } catch {
+        // ignore
+      }
+
+      setIsRelayTestRunning(false);
+      setTimeout(() => setPortStatus(''), 3000);
+    }
+  };
 
   const loadAllPorts = useCallback(async () => {
     const api = window.electronAPI?.arduino;
@@ -554,6 +632,27 @@ const SettingsPage: React.FC = () => {
               <button onClick={loadAllPorts} className="btn btn-ghost" disabled={portLoading} style={{ padding: '4px 10px', fontSize: 12 }}>
                 <RefreshCw size={13} className={portLoading ? 'animate-spin' : ''} />
                 Обновить
+              </button>
+              <select
+                value={relayTestMode}
+                onChange={(e) => setRelayTestMode(e.target.value as 'ultra' | 'fast' | 'medium' | 'slow')}
+                className="form-input"
+                disabled={isRelayTestRunning || portLoading}
+                style={{ padding: '4px 8px', fontSize: 12, minWidth: 150 }}
+              >
+                <option value="ultra">Ультра быстрый</option>
+                <option value="fast">Быстрый</option>
+                <option value="medium">Средний</option>
+                <option value="slow">Медленный</option>
+              </select>
+              <button
+                onClick={handleRelayMusicTest}
+                className="btn btn-ghost"
+                disabled={!isArduinoConnected || isRelayTestRunning || portLoading}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                <Cpu size={13} />
+                {isRelayTestRunning ? 'Тест...' : 'Тест реле'}
               </button>
               {isArduinoConnected && (
                 <button onClick={handleDisconnect} className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 12 }}>

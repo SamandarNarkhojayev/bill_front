@@ -9,13 +9,30 @@ import {
   ShoppingBag,
   ChevronLeft,
   ChevronRight,
+  Filter,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
+// Утилита: дата в строку YYYY-MM-DD (локальное время)
+const dateToStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// Утилита: строка → локальный Date
+const strToDate = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 const ReportsPage: React.FC = () => {
   const { sessionHistory, settings } = useStore();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'all'>('day');
+  const [selectedDate, setSelectedDate] = useState(dateToStr(new Date()));
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all'>('day');
+  const [rangeStart, setRangeStart] = useState(dateToStr(new Date()));
+  const [rangeEnd, setRangeEnd] = useState(dateToStr(new Date()));
 
   // Фильтрация по дате
   const filteredSessions = useMemo(() => {
@@ -23,17 +40,21 @@ const ReportsPage: React.FC = () => {
     if (viewMode === 'day') {
       return sessionHistory.filter((s) => s.date === selectedDate);
     }
-    // week
-    const selected = new Date(selectedDate);
-    const weekStart = new Date(selected);
-    weekStart.setDate(selected.getDate() - selected.getDay() + 1);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    return sessionHistory.filter((s) => {
-      const d = new Date(s.date);
-      return d >= weekStart && d <= weekEnd;
-    });
-  }, [sessionHistory, selectedDate, viewMode]);
+    if (viewMode === 'range') {
+      return sessionHistory.filter((s) => s.date >= rangeStart && s.date <= rangeEnd);
+    }
+    // week — понедельник–воскресенье
+    const sel = strToDate(selectedDate);
+    const day = sel.getDay(); // 0=вс, 1=пн, ...
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(sel);
+    monday.setDate(sel.getDate() + mondayOffset);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const wStart = dateToStr(monday);
+    const wEnd = dateToStr(sunday);
+    return sessionHistory.filter((s) => s.date >= wStart && s.date <= wEnd);
+  }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd]);
 
   // Статистика
   const stats = useMemo(() => {
@@ -70,17 +91,33 @@ const ReportsPage: React.FC = () => {
   const maxByHour = Math.max(...stats.byHour, 1);
 
   const changeDate = (delta: number) => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + delta);
-    setSelectedDate(d.toISOString().split('T')[0]);
+    const d = strToDate(selectedDate);
+    if (viewMode === 'week') {
+      d.setDate(d.getDate() + delta * 7);
+    } else {
+      d.setDate(d.getDate() + delta);
+    }
+    setSelectedDate(dateToStr(d));
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
+    return strToDate(dateStr).toLocaleDateString('ru-RU', {
       weekday: 'short',
       day: 'numeric',
       month: 'long',
     });
+  };
+
+  const formatWeekRange = () => {
+    const sel = strToDate(selectedDate);
+    const day = sel.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(sel);
+    monday.setDate(sel.getDate() + mondayOffset);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = (d: Date) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    return `${fmt(monday)} — ${fmt(sunday)}`;
   };
 
   const formatTime = (timestamp: number) => {
@@ -111,6 +148,12 @@ const ReportsPage: React.FC = () => {
             Неделя
           </button>
           <button
+            onClick={() => setViewMode('range')}
+            className={`page-tab ${viewMode === 'range' ? 'active' : ''}`}
+          >
+            <Filter size={14} /> Диапазон
+          </button>
+          <button
             onClick={() => setViewMode('all')}
             className={`page-tab ${viewMode === 'all' ? 'active' : ''}`}
           >
@@ -120,23 +163,73 @@ const ReportsPage: React.FC = () => {
       </div>
 
       {/* Переключение даты */}
-      {viewMode !== 'all' && (
+      {(viewMode === 'day' || viewMode === 'week') && (
         <div className="date-nav">
           <button onClick={() => changeDate(-1)} className="date-nav-btn">
             <ChevronLeft size={20} />
           </button>
           <div className="date-nav-current">
             <Calendar size={16} />
-            <span>{formatDate(selectedDate)}</span>
+            <span>{viewMode === 'week' ? formatWeekRange() : formatDate(selectedDate)}</span>
           </div>
           <button onClick={() => changeDate(1)} className="date-nav-btn">
             <ChevronRight size={20} />
           </button>
           <button
-            onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+            onClick={() => setSelectedDate(dateToStr(new Date()))}
             className="btn btn-ghost btn-sm"
           >
             Сегодня
+          </button>
+        </div>
+      )}
+
+      {/* Диапазон дат */}
+      {viewMode === 'range' && (
+        <div className="date-nav" style={{ gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>С</label>
+            <input
+              type="date"
+              value={rangeStart}
+              onChange={(e) => setRangeStart(e.target.value)}
+              className="form-input"
+              style={{ width: 160 }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>По</label>
+            <input
+              type="date"
+              value={rangeEnd}
+              onChange={(e) => setRangeEnd(e.target.value)}
+              className="form-input"
+              style={{ width: 160 }}
+            />
+          </div>
+          <button
+            onClick={() => {
+              const today = dateToStr(new Date());
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 7);
+              setRangeStart(dateToStr(weekAgo));
+              setRangeEnd(today);
+            }}
+            className="btn btn-ghost btn-sm"
+          >
+            7 дней
+          </button>
+          <button
+            onClick={() => {
+              const today = dateToStr(new Date());
+              const monthAgo = new Date();
+              monthAgo.setDate(monthAgo.getDate() - 30);
+              setRangeStart(dateToStr(monthAgo));
+              setRangeEnd(today);
+            }}
+            className="btn btn-ghost btn-sm"
+          >
+            30 дней
           </button>
         </div>
       )}

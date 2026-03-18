@@ -12,6 +12,11 @@ import {
   Banknote,
   AlertCircle,
   Printer,
+  CalendarClock,
+  X,
+  User,
+  Phone,
+  FileText,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { BilliardTable, SessionMode } from '../types';
@@ -93,9 +98,13 @@ const TableCard: React.FC<{
   onStop: (tableId: number) => void;
   onOpenBar: (tableId: number) => void;
   onTimeExpired: (tableId: number) => void;
-}> = ({ table, onStart, onStop, onOpenBar, onTimeExpired }) => {
+  onReserve: (tableId: number) => void;
+  onCancelReservation: (tableId: number) => void;
+  reservation?: { customerName: string; customerPhone: string; reservedFor: number; notes: string } | null;
+}> = ({ table, onStart, onStop, onOpenBar, onTimeExpired, onReserve, onCancelReservation, reservation }) => {
   const { settings } = useStore();
   const isOccupied = table.status === 'occupied';
+  const isReserved = table.status === 'reserved';
   const session = table.currentSession;
 
   const [currentCost, setCurrentCost] = useState(0);
@@ -137,15 +146,15 @@ const TableCard: React.FC<{
   }, [table.id, onTimeExpired]);
 
   return (
-    <div className={`table-card ${isOccupied ? 'occupied' : 'free'}`}>
-      <div className={`table-card-status-bar ${isOccupied ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+    <div className={`table-card ${isOccupied ? 'occupied' : isReserved ? 'reserved' : 'free'}`}>
+      <div className={`table-card-status-bar ${isOccupied ? 'bg-emerald-500' : isReserved ? 'bg-amber-500' : 'bg-slate-600'}`} />
 
       <div className="table-card-content">
         <div className="table-card-header">
           <div>
             <h3 className="table-card-name">{table.name}</h3>
-            <span className={`table-card-status ${isOccupied ? 'status-occupied' : 'status-free'}`}>
-              {isOccupied ? '● Занят' : '○ Свободен'}
+            <span className={`table-card-status ${isOccupied ? 'status-occupied' : isReserved ? 'status-reserved' : 'status-free'}`}>
+              {isOccupied ? '● Занят' : isReserved ? '◉ Бронь' : '○ Свободен'}
             </span>
           </div>
           {isOccupied && session && (
@@ -187,6 +196,35 @@ const TableCard: React.FC<{
               </span>
             </div>
           </div>
+        ) : isReserved && reservation ? (
+          <div className="table-card-session">
+            <div className="session-info-row">
+              <CalendarClock size={14} className="text-amber-400" />
+              <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                {new Date(reservation.reservedFor).toLocaleString('ru-RU', {
+                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+            </div>
+            {reservation.customerName && (
+              <div className="session-info-row">
+                <User size={14} className="text-slate-400" />
+                <span style={{ fontSize: 13 }}>{reservation.customerName}</span>
+              </div>
+            )}
+            {reservation.customerPhone && (
+              <div className="session-info-row">
+                <Phone size={14} className="text-slate-400" />
+                <span style={{ fontSize: 13 }}>{reservation.customerPhone}</span>
+              </div>
+            )}
+            {reservation.notes && (
+              <div className="session-info-row">
+                <FileText size={14} className="text-slate-400" />
+                <span style={{ fontSize: 12, opacity: 0.7 }}>{reservation.notes}</span>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="table-card-empty">
             <div className="table-card-price">
@@ -198,11 +236,27 @@ const TableCard: React.FC<{
         )}
 
         <div className="table-card-actions">
-          {!isOccupied ? (
-            <button onClick={() => onStart(table.id)} className="btn btn-primary btn-full">
-              <Play size={16} />
-              Начать игру
-            </button>
+          {!isOccupied && !isReserved ? (
+            <>
+              <button onClick={() => onStart(table.id)} className="btn btn-primary" style={{ flex: 2 }}>
+                <Play size={16} />
+                Начать игру
+              </button>
+              <button onClick={() => onReserve(table.id)} className="btn btn-ghost" style={{ flex: 1 }} title="Забронировать">
+                <CalendarClock size={16} />
+              </button>
+            </>
+          ) : isReserved ? (
+            <>
+              <button onClick={() => onStart(table.id)} className="btn btn-primary btn-half">
+                <Play size={16} />
+                Начать
+              </button>
+              <button onClick={() => onCancelReservation(table.id)} className="btn btn-ghost btn-half">
+                <X size={16} />
+                Отменить
+              </button>
+            </>
           ) : (
             <>
               <button onClick={() => onOpenBar(table.id)} className="btn btn-amber btn-half">
@@ -223,9 +277,13 @@ const TableCard: React.FC<{
 
 // ===== DASHBOARD =====
 const Dashboard: React.FC = () => {
-  const { tables, startSession, endSession, settings, getTodayRevenue, getTodaySessions, openModal } = useStore();
+  const {
+    tables, startSession, endSession, settings, getTodayRevenue, getTodaySessions, openModal,
+    reservations, addReservation, cancelReservation,
+  } = useStore();
   const [showStartModal, setShowStartModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
+  const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
 
   // Стартовая модалка
@@ -233,6 +291,13 @@ const Dashboard: React.FC = () => {
   const [timeHours, setTimeHours] = useState(1);
   const [timeMinutes, setTimeMinutes] = useState(0);
   const [fixedAmount, setFixedAmount] = useState(5000);
+
+  // Бронирование
+  const [reserveName, setReserveName] = useState('');
+  const [reservePhone, setReservePhone] = useState('');
+  const [reserveDate, setReserveDate] = useState('');
+  const [reserveTime, setReserveTime] = useState('');
+  const [reserveNotes, setReserveNotes] = useState('');
 
   const revenue = getTodayRevenue();
   const todaySessions = getTodaySessions();
@@ -319,6 +384,41 @@ const Dashboard: React.FC = () => {
     openModal('bar-order', { tableId });
   };
 
+  const handleReserve = (tableId: number) => {
+    setSelectedTable(tableId);
+    setReserveName('');
+    setReservePhone('');
+    // Дефолт — сегодня
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    setReserveDate(`${y}-${m}-${d}`);
+    const h = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    setReserveTime(`${h}:${min}`);
+    setReserveNotes('');
+    setShowReserveModal(true);
+  };
+
+  const handleConfirmReserve = () => {
+    if (!selectedTable || !reserveDate || !reserveTime) return;
+    const [y, m, d] = reserveDate.split('-').map(Number);
+    const [hh, mm] = reserveTime.split(':').map(Number);
+    const reservedFor = new Date(y, m - 1, d, hh, mm).getTime();
+    addReservation(selectedTable, reserveName, reservePhone, reservedFor, reserveNotes);
+    setShowReserveModal(false);
+  };
+
+  const handleCancelReservation = (tableId: number) => {
+    const r = reservations.find((res) => res.tableId === tableId);
+    if (r) cancelReservation(r.id);
+  };
+
+  const getTableReservation = (tableId: number) => {
+    return reservations.find((r) => r.tableId === tableId) || null;
+  };
+
   const selectedTableData = selectedTable ? tables.find((t) => t.id === selectedTable) : null;
 
   return (
@@ -365,6 +465,9 @@ const Dashboard: React.FC = () => {
             onStop={handleStop}
             onOpenBar={handleOpenBar}
             onTimeExpired={handleTimeExpired}
+            onReserve={handleReserve}
+            onCancelReservation={handleCancelReservation}
+            reservation={getTableReservation(table.id)}
           />
         ))}
       </div>
@@ -519,6 +622,87 @@ const Dashboard: React.FC = () => {
 
       {/* Модалка заказа бара */}
       <TableModal />
+
+      {/* Модалка бронирования */}
+      {showReserveModal && selectedTableData && (
+        <div className="modal-overlay" onClick={() => setShowReserveModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">
+              <CalendarClock size={20} className="text-amber-400" />
+              Бронирование — {selectedTableData.name}
+            </h2>
+          <div className="modal-body">
+            <div className="modal-field-group">
+              <div>
+                <label className="modal-label">Имя клиента</label>
+                <input
+                  type="text"
+                  value={reserveName}
+                  onChange={(e) => setReserveName(e.target.value)}
+                  placeholder="Имя клиента"
+                  className="modal-input"
+                />
+              </div>
+              <div>
+                <label className="modal-label">Телефон</label>
+                <input
+                  type="tel"
+                  value={reservePhone}
+                  onChange={(e) => setReservePhone(e.target.value)}
+                  placeholder="+7 (___) ___-__-__"
+                  className="modal-input"
+                />
+              </div>
+            </div>
+            <div className="modal-field-group">
+              <div className="modal-field-row">
+                <div>
+                  <label className="modal-label">Дата</label>
+                  <input
+                    type="date"
+                    value={reserveDate}
+                    onChange={(e) => setReserveDate(e.target.value)}
+                    className="modal-input"
+                  />
+                </div>
+                <div>
+                  <label className="modal-label">Время</label>
+                  <input
+                    type="time"
+                    value={reserveTime}
+                    onChange={(e) => setReserveTime(e.target.value)}
+                    className="modal-input"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="modal-label">Заметка</label>
+                <input
+                  type="text"
+                  value={reserveNotes}
+                  onChange={(e) => setReserveNotes(e.target.value)}
+                  placeholder="Доп. информация..."
+                  className="modal-input"
+                />
+              </div>
+            </div>
+          </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowReserveModal(false)} className="btn btn-ghost">
+                Отмена
+              </button>
+              <button
+                onClick={handleConfirmReserve}
+                disabled={!reserveDate || !reserveTime}
+                className="btn btn-primary"
+              >
+                <CalendarClock size={16} />
+                Забронировать
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

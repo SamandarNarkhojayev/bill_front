@@ -47,7 +47,7 @@ const BarPage: React.FC = () => {
     barMenu, barCategories, addMenuItem, updateMenuItem, removeMenuItem,
     addBarCategory, updateBarCategory, removeBarCategory,
     tables, addBarOrderToTable, settings, updateStock,
-    createRevision, inventoryRevisions,
+    createRevision, inventoryRevisions, sellFromBar,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<BarTab>('quick-order');
@@ -68,6 +68,7 @@ const BarPage: React.FC = () => {
   // Заказ
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
   const [quickCart, setQuickCart] = useState<Map<string, number>>(new Map());
+  const [shopMode, setShopMode] = useState(false);
 
   // Категории
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -121,6 +122,18 @@ const BarPage: React.FC = () => {
   const quickCartCount = Array.from(quickCart.values()).reduce((s, q) => s + q, 0);
 
   const handleQuickOrder = () => {
+    if (shopMode) {
+      // Продажа без стола
+      const items: { menuItem: BarMenuItem; quantity: number }[] = [];
+      quickCart.forEach((qty, itemId) => {
+        const item = barMenu.find((i) => i.id === itemId);
+        if (item) items.push({ menuItem: item, quantity: qty });
+      });
+      if (items.length === 0) return;
+      sellFromBar(items);
+      setQuickCart(new Map());
+      return;
+    }
     if (!selectedTable) return;
     quickCart.forEach((qty, itemId) => {
       const item = barMenu.find((i) => i.id === itemId);
@@ -303,21 +316,42 @@ const BarPage: React.FC = () => {
 
           <div className="bar-order-sidebar">
             <div className="bar-sidebar-section">
-              <h3 className="bar-sidebar-title"><GripVertical size={16} /> Стол</h3>
-              {occupiedTables.length === 0 ? (
-                <p className="bar-sidebar-empty">Нет активных столов</p>
-              ) : (
-                <div className="bar-table-list">
-                  {occupiedTables.map((table) => (
-                    <button key={table.id} onClick={() => setSelectedTable(table.id)}
-                      className={`bar-table-btn ${selectedTable === table.id ? 'selected' : ''}`}>
-                      <span className="bar-table-btn-name">{table.name}</span>
-                      <span className="bar-table-btn-mode">
-                        {table.currentSession?.mode === 'time' ? 'По времени' : table.currentSession?.mode === 'amount' ? 'На сумму' : 'Бессрочно'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              <h3 className="bar-sidebar-title"><GripVertical size={16} /> Режим продажи</h3>
+              <div className="bar-table-list" style={{ marginBottom: 8 }}>
+                <button
+                  onClick={() => { setShopMode(false); }}
+                  className={`bar-table-btn ${!shopMode ? 'selected' : ''}`}
+                >
+                  <span className="bar-table-btn-name">К столу</span>
+                  <span className="bar-table-btn-mode">Добавить к счёту</span>
+                </button>
+                <button
+                  onClick={() => { setShopMode(true); setSelectedTable(null); }}
+                  className={`bar-table-btn ${shopMode ? 'selected' : ''}`}
+                  style={shopMode ? { borderColor: '#f59e0b40', background: '#f59e0b10' } : {}}
+                >
+                  <span className="bar-table-btn-name">🛒 Без стола</span>
+                  <span className="bar-table-btn-mode">Быстрая продажа</span>
+                </button>
+              </div>
+              {!shopMode && (
+                <>
+                  {occupiedTables.length === 0 ? (
+                    <p className="bar-sidebar-empty">Нет активных столов</p>
+                  ) : (
+                    <div className="bar-table-list">
+                      {occupiedTables.map((table) => (
+                        <button key={table.id} onClick={() => setSelectedTable(table.id)}
+                          className={`bar-table-btn ${selectedTable === table.id ? 'selected' : ''}`}>
+                          <span className="bar-table-btn-name">{table.name}</span>
+                          <span className="bar-table-btn-mode">
+                            {table.currentSession?.mode === 'time' ? 'По времени' : table.currentSession?.mode === 'amount' ? 'На сумму' : 'Бессрочно'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -354,9 +388,9 @@ const BarPage: React.FC = () => {
                     <span>Итого</span>
                     <span className="bar-cart-total-value">{quickCartTotal.toLocaleString()} {settings.currency}</span>
                   </div>
-                  <button onClick={handleQuickOrder} disabled={!selectedTable}
-                    className="btn btn-amber btn-full bar-cart-submit">
-                    <ShoppingCart size={18} /> Добавить к счёту
+                  <button onClick={handleQuickOrder} disabled={!shopMode && !selectedTable}
+                    className={`btn ${shopMode ? 'btn-amber' : 'btn-amber'} btn-full bar-cart-submit`}>
+                    <ShoppingCart size={18} /> {shopMode ? 'Продать' : 'Добавить к счёту'}
                   </button>
                 </>
               )}

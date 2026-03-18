@@ -113,6 +113,18 @@ export interface InventoryRevisionItem {
   costPrice: number;       // себестоимость единицы
 }
 
+// ===== БРОНИРОВАНИЕ =====
+
+export interface Reservation {
+  id: string;
+  tableId: number;
+  customerName: string;
+  customerPhone: string;
+  reservedFor: number; // timestamp — на какое время бронь
+  createdAt: number;
+  notes: string;
+}
+
 // ===== ОТЧЁТЫ =====
 
 export interface DailyReport {

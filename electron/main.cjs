@@ -304,6 +304,8 @@ function createWindow() {
 // Этот метод будет вызван когда Electron закончит
 // инициализацию и будет готов создавать окна браузера
 app.whenReady().then(() => {
+  // Инициализация надёжного хранилища (in-memory кэш + бэкапы)
+  initStorage();
   initUpdater();
   createWindow();
   // Авто-подключение Arduino
@@ -460,30 +462,241 @@ app.on('activate', () => {
   }
 });
 
-// === Файловое хранилище (замена localStorage) ===
+// === НАДЁЖНОЕ ФАЙЛОВОЕ ХРАНИЛИЩЕ ===
+// Атомарная запись + ротация бэкапов + автовосстановление
+
+const BACKUP_COUNT = 5;           // Количество ротационных бэкапов
+const BACKUP_INTERVAL = 60000;    // Бэкап каждые 60 секунд
+const WRITE_DEBOUNCE = 1000;      // Дебаунс записи 1 секунда
+
+// Пути
 function getStorePath() {
   return path.join(app.getPath('userData'), 'app-storage.json');
 }
 
+function getBackupDir() {
+  const dir = path.join(app.getPath('userData'), 'backups');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function getBackupPath(index) {
+  return path.join(getBackupDir(), `app-storage.backup-${index}.json`);
+}
+
+function getTempPath() {
+  return getStorePath() + '.tmp';
+}
+
+// In-memory кэш хранилища — главная копия
+let _memoryStore = null;
+let _dirty = false;
+let _writeTimer = null;
+let _backupTimer = null;
+
+/**
+ * Атомарная запись на диск:
+ * 1) Записать во временный файл
+ * 2) fsync (принудительно сбросить буфер ОС на диск)
+ * 3) Переименовать (атомарная операция на большинстве FS)
+ */
+function atomicWriteSync(filePath, data) {
+  const tmpPath = filePath + '.tmp';
+  const fd = fs.openSync(tmpPath, 'w');
+  try {
+    fs.writeSync(fd, data, 0, 'utf8');
+    fs.fsyncSync(fd); // Принудительно сбрасываем буфер ОС на физический диск
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, filePath); // Атомарная замена
+}
+
+/**
+ * Безопасное чтение JSON файла.
+ * Возвращает { ok: true, data } или { ok: false }.
+ */
+function safeReadJSON(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return { ok: false };
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw || raw.trim().length < 2) return { ok: false }; // Пустой/обрезанный файл
+    const data = JSON.parse(raw);
+    return { ok: true, data };
+  } catch (err) {
+    console.error('[Storage] Corrupted file:', filePath, err.message);
+    return { ok: false };
+  }
+}
+
+/**
+ * Валидация данных хранилища.
+ * Проверяет что JSON имеет ожидаемую структуру.
+ */
+function isValidStore(store) {
+  if (!store || typeof store !== 'object') return false;
+  // Должен содержать хотя бы ключ billiard-store (Zustand persist key)
+  // Или быть объектом с данными
+  return Object.keys(store).length > 0;
+}
+
+/**
+ * Чтение хранилища с автовосстановлением из бэкапов.
+ * Порядок: main → backup-0 → backup-1 → ... → backup-N
+ */
 function readStorage() {
-  try {
-    if (fs.existsSync(getStorePath())) {
-      return JSON.parse(fs.readFileSync(getStorePath(), 'utf8'));
+  // 1. Если есть in-memory кэш — он всегда самый свежий
+  if (_memoryStore !== null) {
+    return _memoryStore;
+  }
+
+  // 2. Читаем основной файл
+  const main = safeReadJSON(getStorePath());
+  if (main.ok && isValidStore(main.data)) {
+    console.log('[Storage] Loaded from main file');
+    _memoryStore = main.data;
+    return _memoryStore;
+  }
+
+  // 3. Основной файл повреждён — ищем рабочий бэкап
+  console.warn('[Storage] Main file corrupted/missing, trying backups...');
+  for (let i = 0; i < BACKUP_COUNT; i++) {
+    const bp = safeReadJSON(getBackupPath(i));
+    if (bp.ok && isValidStore(bp.data)) {
+      console.log(`[Storage] ✅ Restored from backup-${i}`);
+      _memoryStore = bp.data;
+      // Сразу сохраняем восстановленные данные в основной файл
+      try {
+        atomicWriteSync(getStorePath(), JSON.stringify(_memoryStore));
+        console.log('[Storage] Restored data saved to main file');
+      } catch (err) {
+        console.error('[Storage] Failed to save restored data:', err.message);
+      }
+      return _memoryStore;
     }
-  } catch (err) {
-    console.error('[Storage] Read error:', err.message);
   }
-  return {};
+
+  // 4. Ни основной файл, ни бэкапы не помогли
+  console.error('[Storage] ❌ No valid storage found, starting fresh');
+  _memoryStore = {};
+  return _memoryStore;
 }
 
+/**
+ * Запись хранилища (дебаунс).
+ * Данные сразу обновляются в памяти, на диск пишутся с задержкой.
+ */
 function writeStorage(store) {
+  _memoryStore = store;
+  _dirty = true;
+  scheduleDiskWrite();
+}
+
+/**
+ * Планирует запись на диск с дебаунсом.
+ */
+function scheduleDiskWrite() {
+  if (_writeTimer) clearTimeout(_writeTimer);
+  _writeTimer = setTimeout(() => {
+    flushToDisk();
+  }, WRITE_DEBOUNCE);
+}
+
+/**
+ * Немедленная запись на диск (вызывается при дебаунсе и при закрытии).
+ */
+function flushToDisk() {
+  if (!_dirty || _memoryStore === null) return;
   try {
-    fs.writeFileSync(getStorePath(), JSON.stringify(store), 'utf8');
+    const json = JSON.stringify(_memoryStore);
+    // Дополнительная проверка: не записываем пустые/сломанные данные
+    if (!json || json.length < 2) {
+      console.error('[Storage] Refusing to write empty/invalid data');
+      return;
+    }
+    atomicWriteSync(getStorePath(), json);
+    _dirty = false;
+    console.log('[Storage] Flushed to disk:', (json.length / 1024).toFixed(1), 'KB');
   } catch (err) {
-    console.error('[Storage] Write error:', err.message);
+    console.error('[Storage] Flush error:', err.message);
   }
 }
 
+/**
+ * Создание ротационного бэкапа.
+ * backup-4 → удаляется
+ * backup-3 → backup-4
+ * backup-2 → backup-3
+ * backup-1 → backup-2
+ * backup-0 → backup-1
+ * текущий файл → backup-0
+ */
+function createBackup() {
+  try {
+    // Сначала сбрасываем текущие данные на диск
+    flushToDisk();
+
+    const mainPath = getStorePath();
+    if (!fs.existsSync(mainPath)) return;
+
+    // Проверяем что основной файл валиден перед бэкапом
+    const mainCheck = safeReadJSON(mainPath);
+    if (!mainCheck.ok || !isValidStore(mainCheck.data)) {
+      console.warn('[Storage] Skipping backup — main file is invalid');
+      return;
+    }
+
+    // Ротация: сдвигаем бэкапы
+    for (let i = BACKUP_COUNT - 1; i > 0; i--) {
+      const src = getBackupPath(i - 1);
+      const dst = getBackupPath(i);
+      if (fs.existsSync(src)) {
+        try { fs.renameSync(src, dst); } catch (e) { /* ignore */ }
+      }
+    }
+
+    // Копируем основной файл в backup-0
+    fs.copyFileSync(mainPath, getBackupPath(0));
+    console.log('[Storage] Backup created (rotation complete)');
+  } catch (err) {
+    console.error('[Storage] Backup error:', err.message);
+  }
+}
+
+/**
+ * Запускает периодическое создание бэкапов.
+ */
+function startBackupTimer() {
+  if (_backupTimer) clearInterval(_backupTimer);
+  _backupTimer = setInterval(() => {
+    createBackup();
+  }, BACKUP_INTERVAL);
+}
+
+/**
+ * Останавливает таймеры и делает финальный flush.
+ */
+function shutdownStorage() {
+  console.log('[Storage] Shutdown — final flush...');
+  if (_writeTimer) { clearTimeout(_writeTimer); _writeTimer = null; }
+  if (_backupTimer) { clearInterval(_backupTimer); _backupTimer = null; }
+  // Финальный flush + backup
+  _dirty = true; // Force flush
+  flushToDisk();
+  createBackup();
+  console.log('[Storage] Shutdown complete');
+}
+
+// Инициализация: загружаем данные в память при старте
+function initStorage() {
+  readStorage(); // Загружает в _memoryStore
+  startBackupTimer();
+  console.log('[Storage] Initialized, backups dir:', getBackupDir());
+}
+
+// IPC обработчики хранилища
 ipcMain.handle('store:get', (_event, key) => {
   const store = readStorage();
   return store[key] ?? null;
@@ -499,6 +712,12 @@ ipcMain.handle('store:remove', (_event, key) => {
   const store = readStorage();
   delete store[key];
   writeStorage(store);
+});
+
+// Принудительный flush (вызывается из renderer)
+ipcMain.handle('store:flush', () => {
+  flushToDisk();
+  return { success: true };
 });
 
 // === Arduino IPC обработчики ===
@@ -692,9 +911,25 @@ ipcMain.handle('print:get-printers', async () => {
   return [];
 });
 
-// Закрытие приложения - отключаемся от Arduino
+// Закрытие приложения — сохраняем данные и отключаемся от Arduino
 app.on('before-quit', async () => {
+  // КРИТИЧНО: сначала сбрасываем все данные на диск + бэкап
+  shutdownStorage();
   if (arduino.isArduinoConnected()) {
     await arduino.disconnect();
   }
+});
+
+// Дополнительная страховка — при неожиданном завершении
+process.on('SIGINT', () => {
+  shutdownStorage();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  shutdownStorage();
+  process.exit(0);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught exception:', err);
+  shutdownStorage();
 });

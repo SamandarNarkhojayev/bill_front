@@ -17,6 +17,7 @@ import type {
   User,
   UserRole,
   Shift,
+  Reservation,
 } from '../types';
 
 // ===== ГЕНЕРАЦИЯ ID =====
@@ -168,6 +169,7 @@ interface AppStore {
   setLightState: (tableId: number, on: boolean) => void;
   updateTableFromRelay: (relayNumber: number, state: boolean) => void;
   syncTablesFromArduino: (relayCount: number, relays: { number: number; pin: number; state: boolean }[]) => void;
+  restoreLightsToArduino: () => void;
 
   barMenu: BarMenuItem[];
   barCategories: BarCategoryConfig[];
@@ -181,6 +183,7 @@ interface AppStore {
   removeBarCategory: (id: string) => void;
   addBarOrderToTable: (tableId: number, menuItem: BarMenuItem, quantity: number) => void;
   createBarOrder: (tableId: number | null, items: { menuItem: BarMenuItem; quantity: number }[]) => void;
+  sellFromBar: (items: { menuItem: BarMenuItem; quantity: number }[]) => void;
   updateStock: (menuItemId: string, delta: number) => void;
   setStock: (menuItemId: string, qty: number) => void;
   createRevision: (items: Omit<InventoryRevisionItem, 'difference'>[], notes: string) => void;
@@ -190,6 +193,11 @@ interface AppStore {
   addSessionRecord: (record: SessionRecord) => void;
   getTodayRevenue: () => { table: number; bar: number; total: number };
   getTodaySessions: () => number;
+
+  // Бронирование
+  reservations: Reservation[];
+  addReservation: (tableId: number, customerName: string, customerPhone: string, reservedFor: number, notes: string) => void;
+  cancelReservation: (reservationId: string) => void;
 
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => void;
@@ -205,11 +213,15 @@ interface AppStore {
 }
 
 // ===== НАДЁЖНОЕ ФАЙЛОВОЕ ХРАНИЛИЩЕ (через IPC в Electron) =====
+// Защита от перезаписи данных до завершения гидратации
+let _hydrationComplete = false;
+
 const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
   getItem: async (name: string): Promise<string | null> => {
     try {
       if (window.electronAPI?.store) {
         const value = await window.electronAPI.store.get(name);
+        console.log('[Storage] getItem:', name, value ? `${value.length} bytes` : 'null');
         return value ?? null;
       }
     } catch (err) {
@@ -219,6 +231,11 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
     return localStorage.getItem(name);
   },
   setItem: async (name: string, value: string): Promise<void> => {
+    // КРИТИЧНО: не писать до завершения гидратации, иначе дефолты затрут данные
+    if (!_hydrationComplete) {
+      console.log('[Storage] setItem BLOCKED (hydration not complete)');
+      return;
+    }
     try {
       if (window.electronAPI?.store) {
         await window.electronAPI.store.set(name, value);
@@ -242,6 +259,69 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
     localStorage.removeItem(name);
   },
 }));
+
+// ===== АВТОСОХРАНЕНИЕ И ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ =====
+
+/**
+ * Принудительный flush данных на диск через IPC.
+ * Вызывается периодически и при критических событиях.
+ */
+function flushStorageToDisk() {
+  try {
+    if (window.electronAPI?.store?.flush) {
+      window.electronAPI.store.flush().catch((err: unknown) => {
+        console.error('[AutoSave] Flush error:', err);
+      });
+    }
+  } catch {
+    // Не в Electron — игнорируем
+  }
+}
+
+/**
+ * Запускает систему автосохранения:
+ * 1) Периодический flush каждые 30 секунд
+ * 2) Flush при потере видимости/фокуса окна (пользователь свернул, переключился)
+ * 3) Flush перед закрытием страницы (beforeunload)
+ */
+function startAutoSave() {
+  // Периодический flush каждые 30 секунд
+  const autoSaveInterval = setInterval(() => {
+    if (_hydrationComplete) {
+      flushStorageToDisk();
+    }
+  }, 30_000);
+
+  // Flush когда вкладка/окно теряет видимость (пользователь свернул или переключился)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && _hydrationComplete) {
+      console.log('[AutoSave] Visibility hidden — flushing...');
+      flushStorageToDisk();
+    }
+  });
+
+  // Flush при потере фокуса окна
+  window.addEventListener('blur', () => {
+    if (_hydrationComplete) {
+      flushStorageToDisk();
+    }
+  });
+
+  // Последний шанс — перед закрытием страницы
+  window.addEventListener('beforeunload', () => {
+    if (_hydrationComplete) {
+      console.log('[AutoSave] beforeunload — flushing...');
+      flushStorageToDisk();
+    }
+  });
+
+  // Cleanup (на случай HMR в dev-режиме)
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      clearInterval(autoSaveInterval);
+    });
+  }
+}
 
 // ===== STORE =====
 export const useStore = create<AppStore>()(
@@ -355,6 +435,14 @@ export const useStore = create<AppStore>()(
           plannedDuration = Math.max(1, Math.ceil((amount / pricePerHour) * 3600)); // в секундах
         }
         const fixedAmount = mode === 'amount' ? amount : null;
+
+        // Убрать бронь если запускаем забронированный стол
+        const existingReservation = get().reservations.find((r) => r.tableId === tableId);
+        if (existingReservation) {
+          set((state) => ({
+            reservations: state.reservations.filter((r) => r.tableId !== tableId),
+          }));
+        }
 
         set((state) => ({
           tables: state.tables.map((table) =>
@@ -478,7 +566,10 @@ export const useStore = create<AppStore>()(
           const newTables = relays.map((relay) => {
             const existing = state.tables.find((t) => t.relayNumber === relay.number);
             if (existing) {
-              return { ...existing, lightOn: relay.state };
+              // КРИТИЧНО: не перетирать сохранённое состояние света при переподключении Arduino.
+              // После reconnect Arduino обычно отдает STATUS: OFF для всех реле,
+              // но мы должны восстановить память приложения (открытые столы/включённый свет).
+              return { ...existing };
             }
             const settingsTable = state.settings.tables.find((t) => t.relayNumber === relay.number);
             return {
@@ -508,6 +599,48 @@ export const useStore = create<AppStore>()(
           };
         });
         get().addToast('info', `Обнаружено реле: ${relayCount} шт.`);
+      },
+
+      // Восстановление состояния света при переподключении Arduino
+      restoreLightsToArduino: () => {
+        const tables = get().tables;
+        if (!window.electronAPI?.arduino) {
+          console.warn('[Arduino] API not available, cannot restore lights');
+          return;
+        }
+        
+        console.log('[Arduino] Restoring lights from memory...');
+        let restoreCandidates = 0;
+        
+        tables.forEach((table) => {
+          // Восстанавливаем свет если:
+          // 1) он был включён в памяти ИЛИ
+          // 2) стол занят активной сессией (должен быть освещён)
+          const shouldBeOn = table.lightOn || table.status === 'occupied' || !!table.currentSession;
+          if (shouldBeOn) {
+            restoreCandidates++;
+            window.electronAPI!.arduino!.setRelay(table.relayNumber, true)
+              .then(() => {
+                console.log(`[Arduino] ✅ Restored light for ${table.name} (relay ${table.relayNumber})`);
+                // Синхронизируем UI-флаг света обратно в true
+                set((state) => ({
+                  tables: state.tables.map((t) =>
+                    t.id === table.id ? { ...t, lightOn: true } : t
+                  ),
+                }));
+              })
+              .catch((err) => {
+                console.error(`[Arduino] ❌ Failed to restore light for ${table.name}:`, err);
+              });
+          }
+        });
+        
+        if (restoreCandidates > 0) {
+          // Небольшая задержка чтобы команды успели отправиться
+          setTimeout(() => {
+            get().addToast('success', `Восстановлено состояние света: ${restoreCandidates} столов`);
+          }, 500);
+        }
       },
 
       barMenu: defaultBarMenu,
@@ -621,6 +754,65 @@ export const useStore = create<AppStore>()(
         }
       },
 
+      sellFromBar: (items) => {
+        // Списать со склада
+        items.forEach((i) => {
+          if (i.menuItem.stock > 0) {
+            set((state) => ({
+              barMenu: state.barMenu.map((m) =>
+                m.id === i.menuItem.id && m.stock > 0
+                  ? { ...m, stock: Math.max(0, m.stock - i.quantity) }
+                  : m
+              ),
+            }));
+          }
+        });
+
+        const totalCost = items.reduce((sum, i) => sum + i.menuItem.price * i.quantity, 0);
+
+        // Создать BarOrder для completedOrders
+        const order: BarOrder = {
+          id: generateId(),
+          tableId: null,
+          items: items.map((i) => ({
+            id: generateId(),
+            menuItemId: i.menuItem.id,
+            menuItemName: i.menuItem.name,
+            quantity: i.quantity,
+            price: i.menuItem.price,
+            timestamp: Date.now(),
+          })),
+          totalCost,
+          timestamp: Date.now(),
+          isPaid: true,
+        };
+
+        // Создать SessionRecord для отчётов
+        const record: SessionRecord = {
+          id: order.id,
+          tableId: 0,
+          tableName: 'Бар (продажа)',
+          mode: 'unlimited',
+          startTime: Date.now(),
+          endTime: Date.now(),
+          duration: 0,
+          tableCost: 0,
+          barCost: totalCost,
+          totalCost,
+          date: new Date().toISOString().split('T')[0],
+        };
+
+        set((state) => ({
+          completedOrders: [...state.completedOrders, order],
+          sessionHistory: [...state.sessionHistory, record],
+        }));
+
+        if (get().settings.soundEnabled) {
+          playOrderSound();
+        }
+        get().addToast('success', `Продажа: ${totalCost.toLocaleString()} ${get().settings.currency}`);
+      },
+
       updateStock: (menuItemId, delta) => {
         set((state) => ({
           barMenu: state.barMenu.map((item) =>
@@ -680,6 +872,45 @@ export const useStore = create<AppStore>()(
       getTodaySessions: () => {
         const today = new Date().toISOString().split('T')[0];
         return get().sessionHistory.filter((s) => s.date === today).length;
+      },
+
+      // ===== БРОНИРОВАНИЕ =====
+      reservations: [],
+
+      addReservation: (tableId, customerName, customerPhone, reservedFor, notes) => {
+        const reservation: Reservation = {
+          id: generateId(),
+          tableId,
+          customerName,
+          customerPhone,
+          reservedFor,
+          createdAt: Date.now(),
+          notes,
+        };
+        set((state) => ({
+          reservations: [...state.reservations, reservation],
+          tables: state.tables.map((t) =>
+            t.id === tableId && t.status === 'free'
+              ? { ...t, status: 'reserved' as const }
+              : t
+          ),
+        }));
+        const tableName = get().tables.find((t) => t.id === tableId)?.name || '';
+        get().addToast('success', `${tableName} забронирован`);
+      },
+
+      cancelReservation: (reservationId) => {
+        const reservation = get().reservations.find((r) => r.id === reservationId);
+        if (!reservation) return;
+        set((state) => ({
+          reservations: state.reservations.filter((r) => r.id !== reservationId),
+          tables: state.tables.map((t) =>
+            t.id === reservation.tableId && t.status === 'reserved'
+              ? { ...t, status: 'free' as const }
+              : t
+          ),
+        }));
+        get().addToast('info', 'Бронь отменена');
       },
 
       settings: defaultSettings,
@@ -744,6 +975,9 @@ export const useStore = create<AppStore>()(
       name: 'billiard-club-storage',
       storage: electronFileStorage,
       partialize: (state) => ({
+        tables: state.tables,
+        barOrders: state.barOrders,
+        currentShift: state.currentShift,
         sessionHistory: state.sessionHistory,
         completedOrders: state.completedOrders,
         settings: state.settings,
@@ -753,6 +987,7 @@ export const useStore = create<AppStore>()(
         sidebarCollapsed: state.sidebarCollapsed,
         users: state.users,
         shiftHistory: state.shiftHistory,
+        reservations: state.reservations,
       }),
       merge: (persistedState, currentState) => {
         // Если нет сохранённых данных — используем текущее состояние (дефолтное)
@@ -766,7 +1001,6 @@ export const useStore = create<AppStore>()(
           // Авторизация всегда сбрасывается при перезапуске
           merged.isAuthenticated = false;
           merged.currentUser = null;
-          merged.currentShift = null;
           merged.settings = {
             ...currentState.settings,
             ...(persisted.settings || {}),
@@ -776,7 +1010,13 @@ export const useStore = create<AppStore>()(
           if (!persisted.users || persisted.users.length === 0) {
             merged.users = defaultUsers;
           }
-          if (persisted.settings?.tables) {
+          // Таблицы берём из persisted.tables (если есть), чтобы сохранялись:
+          // - открытые/закрытые столы
+          // - текущие сессии
+          // - состояние света
+          if (persisted.tables && persisted.tables.length > 0) {
+            merged.tables = persisted.tables;
+          } else if (persisted.settings?.tables) {
             merged.tables = persisted.settings.tables.map((st) => ({
               id: st.id,
               name: st.name,
@@ -786,6 +1026,20 @@ export const useStore = create<AppStore>()(
               pricePerHour: st.pricePerHour,
               currentSession: null,
             }));
+          }
+          // Восстановить статус забронированных столов
+          if (persisted.reservations && persisted.reservations.length > 0) {
+            const now = Date.now();
+            // Убираем устаревшие брони (старше 24 часов от reservedFor)
+            merged.reservations = persisted.reservations.filter(
+              (r: Reservation) => r.reservedFor + 24 * 60 * 60 * 1000 > now
+            );
+            merged.reservations.forEach((r: Reservation) => {
+              const table = merged.tables.find((t: BilliardTable) => t.id === r.tableId);
+              if (table && table.status === 'free') {
+                table.status = 'reserved';
+              }
+            });
           }
           console.log('[Store] Rehydrated from persistent storage');
           return merged as AppStore;
@@ -802,6 +1056,11 @@ export const useStore = create<AppStore>()(
           } else {
             console.log('[Store] Rehydration complete, sessions:', state?.sessionHistory?.length ?? 0);
           }
+          // Разрешаем запись ТОЛЬКО после завершения гидратации
+          _hydrationComplete = true;
+          console.log('[Store] Hydration flag set — writes enabled');
+          // Запускаем систему автосохранения
+          startAutoSave();
         };
       },
     }

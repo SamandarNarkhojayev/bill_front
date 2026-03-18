@@ -380,16 +380,16 @@
 .dashboard-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 32px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(10px);
@@ -406,9 +406,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.stat-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .stat-revenue .stat-icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
@@ -417,13 +422,13 @@
 .stat-sessions .stat-icon { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 10px;
   color: #64748b;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 700;
   color: #f1f5f9;
   letter-spacing: -0.02em;
@@ -461,6 +466,15 @@
   box-shadow: 0 12px 32px rgba(16, 185, 129, 0.15);
 }
 
+.table-card.reserved {
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.05);
+}
+
+.table-card.reserved:hover {
+  box-shadow: 0 12px 32px rgba(245, 158, 11, 0.15);
+}
+
 .table-card-status-bar {
   height: 3px;
   width: 100%;
@@ -491,6 +505,7 @@
 
 .status-occupied { color: #10b981; }
 .status-free { color: #64748b; }
+.status-reserved { color: #f59e0b; }
 
 .light-toggle {
   display: flex;
@@ -725,8 +740,9 @@
   gap: 10px;
   font-size: 18px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #ffffff;
   margin-bottom: 20px;
+  letter-spacing: -0.01em;
 }
 
 .modal-header-bar .modal-title { margin-bottom: 0; }
@@ -738,31 +754,55 @@
   margin-left: 8px;
 }
 
-.modal-body { margin-bottom: 24px; }
+.modal-body {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-body > div {
+  display: flex;
+  flex-direction: column;
+}
 
 .modal-label {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   color: #94a3b8;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .modal-input {
   width: 100%;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 11px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
   border-radius: 12px;
   color: #f1f5f9;
   font-size: 14px;
+  font-weight: 500;
   outline: none;
   transition: all 0.2s ease;
 }
 
+.modal-input::placeholder {
+  color: #475569;
+  font-weight: 400;
+}
+
+.modal-input:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .modal-input:focus {
   border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  background: rgba(16, 185, 129, 0.06);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
 }
 
 .modal-hint {
@@ -775,6 +815,31 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Reservation / form field group */
+.modal-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+[data-theme="light"] .modal-field-group {
+  background: #f8fafc;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.modal-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-field-row > div {
+  flex: 1;
 }
 
 /* End Session Modal */
@@ -1552,18 +1617,29 @@
 /* ===== FORMS ===== */
 .form-input {
   padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   color: #f1f5f9;
   font-size: 13px;
+  font-weight: 500;
   outline: none;
   transition: all 0.2s ease;
 }
 
+.form-input::placeholder {
+  color: #475569;
+  font-weight: 400;
+}
+
+.form-input:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
 .form-input:focus {
   border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.06);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
 }
 
 .form-input-sm { max-width: 120px; }
@@ -1571,12 +1647,23 @@
 
 .form-select {
   padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   color: #f1f5f9;
   font-size: 13px;
+  font-weight: 500;
   outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.form-select:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.form-select:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
 }
 
 .form-select option {
@@ -1622,16 +1709,16 @@
 .report-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  margin-bottom: 28px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .report-stat-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px;
-  border-radius: 14px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   transition: all 0.2s ease;
@@ -1645,9 +1732,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.report-stat-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .report-stat-card.green .report-stat-icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
@@ -1658,14 +1750,14 @@
 .report-stat-card.sky .report-stat-icon { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
 
 .report-stat-label {
-  font-size: 11px;
+  font-size: 10px;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .report-stat-value {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
   color: #f1f5f9;
 }
@@ -2063,6 +2155,18 @@
 .main-content select option {
   background: #1e293b;
   color: #f1f5f9;
+}
+
+[data-theme="light"] .main-content select,
+[data-theme="light"] .main-content input[type="text"] {
+  background: #ffffff !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .main-content select option {
+  background: #ffffff;
+  color: #0f172a;
 }
 
 /* ===== UTILITY COLORS ===== */
@@ -2769,6 +2873,11 @@
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.08);
 }
 
+[data-theme="light"] .table-card.reserved {
+  border-color: rgba(245, 158, 11, 0.4);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.08);
+}
+
 [data-theme="light"] .stat-value,
 [data-theme="light"] .table-card-name,
 [data-theme="light"] .report-stat-value,
@@ -2810,13 +2919,28 @@
 
 [data-theme="light"] .modal-input {
   background: #ffffff;
-  border-color: rgba(0, 0, 0, 0.15);
+  border: 1.5px solid #94a3b8;
   color: #0f172a;
+  font-weight: 500;
+}
+
+[data-theme="light"] .modal-input::placeholder {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .modal-input:hover {
+  border-color: #64748b;
+  background: #f8fafc;
 }
 
 [data-theme="light"] .modal-input:focus {
   border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  background: #f0fdf9;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+[data-theme="light"] .modal-label {
+  color: #475569;
 }
 
 [data-theme="light"] .mode-btn {
@@ -2864,13 +2988,37 @@
 [data-theme="light"] .form-select,
 [data-theme="light"] .search-input {
   background: #ffffff;
-  border-color: rgba(0, 0, 0, 0.12);
+  border: 1.5px solid #94a3b8;
   color: #0f172a;
+  font-weight: 500;
+}
+
+[data-theme="light"] .form-input::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+[data-theme="light"] .form-input:hover,
+[data-theme="light"] .form-select:hover {
+  border-color: #64748b;
+}
+
+[data-theme="light"] .form-input:focus,
+[data-theme="light"] .form-select:focus {
+  border-color: #10b981;
+  background: #f0fdf9;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
 [data-theme="light"] .form-select option {
   background: #ffffff;
   color: #0f172a;
+}
+
+/* Header datetime readability (light theme) */
+[data-theme="light"] .header-date,
+[data-theme="light"] .header-time {
+  color: #111827;
 }
 
 /* Bar */
@@ -2890,6 +3038,43 @@
 
 [data-theme="light"] .bar-categories {
   border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+/* Подписи полей в баре — светлая тема */
+[data-theme="light"] .bar-add-field label,
+[data-theme="light"] .bar-cat-form-row label {
+  color: #374151;
+  font-weight: 600;
+}
+
+/* Рамка блока добавления */
+[data-theme="light"] .bar-add-form {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+/* Bar table selector text contrast (light theme) */
+[data-theme="light"] .bar-table-btn {
+  color: #111827;
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .bar-table-btn:hover {
+  background: #f8fafc;
+}
+
+[data-theme="light"] .bar-table-btn-name {
+  color: #111827;
+}
+
+[data-theme="light"] .bar-table-btn-mode {
+  color: #334155;
+}
+
+/* Inventory revision text contrast (light theme) */
+[data-theme="light"] .bar-revision-date {
+  color: #111827;
 }
 
 [data-theme="light"] .bar-cat-card {

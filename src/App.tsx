@@ -13,7 +13,7 @@ import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/ardu
 import './App.css'
 
 function App() {
-  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, settings, sidebarCollapsed, currentUser } = useStore()
+  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser } = useStore()
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
 
   // Применяем тему
@@ -45,6 +45,10 @@ function App() {
     arduino.onInfo((info: RelayInfo) => {
       console.log('Arduino INFO received:', info)
       syncTablesFromArduino(info.count, info.relays)
+      // Восстанавливаем состояние света после переподключения
+      setTimeout(() => {
+        restoreLightsToArduino()
+      }, 500)
     })
 
     return () => {
@@ -53,7 +57,7 @@ function App() {
       arduino.removeAllListeners('button-pressed')
       arduino.removeAllListeners('info')
     }
-  }, [updateTableFromRelay, syncTablesFromArduino])
+  }, [updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino])
 
   const renderPage = () => {
     switch (currentPage) {

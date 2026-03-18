@@ -94,6 +94,12 @@ declare global {
       arduino?: ArduinoAPI;
       printer?: PrinterAPI;
       updater?: UpdaterAPI;
+      store?: {
+        get: (key: string) => Promise<string | null>;
+        set: (key: string, value: string) => Promise<void>;
+        remove: (key: string) => Promise<void>;
+        flush: () => Promise<{ success: boolean }>;
+      };
     };
   }
 }

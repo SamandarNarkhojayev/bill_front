@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useStore } from '../store/useStore';
 import type { SerialPort, RelayChangeEvent, ButtonPressEvent } from '../types/arduino';
 
 interface RelayControlProps {
@@ -61,6 +62,7 @@ const RelayControl: React.FC<RelayControlProps> = ({ relayNumber, state, onToggl
 };
 
 const ArduinoControl: React.FC = () => {
+  const { restoreLightsToArduino } = useStore();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [availablePorts, setAvailablePorts] = useState<SerialPort[]>([]);
@@ -181,6 +183,15 @@ const ArduinoControl: React.FC = () => {
       addMessage('🔌 Arduino отключено');
     });
 
+    // INFO получено — Arduino готов, восстанавливаем состояние света
+    arduino.onInfo?.((info: { count: number; relays: { number: number; pin: number; state: boolean }[] }) => {
+      addMessage(`ℹ️ Arduino INFO: ${info.count} реле`);
+      // Восстанавливаем состояние света из памяти
+      setTimeout(() => {
+        restoreLightsToArduino();
+      }, 500); // Даём Arduino время на готовность
+    });
+
     return () => {
       arduino.removeAllListeners('relay-changed');
       arduino.removeAllListeners('status-update');
@@ -188,8 +199,9 @@ const ArduinoControl: React.FC = () => {
       arduino.removeAllListeners('message');
       arduino.removeAllListeners('error');
       arduino.removeAllListeners('disconnected');
+      arduino.removeAllListeners('info');
     };
-  }, []);
+  }, [restoreLightsToArduino]);
 
   // Загрузить порты при монтировании
   useEffect(() => {
