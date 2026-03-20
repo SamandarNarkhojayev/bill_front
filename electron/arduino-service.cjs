@@ -262,10 +262,11 @@ class ArduinoService {
   handleArduinoMessage(message) {
     // Обработка подтверждений команд
     if (message.startsWith('OK RELAY')) {
-      const match = message.match(/OK RELAY(\d) (ON|OFF)/);
+      // Поддержка форматов: "OK RELAY1 ON", "OK RELAY10 OFF", "OK RELAY1_ON"
+      const match = message.match(/OK\s+RELAY(\d+)\s*[_\s]\s*(ON|OFF)/i);
       if (match) {
         const relayIndex = parseInt(match[1]) - 1;
-        const state = match[2] === 'ON';
+        const state = match[2].toUpperCase() === 'ON';
         this.relayStates[relayIndex] = state;
         this.emit('relayChanged', { relay: relayIndex + 1, state });
       }
@@ -273,21 +274,40 @@ class ArduinoService {
     
     // Обработка статуса
     else if (message.startsWith('STATUS:')) {
-      const match = message.match(/STATUS: R1=(\w+) R2=(\w+) R3=(\w+) R4=(\w+)/);
-      if (match) {
-        for (let i = 0; i < 4; i++) {
-          this.relayStates[i] = match[i + 1] === 'ON';
+      // Поддержка произвольного числа реле: STATUS: R1=ON R2=OFF ... R16=ON
+      const pairs = [...message.matchAll(/R(\d+)=(ON|OFF)/gi)];
+      if (pairs.length > 0) {
+        pairs.forEach((m) => {
+          const relayIndex = parseInt(m[1], 10) - 1;
+          const state = m[2].toUpperCase() === 'ON';
+          this.relayStates[relayIndex] = state;
+        });
+        // Отдаем копию, чтобы избежать внешних мутаций
+        this.emit('statusUpdate', [...this.relayStates]);
+      }
+      // Обратная совместимость: STATUS: ON,OFF,ON,OFF
+      else {
+        const csv = message
+          .replace(/^STATUS:\s*/i, '')
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean);
+
+        if (csv.length > 0) {
+          csv.forEach((val, i) => {
+            this.relayStates[i] = val === 'ON';
+          });
+          this.emit('statusUpdate', [...this.relayStates]);
         }
-        this.emit('statusUpdate', this.relayStates);
       }
     }
     
     // Обработка нажатий кнопок на Arduino
     else if (message.includes('🔘 BUTTON')) {
-      const match = message.match(/🔘 BUTTON RELAY(\d) (ON|OFF)/);
+      const match = message.match(/🔘 BUTTON RELAY(\d+)\s+(ON|OFF)/i);
       if (match) {
         const relayIndex = parseInt(match[1]) - 1;
-        const state = match[2] === 'ON';
+        const state = match[2].toUpperCase() === 'ON';
         this.relayStates[relayIndex] = state;
         this.emit('buttonPressed', { relay: relayIndex + 1, state });
         this.emit('relayChanged', { relay: relayIndex + 1, state });
