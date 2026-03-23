@@ -10,6 +10,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Download,
+  Briefcase,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
@@ -28,15 +30,32 @@ const strToDate = (s: string) => {
 };
 
 const ReportsPage: React.FC = () => {
-  const { sessionHistory, settings } = useStore();
+  const { sessionHistory, settings, currentShift, shiftHistory } = useStore();
   const [selectedDate, setSelectedDate] = useState(dateToStr(new Date()));
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all'>('day');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all' | 'shift'>('day');
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState(dateToStr(new Date()));
   const [rangeEnd, setRangeEnd] = useState(dateToStr(new Date()));
+
+  // Активная смена или выбранная из истории
+  const activeShift = useMemo(() => {
+    if (viewMode !== 'shift') return null;
+    if (selectedShiftId) {
+      return shiftHistory.find((s) => s.id === selectedShiftId) || currentShift;
+    }
+    return currentShift;
+  }, [viewMode, selectedShiftId, currentShift, shiftHistory]);
 
   // Фильтрация по дате
   const filteredSessions = useMemo(() => {
     if (viewMode === 'all') return sessionHistory;
+    if (viewMode === 'shift') {
+      const shift = activeShift;
+      if (!shift) return [];
+      const start = shift.startTime;
+      const end = shift.endTime || Date.now();
+      return sessionHistory.filter((s) => s.startTime >= start && s.startTime <= end);
+    }
     if (viewMode === 'day') {
       return sessionHistory.filter((s) => s.date === selectedDate);
     }
@@ -54,7 +73,7 @@ const ReportsPage: React.FC = () => {
     const wStart = dateToStr(monday);
     const wEnd = dateToStr(sunday);
     return sessionHistory.filter((s) => s.date >= wStart && s.date <= wEnd);
-  }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd]);
+  }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd, activeShift]);
 
   // Статистика
   const stats = useMemo(() => {
@@ -89,6 +108,38 @@ const ReportsPage: React.FC = () => {
   }, [filteredSessions]);
 
   const maxByHour = Math.max(...stats.byHour, 1);
+
+  // Экспорт отчёта в CSV
+  const exportReport = () => {
+    const modeLabel = (m: string) => m === 'time' ? 'По времени' : m === 'amount' ? 'На сумму' : 'Бессрочно';
+    const header = 'Стол;Режим;Начало;Конец;Время (мин);Стол (' + settings.currency + ');Бар (' + settings.currency + ');Итого (' + settings.currency + ')';
+    const rows = filteredSessions
+      .slice()
+      .reverse()
+      .map((s) => {
+        const start = new Date(s.startTime).toLocaleString('ru-RU');
+        const end = new Date(s.endTime).toLocaleString('ru-RU');
+        return `${s.tableName};${modeLabel(s.mode)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost}`;
+      });
+
+    // Итоги
+    rows.push('');
+    rows.push(`Всего игр:;${stats.count}`);
+    rows.push(`Выручка столы:;${stats.tableRev}`);
+    rows.push(`Выручка бар:;${stats.barRev}`);
+    rows.push(`Общая выручка:;${stats.totalRev}`);
+
+    const csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const now = new Date();
+    const ts = dateToStr(now) + '_' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }).replace(':', '-');
+    a.href = url;
+    a.download = `отчёт_${viewMode}_${ts}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const changeDate = (delta: number) => {
     const d = strToDate(selectedDate);
@@ -134,33 +185,73 @@ const ReportsPage: React.FC = () => {
           <BarChart3 size={28} className="text-violet-400" />
           <h2 className="page-title">Отчёты</h2>
         </div>
-        <div className="page-tabs">
-          <button
-            onClick={() => setViewMode('day')}
-            className={`page-tab ${viewMode === 'day' ? 'active' : ''}`}
-          >
-            День
-          </button>
-          <button
-            onClick={() => setViewMode('week')}
-            className={`page-tab ${viewMode === 'week' ? 'active' : ''}`}
-          >
-            Неделя
-          </button>
-          <button
-            onClick={() => setViewMode('range')}
-            className={`page-tab ${viewMode === 'range' ? 'active' : ''}`}
-          >
-            <Filter size={14} /> Диапазон
-          </button>
-          <button
-            onClick={() => setViewMode('all')}
-            className={`page-tab ${viewMode === 'all' ? 'active' : ''}`}
-          >
-            Всё время
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="page-tabs">
+            <button
+              onClick={() => setViewMode('day')}
+              className={`page-tab ${viewMode === 'day' ? 'active' : ''}`}
+            >
+              День
+            </button>
+            <button
+              onClick={() => { setViewMode('shift'); setSelectedShiftId(null); }}
+              className={`page-tab ${viewMode === 'shift' ? 'active' : ''}`}
+            >
+              <Briefcase size={14} /> За смену
+            </button>
+            <button
+              onClick={() => setViewMode('week')}
+              className={`page-tab ${viewMode === 'week' ? 'active' : ''}`}
+            >
+              Неделя
+            </button>
+            <button
+              onClick={() => setViewMode('range')}
+              className={`page-tab ${viewMode === 'range' ? 'active' : ''}`}
+            >
+              <Filter size={14} /> Диапазон
+            </button>
+            <button
+              onClick={() => setViewMode('all')}
+              className={`page-tab ${viewMode === 'all' ? 'active' : ''}`}
+            >
+              Всё время
+            </button>
+          </div>
+          {filteredSessions.length > 0 && (
+            <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Download size={14} /> Экспорт
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Выбор смены */}
+      {viewMode === 'shift' && (
+        <div className="date-nav" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setSelectedShiftId(null)}
+            className={`btn btn-sm ${!selectedShiftId && currentShift ? 'btn-primary' : 'btn-ghost'}`}
+          >
+            <Briefcase size={14} />
+            {currentShift?.isActive ? 'Текущая смена' : 'Нет активной смены'}
+          </button>
+          {shiftHistory.slice(0, 10).map((shift) => {
+            const start = new Date(shift.startTime);
+            const label = start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' +
+              start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            return (
+              <button
+                key={shift.id}
+                onClick={() => setSelectedShiftId(shift.id)}
+                className={`btn btn-sm ${selectedShiftId === shift.id ? 'btn-primary' : 'btn-ghost'}`}
+              >
+                {label} — {shift.userName}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Переключение даты */}
       {(viewMode === 'day' || viewMode === 'week') && (
@@ -283,7 +374,7 @@ const ReportsPage: React.FC = () => {
             <TrendingUp size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Средний чек</p>
+            <p className="report-stat-label">Средний счёт</p>
             <p className="report-stat-value">
               {stats.avgCheck.toLocaleString()} {settings.currency}
             </p>

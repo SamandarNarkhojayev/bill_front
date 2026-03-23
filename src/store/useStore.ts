@@ -23,6 +23,14 @@ import type {
 // ===== ГЕНЕРАЦИЯ ID =====
 const generateId = () => Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 
+// Локальная дата в формате YYYY-MM-DD (без UTC-сдвига)
+const localDateStr = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // ===== Простое хеширование пароля (для локального хранения) =====
 const hashPassword = (password: string): string => {
   let hash = 0;
@@ -109,12 +117,17 @@ const defaultBarMenu: BarMenuItem[] = [
 // ===== НАСТРОЙКИ ПО УМОЛЧАНИЮ =====
 const defaultSettings: AppSettings = {
   clubName: 'Бильярдный Клуб',
+  receiptCompanyName: 'ИП Coffee Time',
+  receiptCity: 'г. Шымкент',
+  receiptPhone: '+7 777 123 45 67',
+  receiptCashierName: 'ИМЯ',
   defaultPricePerHour: 2000,
   currency: 'тг',
   theme: 'dark',
   autoLightOff: true,
   soundEnabled: true,
   autoPrintReceipt: false,
+  silentPrint: true,
   savedPortPath: null,
   receiptWidthMm: 80,
   receiptFontSize: 14,
@@ -339,6 +352,16 @@ export const useStore = create<AppStore>()(
         );
         if (user) {
           set({ isAuthenticated: true, currentUser: user });
+          // Автоматически стартуем смену при входе
+          const shift: Shift = {
+            id: generateId(),
+            userId: user.id,
+            userName: user.displayName,
+            startTime: Date.now(),
+            endTime: null,
+            isActive: true,
+          };
+          set({ currentShift: shift });
           return true;
         }
         return false;
@@ -507,7 +530,7 @@ export const useStore = create<AppStore>()(
           tableCost,
           barCost,
           totalCost: tableCost + barCost,
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(),
         };
 
         set((state) => ({
@@ -799,7 +822,7 @@ export const useStore = create<AppStore>()(
           tableCost: 0,
           barCost: totalCost,
           totalCost,
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(),
         };
 
         set((state) => ({
@@ -834,7 +857,7 @@ export const useStore = create<AppStore>()(
       createRevision: (items, notes) => {
         const revision: InventoryRevision = {
           id: generateId(),
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(),
           timestamp: Date.now(),
           notes,
           items: items.map((i) => ({
@@ -862,7 +885,7 @@ export const useStore = create<AppStore>()(
       },
 
       getTodayRevenue: () => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr();
         const todaySessions = get().sessionHistory.filter((s) => s.date === today);
         const tableRev = todaySessions.reduce((sum, s) => sum + s.tableCost, 0);
         const barRev = todaySessions.reduce((sum, s) => sum + s.barCost, 0);
@@ -870,7 +893,7 @@ export const useStore = create<AppStore>()(
       },
 
       getTodaySessions: () => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr();
         return get().sessionHistory.filter((s) => s.date === today).length;
       },
 

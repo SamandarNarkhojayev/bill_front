@@ -41,6 +41,29 @@ const calculateSessionTableCost = (
   return elapsedCost;
 };
 
+const formatPhone = (value: string, prevValue = '') => {
+  let digits = value.replace(/\D/g, '');
+  const prevDigitsRaw = prevValue.replace(/\D/g, '');
+
+  // Если удалили только символ-разделитель (пробел/скобку/дефис), удаляем и последнюю цифру
+  if (value.length < prevValue.length && digits.length === prevDigitsRaw.length) {
+    digits = digits.slice(0, -1);
+  }
+
+  if (digits.startsWith('8')) digits = '7' + digits.slice(1);
+  if (!digits.startsWith('7')) digits = '7' + digits;
+  digits = digits.slice(0, 11);
+
+  const local = digits.slice(1);
+  let formatted = '+7';
+  if (local.length > 0) formatted += ` (${local.slice(0, 3)}`;
+  if (local.length >= 3) formatted += ')';
+  if (local.length > 3) formatted += ` ${local.slice(3, 6)}`;
+  if (local.length > 6) formatted += `-${local.slice(6, 8)}`;
+  if (local.length > 8) formatted += `-${local.slice(8, 10)}`;
+  return formatted;
+};
+
 // ===== ТАЙМЕР СЕССИИ (с обратным отсчётом для режима "по времени") =====
 const SessionTimer: React.FC<{
   startTime: number;
@@ -354,6 +377,10 @@ const Dashboard: React.FC = () => {
 
       await printReceipt({
         clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
         tableName: table.name,
         mode: session.mode,
         startTime: session.startTime,
@@ -367,6 +394,7 @@ const Dashboard: React.FC = () => {
         receiptWidthMm: settings.receiptWidthMm,
         receiptFontSize: settings.receiptFontSize,
         receiptPaddingMm: settings.receiptPaddingMm,
+        silentPrint: settings.silentPrint,
       });
     }
 
@@ -648,7 +676,7 @@ const Dashboard: React.FC = () => {
                 <input
                   type="tel"
                   value={reservePhone}
-                  onChange={(e) => setReservePhone(e.target.value)}
+                  onChange={(e) => setReservePhone((prev) => formatPhone(e.target.value, prev))}
                   placeholder="+7 (___) ___-__-__"
                   className="modal-input"
                 />
@@ -738,10 +766,10 @@ const EndSessionModal: React.FC<{
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-lg end-session-modal" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">
           <Square size={20} className="text-red-400" />
-          Завершить игру — {table.name}
+          Закрыть заказ — {table.name}
         </h2>
         <div className="modal-body">
           <div className="end-session-grid">
@@ -785,18 +813,23 @@ const EndSessionModal: React.FC<{
             <span>ИТОГО К ОПЛАТЕ</span>
             <span>{(tableCost + barCost).toLocaleString()} {settings.currency}</span>
           </div>
+
+          <div style={{ textAlign: 'center', marginTop: 12, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <p style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Фискальный документ НЕ сформирован</p>
+            <p style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Для получения фискального документа используйте ККМ</p>
+          </div>
         </div>
-        <div className="modal-actions">
+        <div className="modal-actions end-session-actions">
           <button onClick={onCancel} className="btn btn-ghost">Назад</button>
           {!autoPrintEnabled && (
             <button onClick={() => onConfirm(true)} className="btn btn-primary">
               <Printer size={16} />
-              Печать чека
+              Печать пречека
             </button>
           )}
           <button onClick={() => onConfirm(false)} className="btn btn-danger">
             <Square size={16} />
-            {autoPrintEnabled ? 'Завершить с чеком' : 'Завершить'}
+            {autoPrintEnabled ? 'Закрыть заказ' : 'Закрыть заказ'}
           </button>
         </div>
       </div>

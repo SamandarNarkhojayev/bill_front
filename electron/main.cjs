@@ -859,9 +859,10 @@ ipcMain.handle('arduino:get-info', async () => {
 });
 
 // === Печать чека ===
-ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm) => {
+ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm, silent) => {
   try {
     const paperWidth = widthMm || 80; // мм, по умолчанию 80
+    const isSilent = silent !== false; // по умолчанию true (авто)
     // Создаем невидимое окно для печати
     const printWindow = new BrowserWindow({
       width: Math.max(400, Math.round(paperWidth * 4)),
@@ -882,7 +883,7 @@ ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm) => {
     // Печатаем
     printWindow.webContents.print(
       {
-        silent: false, // Показать диалог выбора принтера
+        silent: isSilent,
         printBackground: true,
         margins: { marginType: 'none' },
         pageSize: { width: paperWidth * 1000, height: 297000 }, // ширина в микронах

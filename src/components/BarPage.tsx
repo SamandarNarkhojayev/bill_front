@@ -24,9 +24,11 @@ import {
   PackageOpen,
   Archive,
   Tag,
+  Printer,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem } from '../types';
+import { generateBarSaleReceiptHTML } from '../utils/receipt';
 
 // Маппинг иконок
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
@@ -40,7 +42,7 @@ const colorPresets = [
   '#6366f1', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6',
 ];
 
-type BarTab = 'quick-order' | 'menu' | 'inventory' | 'categories';
+type BarTab = 'quick-order' | 'menu' | 'categories';
 
 const BarPage: React.FC = () => {
   const {
@@ -80,6 +82,9 @@ const BarPage: React.FC = () => {
   const [revisionItems, setRevisionItems] = useState<Map<string, number>>(new Map());
   const [revisionNotes, setRevisionNotes] = useState('');
   const [showRevisionHistory, setShowRevisionHistory] = useState(false);
+
+  // Модальное окно подтверждения печати чека
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   const occupiedTables = tables.filter((t) => t.status === 'occupied');
   const sortedCategories = [...barCategories].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -121,9 +126,8 @@ const BarPage: React.FC = () => {
 
   const quickCartCount = Array.from(quickCart.values()).reduce((s, q) => s + q, 0);
 
-  const handleQuickOrder = () => {
+  const executeQuickOrder = () => {
     if (shopMode) {
-      // Продажа без стола
       const items: { menuItem: BarMenuItem; quantity: number }[] = [];
       quickCart.forEach((qty, itemId) => {
         const item = barMenu.find((i) => i.id === itemId);
@@ -131,15 +135,58 @@ const BarPage: React.FC = () => {
       });
       if (items.length === 0) return;
       sellFromBar(items);
-      setQuickCart(new Map());
-      return;
+    } else {
+      if (!selectedTable) return;
+      quickCart.forEach((qty, itemId) => {
+        const item = barMenu.find((i) => i.id === itemId);
+        if (item) addBarOrderToTable(selectedTable, item, qty);
+      });
     }
-    if (!selectedTable) return;
+    setQuickCart(new Map());
+  };
+
+  const handlePrintAndSell = async () => {
+    // Собираем позиции для чека
+    const receiptItems: { name: string; quantity: number; price: number }[] = [];
     quickCart.forEach((qty, itemId) => {
       const item = barMenu.find((i) => i.id === itemId);
-      if (item) addBarOrderToTable(selectedTable, item, qty);
+      if (item) receiptItems.push({ name: item.name, quantity: qty, price: item.price });
     });
-    setQuickCart(new Map());
+    const tableName = !shopMode && selectedTable
+      ? tables.find((t) => t.id === selectedTable)?.name
+      : undefined;
+    try {
+      const html = generateBarSaleReceiptHTML({
+        clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
+        items: receiptItems,
+        totalCost: quickCartTotal,
+        currency: settings.currency,
+        tableName,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
+      });
+      await window.electronAPI?.printer?.printReceipt(html, settings.receiptWidthMm, settings.silentPrint);
+    } catch (err) {
+      console.error('Bar receipt print error:', err);
+    }
+    setShowPrintModal(false);
+    executeQuickOrder();
+  };
+
+  const handleSellWithoutPrint = () => {
+    setShowPrintModal(false);
+    executeQuickOrder();
+  };
+
+  const handleQuickOrder = () => {
+    if (quickCart.size === 0) return;
+    if (!shopMode && !selectedTable) return;
+    setShowPrintModal(true);
   };
 
   // Картинки
@@ -231,6 +278,37 @@ const BarPage: React.FC = () => {
 
   return (
     <div className="page-content">
+      {/* Модальное окно: Распечатать чек? */}
+      {showPrintModal && (
+        <div className="modal-overlay" onClick={() => setShowPrintModal(false)}>
+          <div className="modal-container" style={{ maxWidth: 360, background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 28, boxShadow: '0 24px 48px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Printer size={22} style={{ color: '#f59e0b' }} />
+                Распечатать пречек?
+              </div>
+            </div>
+            <div className="modal-body" style={{ textAlign: 'center', padding: '16px 24px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                {shopMode ? 'Продажа бара' : 'Добавление к счёту стола'}:
+              </p>
+              <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
+                {quickCartTotal.toLocaleString()} {settings.currency}
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button onClick={handleSellWithoutPrint} className="btn btn-ghost">
+                Закрыть заказ
+              </button>
+              <button onClick={handlePrintAndSell} className="btn btn-primary">
+                <Printer size={16} />
+                Печать пречека
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
@@ -241,7 +319,6 @@ const BarPage: React.FC = () => {
           {([
             { id: 'quick-order' as BarTab, icon: ShoppingCart, label: 'Заказ' },
             { id: 'menu' as BarTab, icon: Edit3, label: 'Меню' },
-            { id: 'inventory' as BarTab, icon: Package, label: 'Склад' },
             { id: 'categories' as BarTab, icon: Layers, label: 'Категории' },
           ]).map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -390,7 +467,7 @@ const BarPage: React.FC = () => {
                   </div>
                   <button onClick={handleQuickOrder} disabled={!shopMode && !selectedTable}
                     className={`btn ${shopMode ? 'btn-amber' : 'btn-amber'} btn-full bar-cart-submit`}>
-                    <ShoppingCart size={18} /> {shopMode ? 'Продать' : 'Добавить к счёту'}
+                    <ShoppingCart size={18} /> {shopMode ? 'Создать заказ' : 'Добавить к счёту'}
                   </button>
                 </>
               )}
@@ -457,13 +534,39 @@ const BarPage: React.FC = () => {
                         <input ref={editFileInputRef} type="file" accept="image/*" hidden onChange={(e) => handleImageUpload(e, 'edit')} />
                       </div>
                       <div className="bar-add-form-fields">
-                        <input type="text" value={editForm.name || ''} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="form-input" />
+                        <div className="bar-add-field">
+                          <label>Название</label>
+                          <input type="text" value={editForm.name || ''} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="form-input" />
+                        </div>
                         <div className="bar-add-form-row-inline">
-                          <input type="number" value={editForm.price || ''} onChange={(e) => setEditForm((p) => ({ ...p, price: Number(e.target.value) }))} className="form-input" placeholder="Цена" />
-                          <input type="number" value={editForm.costPrice || ''} onChange={(e) => setEditForm((p) => ({ ...p, costPrice: Number(e.target.value) }))} className="form-input" placeholder="Себест." />
-                          <select value={editForm.categoryId || ''} onChange={(e) => setEditForm((p) => ({ ...p, categoryId: e.target.value }))} className="form-select">
-                            {sortedCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
+                          <div className="bar-add-field">
+                            <label>Цена</label>
+                            <input type="number" value={editForm.price || ''} onChange={(e) => setEditForm((p) => ({ ...p, price: Number(e.target.value) }))} className="form-input" placeholder="Цена" />
+                          </div>
+                          <div className="bar-add-field">
+                            <label>Себестоимость</label>
+                            <input type="number" value={editForm.costPrice || ''} onChange={(e) => setEditForm((p) => ({ ...p, costPrice: Number(e.target.value) }))} className="form-input" placeholder="Себест." />
+                          </div>
+                          <div className="bar-add-field">
+                            <label>Категория</label>
+                            <select value={editForm.categoryId || ''} onChange={(e) => setEditForm((p) => ({ ...p, categoryId: e.target.value }))} className="form-select">
+                              {sortedCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="bar-add-field">
+                            <label>Остаток</label>
+                            <input type="number" value={editForm.stock ?? item.stock} onChange={(e) => setEditForm((p) => ({ ...p, stock: Number(e.target.value) }))} className="form-input" placeholder="Кол-во" />
+                          </div>
+                          <div className="bar-add-field">
+                            <label>Ед.</label>
+                            <select value={editForm.unit || item.unit || 'шт'} onChange={(e) => setEditForm((p) => ({ ...p, unit: e.target.value }))} className="form-select">
+                              <option value="шт">шт</option>
+                              <option value="мл">мл</option>
+                              <option value="г">г</option>
+                              <option value="л">л</option>
+                              <option value="порц">порц</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -503,8 +606,8 @@ const BarPage: React.FC = () => {
         </div>
       )}
 
-      {/* === СКЛАД === */}
-      {activeTab === 'inventory' && (
+      {/* === КАТЕГОРИИ === (убран раздел Склад) */}
+      {false && (
         <div className="bar-inventory">
           <div className="bar-inventory-header">
             <div className="bar-inventory-stats">

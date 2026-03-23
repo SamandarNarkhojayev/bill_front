@@ -2,14 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   Clock,
   Calendar,
-  Play,
-  Square,
   Timer,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 const AppHeader: React.FC = () => {
-  const { currentShift, startShift, endShift } = useStore();
+  const { currentShift } = useStore();
   const [now, setNow] = useState(Date.now());
 
   // Обновлять время каждую секунду
@@ -43,16 +41,6 @@ const AppHeader: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const handleShiftToggle = () => {
-    if (currentShift?.isActive) {
-      if (window.confirm('Завершить смену?')) {
-        endShift();
-      }
-    } else {
-      startShift();
-    }
-  };
-
   return (
     <header className="app-header">
       <div className="header-left">
@@ -70,22 +58,15 @@ const AppHeader: React.FC = () => {
       </div>
 
       <div className="header-center">
-        {/* Смена */}
-        <div className={`header-shift ${currentShift?.isActive ? 'active' : ''}`}>
-          <button
-            className={`header-shift-btn ${currentShift?.isActive ? 'shift-active' : 'shift-inactive'}`}
-            onClick={handleShiftToggle}
-          >
-            {currentShift?.isActive ? <Square size={14} /> : <Play size={14} />}
-            <span>{currentShift?.isActive ? 'Завершить смену' : 'Начать смену'}</span>
-          </button>
-          {currentShift?.isActive && (
+        {/* Таймер смены */}
+        {currentShift?.isActive && (
+          <div className="header-shift active">
             <div className="header-shift-timer">
               <Timer size={14} />
               <span>{formatShiftDuration(currentShift.startTime)}</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="header-right" />

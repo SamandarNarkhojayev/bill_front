@@ -155,12 +155,17 @@ export interface SessionRecord {
 
 export interface AppSettings {
   clubName: string;
+  receiptCompanyName: string;
+  receiptCity: string;
+  receiptPhone: string;
+  receiptCashierName: string;
   defaultPricePerHour: number;
   currency: string;
   theme: 'dark' | 'light';
   autoLightOff: boolean; // Автоматически выключать свет при завершении сессии
   soundEnabled: boolean;
   autoPrintReceipt: boolean; // Автоматически печатать чек при закрытии стола
+  silentPrint: boolean;      // Печатать без диалога выбора принтера (авто)
   savedPortPath: string | null; // Вручную сохранённый порт (приоритет при подключении)
   // Настройки размера чека
   receiptWidthMm: number;    // Ширина чека в мм (по умолчанию 80)

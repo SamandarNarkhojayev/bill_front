@@ -43,6 +43,29 @@ const SettingsPage: React.FC = () => {
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const formatPhone = (value: string, prevValue = '') => {
+    let digits = value.replace(/\D/g, '');
+    const prevDigitsRaw = prevValue.replace(/\D/g, '');
+
+    // Если удалили только символ-разделитель (пробел/скобку/дефис), удаляем и последнюю цифру
+    if (value.length < prevValue.length && digits.length === prevDigitsRaw.length) {
+      digits = digits.slice(0, -1);
+    }
+
+    if (digits.startsWith('8')) digits = '7' + digits.slice(1);
+    if (!digits.startsWith('7')) digits = '7' + digits;
+    digits = digits.slice(0, 11);
+
+    const local = digits.slice(1);
+    let formatted = '+7';
+    if (local.length > 0) formatted += ` (${local.slice(0, 3)}`;
+    if (local.length >= 3) formatted += ')';
+    if (local.length > 3) formatted += ` ${local.slice(3, 6)}`;
+    if (local.length > 6) formatted += `-${local.slice(6, 8)}`;
+    if (local.length > 8) formatted += `-${local.slice(8, 10)}`;
+    return formatted;
+  };
+
   const handleRelayMusicTest = async () => {
     const api = window.electronAPI?.arduino;
     if (!api || isRelayTestRunning) return;
@@ -243,9 +266,9 @@ const SettingsPage: React.FC = () => {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleReset = () => {
-    setLocalSettings({ ...settings });
-  };
+  // const handleReset = () => {
+  //   setLocalSettings({ ...settings });
+  // };
 
   const handleFactoryReset = () => {
     if (!canDeleteData) {
@@ -312,10 +335,10 @@ const SettingsPage: React.FC = () => {
               ✓ Сохранено
             </span>
           )}
-          <button onClick={handleReset} className="btn btn-ghost">
+          {/* <button onClick={handleReset} className="btn btn-ghost">
             <RotateCcw size={16} />
             Сбросить
-          </button>
+          </button> */}
           <button onClick={handleSave} className="btn btn-primary">
             <Save size={16} />
             Сохранить
@@ -340,6 +363,54 @@ const SettingsPage: React.FC = () => {
                   setLocalSettings((prev) => ({ ...prev, clubName: e.target.value }))
                 }
                 className="form-input"
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Юр. название в пречеке</label>
+              <input
+                type="text"
+                value={localSettings.receiptCompanyName}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({ ...prev, receiptCompanyName: e.target.value }))
+                }
+                className="form-input"
+                placeholder="ИП Coffee Time"
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Город</label>
+              <input
+                type="text"
+                value={localSettings.receiptCity}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({ ...prev, receiptCity: e.target.value }))
+                }
+                className="form-input"
+                placeholder="г. Шымкент"
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Телефон</label>
+              <input
+                type="tel"
+                value={localSettings.receiptPhone}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({ ...prev, receiptPhone: formatPhone(e.target.value, prev.receiptPhone) }))
+                }
+                className="form-input"
+                placeholder="+7 (777) 123-45-67"
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">Кассир (по умолчанию)</label>
+              <input
+                type="text"
+                value={localSettings.receiptCashierName}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({ ...prev, receiptCashierName: e.target.value }))
+                }
+                className="form-input"
+                placeholder="ИМЯ"
               />
             </div>
           </div>
@@ -386,15 +457,34 @@ const SettingsPage: React.FC = () => {
               <div>
                 <label className="settings-label">
                   <Printer size={14} style={{ marginRight: 6 }} />
-                  Авто-печать чека
+                  Авто-печать
                 </label>
-                <p className="settings-hint">Автоматически печатать чек при закрытии стола</p>
+                <p className="settings-hint">Автоматически печатать пречек при закрытии стола</p>
               </div>
               <button
                 onClick={() =>
                   setLocalSettings((prev) => ({ ...prev, autoPrintReceipt: !prev.autoPrintReceipt }))
                 }
                 className={`toggle ${localSettings.autoPrintReceipt ? 'on' : 'off'}`}
+              >
+                <div className="toggle-dot" />
+              </button>
+            </div>
+            <div className="settings-toggle-field">
+              <div>
+                <label className="settings-label">
+                  <Printer size={14} style={{ marginRight: 6 }} />
+                  Режим печати
+                </label>
+                <p className="settings-hint">
+                  {localSettings.silentPrint ? 'Автоматически (без диалога принтера)' : 'Вручную (показывать диалог выбора принтера)'}
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setLocalSettings((prev) => ({ ...prev, silentPrint: !prev.silentPrint }))
+                }
+                className={`toggle ${localSettings.silentPrint ? 'on' : 'off'}`}
               >
                 <div className="toggle-dot" />
               </button>
@@ -419,7 +509,6 @@ const SettingsPage: React.FC = () => {
               <span>Название</span>
               <span>Реле №</span>
               <span>Цена/час</span>
-              <span>Активен</span>
             </div>
             {localSettings.tables.map((table, index) => (
               <div key={index} className="settings-table-row">
@@ -440,22 +529,16 @@ const SettingsPage: React.FC = () => {
                   }
                   className="form-input form-input-sm"
                 />
-                <button
-                  onClick={() => updateTableSetting(index, 'isActive', !table.isActive)}
-                  className={`toggle ${table.isActive ? 'on' : 'off'}`}
-                >
-                  <div className="toggle-dot" />
-                </button>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Настройки чека */}
+        {/* Настройки печати */}
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Printer size={18} />
-            Размер чека
+            Настройки печати
           </h3>
           <div className="settings-fields">
             <div className="settings-field">
