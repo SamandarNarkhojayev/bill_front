@@ -281,7 +281,7 @@ const BarPage: React.FC = () => {
       {/* Модальное окно: Распечатать чек? */}
       {showPrintModal && (
         <div className="modal-overlay" onClick={() => setShowPrintModal(false)}>
-          <div className="modal-container" style={{ maxWidth: 360, background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 28, boxShadow: '0 24px 48px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal bar-print-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Printer size={22} style={{ color: '#f59e0b' }} />

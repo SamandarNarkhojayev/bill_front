@@ -12,8 +12,10 @@ import {
   Filter,
   Download,
   Briefcase,
+  Printer,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { printReceipt, printReportReceipt } from '../utils/receipt';
 
 // Утилита: дата в строку YYYY-MM-DD (локальное время)
 const dateToStr = (d: Date) => {
@@ -30,7 +32,7 @@ const strToDate = (s: string) => {
 };
 
 const ReportsPage: React.FC = () => {
-  const { sessionHistory, settings, currentShift, shiftHistory } = useStore();
+  const { sessionHistory, settings, currentShift, shiftHistory, addToast } = useStore();
   const [selectedDate, setSelectedDate] = useState(dateToStr(new Date()));
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all' | 'shift'>('day');
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
@@ -178,6 +180,87 @@ const ReportsPage: React.FC = () => {
     });
   };
 
+  const getPeriodLabel = () => {
+    if (viewMode === 'day') return formatDate(selectedDate);
+    if (viewMode === 'week') return formatWeekRange();
+    if (viewMode === 'range') return `${formatDate(rangeStart)} — ${formatDate(rangeEnd)}`;
+    if (viewMode === 'all') return 'Всё время';
+    if (viewMode === 'shift') {
+      if (!activeShift) return 'Смена не выбрана';
+      const start = new Date(activeShift.startTime).toLocaleString('ru-RU');
+      const end = activeShift.endTime ? new Date(activeShift.endTime).toLocaleString('ru-RU') : 'по текущее время';
+      return `Смена: ${activeShift.userName} (${start} — ${end})`;
+    }
+    return 'Период';
+  };
+
+  const handlePrintSession = async (session: (typeof filteredSessions)[number]) => {
+    try {
+      const detailedBarOrders = session.barOrders && session.barOrders.length > 0
+        ? session.barOrders
+        : session.barCost > 0
+        ? [{
+            id: `hist-${session.id}`,
+            menuItemId: 'history-bar',
+            menuItemName: 'Бар',
+            quantity: 1,
+            price: session.barCost,
+            timestamp: session.endTime,
+          }]
+        : [];
+
+      const ok = await printReceipt({
+        clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
+        tableName: session.tableName,
+        mode: session.mode,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        duration: session.duration,
+        tableCost: session.tableCost,
+        barOrders: detailedBarOrders,
+        barCost: session.barCost,
+        totalCost: session.totalCost,
+        currency: settings.currency,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
+        silentPrint: settings.silentPrint,
+      });
+
+      if (!ok) addToast('error', 'Не удалось распечатать пречек');
+    } catch (error) {
+      console.error('Print from history failed:', error);
+      addToast('error', 'Ошибка печати пречека');
+    }
+  };
+
+  const handlePrintReport = async () => {
+    const ok = await printReportReceipt({
+      clubName: settings.clubName,
+      receiptCompanyName: settings.receiptCompanyName,
+      receiptCity: settings.receiptCity,
+      receiptPhone: settings.receiptPhone,
+      receiptCashierName: settings.receiptCashierName,
+      currency: settings.currency,
+      periodLabel: getPeriodLabel(),
+      sessions: filteredSessions,
+      totalTable: stats.tableRev,
+      totalBar: stats.barRev,
+      totalRevenue: stats.totalRev,
+      totalCount: stats.count,
+      receiptWidthMm: settings.receiptWidthMm,
+      receiptFontSize: settings.receiptFontSize,
+      receiptPaddingMm: settings.receiptPaddingMm,
+      silentPrint: settings.silentPrint,
+    });
+
+    if (!ok) addToast('error', 'Не удалось распечатать отчётный пречек');
+  };
+
   return (
     <div className="page-content">
       <div className="page-header">
@@ -219,9 +302,14 @@ const ReportsPage: React.FC = () => {
             </button>
           </div>
           {filteredSessions.length > 0 && (
-            <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Download size={14} /> Экспорт
-            </button>
+            <>
+              <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Download size={14} /> Экспорт
+              </button>
+              <button onClick={() => handlePrintReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Printer size={14} /> Печать отчёта
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -459,6 +547,7 @@ const ReportsPage: React.FC = () => {
                   <th>Стол</th>
                   <th>Бар</th>
                   <th>Итого</th>
+                  <th>Пречек</th>
                 </tr>
               </thead>
               <tbody>
@@ -480,6 +569,16 @@ const ReportsPage: React.FC = () => {
                       </td>
                       <td className="font-bold">
                         {session.totalCost.toLocaleString()} {settings.currency}
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-ghost btn-sm report-print-btn"
+                          onClick={() => handlePrintSession(session)}
+                          title="Печать пречека"
+                        >
+                          <Printer size={14} />
+                          Пречек
+                        </button>
                       </td>
                     </tr>
                   ))}

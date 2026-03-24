@@ -32,7 +32,7 @@ interface ElectronAPI {
     removeAllListeners: (channel: string) => void;
   };
   printer?: {
-    printReceipt: (receiptHTML: string, widthMm?: number) => Promise<any>;
+    printReceipt: (receiptHTML: string, widthMm?: number, silent?: boolean) => Promise<any>;
     getPrinters: () => Promise<any[]>;
   };
   updater?: {

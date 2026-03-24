@@ -146,6 +146,7 @@ export interface SessionRecord {
   endTime: number;
   duration: number; // минуты
   tableCost: number;
+  barOrders?: BarOrderItem[];
   barCost: number;
   totalCost: number;
   date: string;

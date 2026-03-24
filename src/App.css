@@ -817,6 +817,24 @@
   gap: 10px;
 }
 
+.bar-print-modal {
+  max-width: 360px;
+}
+
+.bar-print-modal .modal-header {
+  padding: 0;
+}
+
+.bar-print-modal .modal-body {
+  text-align: center;
+  padding: 16px 0;
+  margin-bottom: 0;
+}
+
+.bar-print-modal .modal-title {
+  margin-bottom: 0;
+}
+
 /* Reservation / form field group */
 .modal-field-group {
   display: flex;
@@ -1931,6 +1949,11 @@
 
 .report-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.report-print-btn {
+  white-space: nowrap;
+  min-width: 88px;
 }
 
 /* ===== SETTINGS ===== */

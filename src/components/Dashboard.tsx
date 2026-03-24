@@ -403,10 +403,66 @@ const Dashboard: React.FC = () => {
     setShowEndModal(false);
   };
 
-  const handleTimeExpired = useCallback((tableId: number) => {
+  const handleTimeExpired = useCallback(async (tableId: number) => {
+    const table = tables.find((t) => t.id === tableId);
+    if (!table?.currentSession) return;
+
     if (settings.soundEnabled) playTimerEndSound();
+
+    const session = table.currentSession;
+    const endTime = Date.now();
+    const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
+    const tableCost = calculateSessionTableCost(
+      session.startTime,
+      endTime,
+      table.pricePerHour,
+      session.mode,
+      session.fixedAmount
+    );
+    const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+    try {
+      await printReceipt({
+        clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
+        tableName: table.name,
+        mode: session.mode,
+        startTime: session.startTime,
+        endTime,
+        duration: durationMinutes,
+        tableCost,
+        barOrders: session.barOrders,
+        barCost,
+        totalCost: tableCost + barCost,
+        currency: settings.currency,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
+        silentPrint: settings.silentPrint,
+      });
+    } catch (error) {
+      console.error('Auto print on expire failed:', error);
+    }
+
     endSession(tableId);
-  }, [settings.soundEnabled, endSession]);
+  }, [
+    tables,
+    settings.soundEnabled,
+    settings.clubName,
+    settings.receiptCompanyName,
+    settings.receiptCity,
+    settings.receiptPhone,
+    settings.receiptCashierName,
+    settings.currency,
+    settings.receiptWidthMm,
+    settings.receiptFontSize,
+    settings.receiptPaddingMm,
+    settings.silentPrint,
+    endSession,
+  ]);
 
   const handleOpenBar = (tableId: number) => {
     openModal('bar-order', { tableId });
