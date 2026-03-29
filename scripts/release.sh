@@ -63,6 +63,9 @@ echo "New version: $NEW_VERSION"
 echo "Running TypeScript check..."
 npx tsc --noEmit
 
+echo "Building application..."
+npm run build
+
 echo "Staging current changes..."
 git add -A
 
