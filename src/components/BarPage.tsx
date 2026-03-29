@@ -50,11 +50,25 @@ const BarPage: React.FC = () => {
     addBarCategory, updateBarCategory, removeBarCategory,
     tables, addBarOrderToTable, settings, updateStock,
     createRevision, inventoryRevisions, sellFromBar,
+    currentUser,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<BarTab>('quick-order');
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
+
+  const isRegularUser = currentUser?.role === 'user';
+  const allTabs = [
+    { id: 'quick-order' as BarTab, icon: ShoppingCart, label: 'Заказ' },
+    { id: 'menu' as BarTab, icon: Edit3, label: 'Меню' },
+    { id: 'categories' as BarTab, icon: Layers, label: 'Категории' },
+  ];
+  const visibleTabs = isRegularUser ? allTabs.filter(tab => tab.id === 'quick-order') : allTabs;
+
+  // Если пользователь обычный и была открыта недоступная вкладка, переключи на доступную
+  if (isRegularUser && activeTab !== 'quick-order') {
+    setActiveTab('quick-order');
+  }
 
   // Меню
   const [editingItem, setEditingItem] = useState<string | null>(null);
@@ -316,11 +330,7 @@ const BarPage: React.FC = () => {
           <h2 className="page-title">Бар</h2>
         </div>
         <div className="bar-tabs">
-          {([
-            { id: 'quick-order' as BarTab, icon: ShoppingCart, label: 'Заказ' },
-            { id: 'menu' as BarTab, icon: Edit3, label: 'Меню' },
-            { id: 'categories' as BarTab, icon: Layers, label: 'Категории' },
-          ]).map((tab) => (
+          {visibleTabs.map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`bar-tab ${activeTab === tab.id ? 'active' : ''}`}>
               <tab.icon size={16} />
@@ -477,7 +487,7 @@ const BarPage: React.FC = () => {
       )}
 
       {/* === УПРАВЛЕНИЕ МЕНЮ === */}
-      {activeTab === 'menu' && (
+      {activeTab === 'menu' && !isRegularUser && (
         <div className="bar-menu-manage">
           <div className="bar-menu-manage-header">
             <button onClick={() => setShowAddForm(true)} className="btn btn-primary btn-lg">
@@ -710,7 +720,7 @@ const BarPage: React.FC = () => {
       )}
 
       {/* === КАТЕГОРИИ === */}
-      {activeTab === 'categories' && (
+      {activeTab === 'categories' && !isRegularUser && (
         <div className="bar-categories-manage">
           <div className="bar-menu-manage-header">
             <button onClick={() => setShowAddCategory(true)} className="btn btn-primary btn-lg"><Plus size={18} /> Новая категория</button>

@@ -24,6 +24,8 @@ const SettingsPage: React.FC = () => {
   const [localSettings, setLocalSettings] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
   const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+  const isRegularUser = currentUser?.role === 'user';
+  const canAccessAllSettings = !isRegularUser;
   const [updater, setUpdater] = useState<UpdaterState>({
     status: 'idle',
     message: 'Ожидание проверки обновлений',
@@ -348,6 +350,7 @@ const SettingsPage: React.FC = () => {
 
       <div className="settings-grid">
         {/* Основные */}
+        {canAccessAllSettings && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Building2 size={18} />
@@ -374,7 +377,7 @@ const SettingsPage: React.FC = () => {
                   setLocalSettings((prev) => ({ ...prev, receiptCompanyName: e.target.value }))
                 }
                 className="form-input"
-                placeholder="ИП Coffee Time"
+                placeholder="ИП -"
               />
             </div>
             <div className="settings-field">
@@ -410,13 +413,15 @@ const SettingsPage: React.FC = () => {
                   setLocalSettings((prev) => ({ ...prev, receiptCashierName: e.target.value }))
                 }
                 className="form-input"
-                placeholder="ИМЯ"
+                placeholder="-"
               />
             </div>
           </div>
         </div>
+        )}
 
         {/* Автоматизация */}
+        {canAccessAllSettings && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Lightbulb size={18} />
@@ -491,8 +496,10 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Столы */}
+        {canAccessAllSettings && (
         <div className="settings-section settings-section-full">
           <div className="settings-section-header">
             <h3 className="settings-section-title">
@@ -533,8 +540,10 @@ const SettingsPage: React.FC = () => {
             ))}
           </div>
         </div>
+        )}
 
         {/* Настройки печати */}
+        {canAccessAllSettings && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Printer size={18} />
@@ -628,8 +637,10 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Данные */}
+        {canAccessAllSettings && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Trash2 size={18} />
@@ -649,8 +660,10 @@ const SettingsPage: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
 
         {/* Обновления */}
+        {canAccessAllSettings && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <RefreshCw size={18} />
@@ -691,6 +704,7 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Порт устройства */}
         <div className="settings-section settings-section-full">

@@ -9,11 +9,25 @@ import ReportsPage from './components/ReportsPage'
 import SettingsPage from './components/SettingsPage'
 import UsersPage from './components/UsersPage'
 import ToastContainer from './components/ToastContainer'
+import { playTimerEndSound } from './utils/sounds'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/arduino'
 import './App.css'
 
+// Утилита для расчета стоимости сессии (скопирована из Dashboard)
+function calculateSessionTableCost(
+  startTime: number,
+  currentTime: number,
+  pricePerHour: number,
+  mode: 'time' | 'amount',
+  fixedAmount?: number
+): number {
+  if (mode === 'amount' && fixedAmount) return fixedAmount;
+  const elapsedHours = (currentTime - startTime) / (1000 * 60 * 60);
+  return Math.round(elapsedHours * pricePerHour * 100) / 100;
+}
+
 function App() {
-  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser } = useStore()
+  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession } = useStore()
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
 
   // Применяем тему
@@ -21,6 +35,32 @@ function App() {
     document.documentElement.setAttribute('data-theme', settings.theme)
     document.body.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+
+  // Глобальная проверка истечения времени/суммы для всех столов
+  useEffect(() => {
+    const interval = setInterval(() => {
+      tables.forEach((table) => {
+        if (!table.currentSession) return
+
+        const session = table.currentSession
+        const elapsedSec = Math.floor((Date.now() - session.startTime) / 1000)
+
+        // Проверяем истечение по времени или сумме
+        if ((session.mode === 'time' || session.mode === 'amount') && session.plannedDuration !== null) {
+          const totalSec = session.plannedDuration
+          const remaining = totalSec - elapsedSec
+
+          // Если время истекло, проигрываем звук и завершаем сессию
+          if (remaining <= 0) {
+            if (settings.soundEnabled) playTimerEndSound()
+            endSession(table.id)
+          }
+        }
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [tables, endSession, settings.soundEnabled])
 
   // Подписка на события Arduino для синхронизации столов
   useEffect(() => {
