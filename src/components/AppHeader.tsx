@@ -3,18 +3,54 @@ import {
   Clock,
   Calendar,
   Timer,
+  Download,
+  RefreshCw,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import type { UpdaterState } from '../types/arduino';
 
 const AppHeader: React.FC = () => {
   const { currentShift } = useStore();
   const [now, setNow] = useState(Date.now());
+  const [updater, setUpdater] = useState<UpdaterState>({
+    status: 'idle',
+    message: '',
+    currentVersion: __APP_VERSION__,
+    availableVersion: null,
+    percent: null,
+  });
+  const [showUpdateButton, setShowUpdateButton] = useState(false);
 
   // Обновлять время каждую секунду
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Подписка на события обновления
+  useEffect(() => {
+    const updaterApi = window.electronAPI?.updater;
+    if (!updaterApi) return;
+
+    updaterApi.getState().then(setUpdater).catch(() => null);
+    updaterApi.onStatus(setUpdater);
+
+    return () => {
+      updaterApi.removeAllListeners();
+    };
+  }, []);
+
+  // Показывать кнопку при наличии обновления
+  useEffect(() => {
+    setShowUpdateButton(updater.status === 'available' || updater.status === 'downloaded');
+  }, [updater.status]);
+
+  const handleUpdateClick = () => {
+    // Передаем событие родительскому компоненту через кастомное событие
+    window.dispatchEvent(new CustomEvent('show-update-modal', { 
+      detail: { version: updater.availableVersion } 
+    }));
+  };
 
   const formatDate = (ts: number) => {
     return new Date(ts).toLocaleDateString('ru-RU', {
@@ -69,7 +105,28 @@ const AppHeader: React.FC = () => {
         )}
       </div>
 
-      <div className="header-right" />
+      <div className="header-right">
+        {showUpdateButton && (
+          <button 
+            onClick={handleUpdateClick}
+            className="header-update-btn"
+            title={`Доступно обновление v${updater.availableVersion}`}
+          >
+            {updater.status === 'downloaded' ? (
+              <>
+                <Download size={16} />
+                <span>Установить v{updater.availableVersion}</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw size={16} />
+                <span>Обновление v{updater.availableVersion}</span>
+              </>
+            )}
+            <span className="update-badge-pulse" />
+          </button>
+        )}
+      </div>
     </header>
   );
 };

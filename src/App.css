@@ -4374,3 +4374,410 @@
   color: #1e293b;
 }
 
+/* ===== AD BANNER ===== */
+.ad-banner {
+  position: fixed;
+  bottom: 0;
+  left: 260px;
+  right: 0;
+  z-index: 40;
+  background: linear-gradient(135deg, #047857 0%, #059669 25%, #10b981 50%, #34d399 75%, #6ee7b7 100%);
+  border-top: 2px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 -4px 20px rgba(0, 0, 0, 0.4),
+    0 -2px 10px rgba(16, 185, 129, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateY(100%);
+  opacity: 0;
+  backdrop-filter: blur(10px);
+}
+
+.ad-banner-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.ad-banner-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.1) 50%, 
+    transparent 100%);
+  animation: shimmer 3s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.sidebar-collapsed .ad-banner {
+  left: 72px;
+}
+
+.ad-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ad-banner-icon {
+  font-size: 28px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.ad-banner-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+}
+
+.ad-banner-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  align-self: center;
+}
+
+.ad-banner-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: white;
+  flex: 1;
+}
+
+.ad-banner-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ad-banner-details {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
+.ad-banner-detail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
+}
+
+.ad-banner-detail:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.ad-banner-divider {
+  opacity: 0.6;
+  font-weight: 400;
+}
+
+.ad-banner-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.95;
+  letter-spacing: 0.3px;
+  margin-top: 1px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.ad-banner-close {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.ad-banner-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ad-banner-close:active {
+  transform: scale(0.95) rotate(90deg);
+}
+
+/* Компенсация отступа для контента, чтобы баннер не перекрывал */
+.main-content-body {
+  padding-bottom: 50px;
+}
+
+@media (max-width: 768px) {
+  .ad-banner {
+    left: 0;
+  }
+  
+  .ad-banner-content {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+  
+  .ad-banner-icon {
+    font-size: 32px;
+  }
+  
+  .ad-banner-title {
+    font-size: 14px;
+  }
+  
+  .ad-banner-details {
+    font-size: 11px;
+    flex-wrap: wrap;
+  }
+  
+  .ad-banner-subtitle {
+    font-size: 11px;
+  }
+  
+  .ad-banner-close {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* ===== UPDATE BUTTON IN HEADER ===== */
+.header-update-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.header-update-btn:hover {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.header-update-btn:active {
+  transform: translateY(0);
+}
+
+.update-badge-pulse {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background: #ef4444;
+  border: 2px solid #0f172a;
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+}
+
+/* ===== UPDATE MODAL ===== */
+.update-modal {
+  position: relative;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: modalSlideUp 0.3s ease-out;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  transform: rotate(90deg) scale(1.05);
+}
+
+.modal-close-btn:active {
+  transform: rotate(90deg) scale(0.95);
+}
+
+.update-modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-radius: 50%;
+  color: white;
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+}
+
+.update-modal-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #f8fafc;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.update-modal-version {
+  text-align: center;
+  font-size: 14px;
+  color: #94a3b8;
+  margin-bottom: 24px;
+}
+
+.update-modal-version strong {
+  color: #fbbf24;
+  font-size: 16px;
+}
+
+.update-modal-warning {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.update-modal-warning-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fca5a5;
+  margin-bottom: 12px;
+}
+
+.update-modal-warning-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.update-modal-warning-list li {
+  font-size: 13px;
+  color: #cbd5e1;
+  padding: 6px 0;
+  padding-left: 20px;
+  position: relative;
+}
+
+.update-modal-warning-list li::before {
+  content: '•';
+  position: absolute;
+  left: 6px;
+  color: #fca5a5;
+  font-weight: bold;
+}
+
+.update-modal-description {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.update-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.update-modal-actions .btn {
+  min-width: 140px;
+}

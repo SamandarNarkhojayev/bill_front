@@ -9,7 +9,6 @@ import {
   Trash2,
   Cpu,
   Printer,
-  Download,
   RefreshCw,
   Usb,
   Unplug,
@@ -17,7 +16,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { UpdaterState, SerialPort as SerialPortInfo } from '../types/arduino';
+import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
   const { settings, updateSettings, sessionHistory, currentUser } = useStore();
@@ -26,13 +25,6 @@ const SettingsPage: React.FC = () => {
   const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
   const isRegularUser = currentUser?.role === 'user';
   const canAccessAllSettings = !isRegularUser;
-  const [updater, setUpdater] = useState<UpdaterState>({
-    status: 'idle',
-    message: 'Ожидание проверки обновлений',
-    currentVersion: __APP_VERSION__,
-    availableVersion: null,
-    percent: null,
-  });
 
   // ===== Состояния для Serial-порта =====
   const [allPorts, setAllPorts] = useState<SerialPortInfo[]>([]);
@@ -296,33 +288,6 @@ const SettingsPage: React.FC = () => {
     newTables[index] = { ...newTables[index], [field]: value };
     setLocalSettings((prev) => ({ ...prev, tables: newTables }));
   };
-
-  useEffect(() => {
-    const updaterApi = window.electronAPI?.updater;
-    if (!updaterApi) return;
-
-    updaterApi.getState().then(setUpdater).catch(() => null);
-    updaterApi.onStatus(setUpdater);
-
-    return () => {
-      updaterApi.removeAllListeners();
-    };
-  }, []);
-
-  const handleCheckUpdates = async () => {
-    await window.electronAPI?.updater?.checkForUpdates();
-  };
-
-  const handleDownloadUpdate = async () => {
-    await window.electronAPI?.updater?.downloadUpdate();
-  };
-
-  const handleInstallUpdate = async () => {
-    const confirmed = window.confirm('Установить обновление сейчас? Приложение перезапустится.');
-    if (!confirmed) return;
-    await window.electronAPI?.updater?.installUpdate();
-  };
-
 
   return (
     <div className="page-content">
@@ -658,50 +623,6 @@ const SettingsPage: React.FC = () => {
               <Trash2 size={16} />
               Сбросить приложение
             </button>
-          </div>
-        </div>
-        )}
-
-        {/* Обновления */}
-        {canAccessAllSettings && (
-        <div className="settings-section">
-          <h3 className="settings-section-title">
-            <RefreshCw size={18} />
-            Обновление приложения
-          </h3>
-          <div className="settings-fields">
-            <div className="settings-info">
-              <p>Текущая версия: <strong>v{updater.currentVersion || __APP_VERSION__}</strong></p>
-              {updater.availableVersion && (
-                <p>Доступная версия: <strong>v{updater.availableVersion}</strong></p>
-              )}
-              <p>{updater.message}</p>
-            </div>
-
-            <div className="page-header-actions" style={{ justifyContent: 'flex-start' }}>
-              <button
-                onClick={handleCheckUpdates}
-                className="btn btn-ghost"
-                disabled={updater.status === 'checking' || updater.status === 'downloading'}
-              >
-                <RefreshCw size={16} />
-                Проверить обновления
-              </button>
-
-              {updater.status === 'available' && (
-                <button onClick={handleDownloadUpdate} className="btn btn-primary">
-                  <Download size={16} />
-                  Скачать обновление
-                </button>
-              )}
-
-              {updater.status === 'downloaded' && (
-                <button onClick={handleInstallUpdate} className="btn btn-primary">
-                  <RefreshCw size={16} />
-                  Установить и перезапустить
-                </button>
-              )}
-            </div>
           </div>
         </div>
         )}
