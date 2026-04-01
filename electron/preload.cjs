@@ -4,45 +4,66 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+function normalizeArduinoErrorMessage(error) {
+  const rawMessage = error instanceof Error ? error.message : String(error || 'Неизвестная ошибка');
+  const cleanedMessage = rawMessage
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '');
+
+  if (/cannot lock port|resource temporarily unavailable/i.test(cleanedMessage)) {
+    return 'Порт занят другим приложением или другим экземпляром Biliardo. Закройте Arduino IDE, Serial Monitor, PlatformIO или второе окно приложения и попробуйте снова.';
+  }
+
+  return cleanedMessage;
+}
+
+async function invokeArduino(channel, ...args) {
+  try {
+    return await ipcRenderer.invoke(channel, ...args);
+  } catch (error) {
+    throw new Error(normalizeArduinoErrorMessage(error));
+  }
+}
+
 // Предоставляем безопасный API для renderer процесса
 contextBridge.exposeInMainWorld('electronAPI', {
   // Arduino API
   arduino: {
     // Получить список доступных портов (отфильтрованные)
-    listPorts: () => ipcRenderer.invoke('arduino:list-ports'),
+    listPorts: () => invokeArduino('arduino:list-ports'),
     
     // Получить ВСЕ порты (для ручного выбора в настройках)
-    listAllPorts: () => ipcRenderer.invoke('arduino:list-all-ports'),
+    listAllPorts: () => invokeArduino('arduino:list-all-ports'),
     
     // Сохранить выбранный порт
-    savePort: (portPath) => ipcRenderer.invoke('arduino:save-port', portPath),
+    savePort: (portPath) => invokeArduino('arduino:save-port', portPath),
     
     // Получить сохранённый порт
-    getSavedPort: () => ipcRenderer.invoke('arduino:get-saved-port'),
+    getSavedPort: () => invokeArduino('arduino:get-saved-port'),
     
     // Переподключиться (используя сохранённый порт)
-    reconnect: () => ipcRenderer.invoke('arduino:reconnect'),
+    reconnect: () => invokeArduino('arduino:reconnect'),
     
     // Подключиться к Arduino
-    connect: (portPath) => ipcRenderer.invoke('arduino:connect', portPath),
+    connect: (portPath) => invokeArduino('arduino:connect', portPath),
     
     // Отключиться от Arduino
-    disconnect: () => ipcRenderer.invoke('arduino:disconnect'),
+    disconnect: () => invokeArduino('arduino:disconnect'),
     
     // Управление реле
-    setRelay: (relayNumber, state) => ipcRenderer.invoke('arduino:set-relay', relayNumber, state),
+    setRelay: (relayNumber, state) => invokeArduino('arduino:set-relay', relayNumber, state),
     
     // Получить статус всех реле
-    getStatus: () => ipcRenderer.invoke('arduino:get-status'),
+    getStatus: () => invokeArduino('arduino:get-status'),
     
     // Проверить подключение
-    isConnected: () => ipcRenderer.invoke('arduino:is-connected'),
+    isConnected: () => invokeArduino('arduino:is-connected'),
     
     // Получить текущие состояния реле
-    getRelayStates: () => ipcRenderer.invoke('arduino:get-relay-states'),
+    getRelayStates: () => invokeArduino('arduino:get-relay-states'),
     
     // Получить INFO (количество реле, пины)
-    getInfo: () => ipcRenderer.invoke('arduino:get-info'),
+    getInfo: () => invokeArduino('arduino:get-info'),
     
     // Подписка на события
     onRelayChanged: (callback) => {
@@ -108,6 +129,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     set: (key, value) => ipcRenderer.invoke('store:set', key, value),
     remove: (key) => ipcRenderer.invoke('store:remove', key),
     flush: () => ipcRenderer.invoke('store:flush'),
+  },
+
+  app: {
+    onBeforeClose: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('app:before-close', listener);
+      return () => {
+        ipcRenderer.removeListener('app:before-close', listener);
+      };
+    },
+    confirmCloseReady: () => ipcRenderer.invoke('app:confirm-close-ready'),
+  },
+
+  // Backup & Recovery API
+  backup: {
+    list: () => ipcRenderer.invoke('backup:list'),
+    restore: (backupPath) => ipcRenderer.invoke('backup:restore', backupPath),
+    exportData: () => ipcRenderer.invoke('backup:export'),
+    importData: () => ipcRenderer.invoke('backup:import'),
+    createNow: () => ipcRenderer.invoke('backup:create-now'),
+    getStoragePaths: () => ipcRenderer.invoke('backup:get-storage-path'),
   }
 });
 

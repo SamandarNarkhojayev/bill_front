@@ -6,13 +6,37 @@ interface ElectronStoreAPI {
   get: (key: string) => Promise<string | null>;
   set: (key: string, value: string) => Promise<void>;
   remove: (key: string) => Promise<void>;
+  flush: () => Promise<{ success: boolean }>;
+}
+
+interface ElectronAppAPI {
+  onBeforeClose: (callback: () => void) => (() => void) | void;
+  confirmCloseReady: () => Promise<{ success: boolean }>;
+}
+
+interface BackupEntry {
+  type: 'rotation' | 'daily' | 'emergency';
+  name: string;
+  path: string;
+  date: string;
+  size: number;
+  valid: boolean;
+}
+
+interface ElectronBackupAPI {
+  list: () => Promise<BackupEntry[]>;
+  restore: (backupPath: string) => Promise<{ success: boolean; error?: string }>;
+  exportData: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  importData: () => Promise<{ success: boolean; error?: string }>;
+  createNow: () => Promise<{ success: boolean; error?: string }>;
+  getStoragePaths: () => Promise<{ storagePath: string; backupDir: string; dailyDir: string; userData: string }>;
 }
 
 interface ElectronAPI {
   arduino?: {
     listPorts: () => Promise<any[]>;
     listAllPorts: () => Promise<any[]>;
-    savePort: (portPath: string) => Promise<void>;
+    savePort: (portPath: string | null) => Promise<void>;
     getSavedPort: () => Promise<string | null>;
     reconnect: () => Promise<any>;
     connect: (portPath: string) => Promise<any>;
@@ -44,6 +68,8 @@ interface ElectronAPI {
     removeAllListeners: () => void;
   };
   store?: ElectronStoreAPI;
+  app?: ElectronAppAPI;
+  backup?: ElectronBackupAPI;
 }
 
 declare global {

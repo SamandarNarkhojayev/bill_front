@@ -14,6 +14,11 @@ import {
   Unplug,
   Plug,
   Search,
+  Download,
+  Upload,
+  Shield,
+  FolderArchive,
+  History,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
@@ -34,6 +39,12 @@ const SettingsPage: React.FC = () => {
   const [portStatus, setPortStatus] = useState<string>('');
   const [isRelayTestRunning, setIsRelayTestRunning] = useState(false);
   const [relayTestMode, setRelayTestMode] = useState<'ultra' | 'fast' | 'medium' | 'slow'>('medium');
+
+  // ===== Состояния для бэкапов =====
+  const [backupList, setBackupList] = useState<BackupEntry[]>([]);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupStatus, setBackupStatus] = useState('');
+  const [showBackupList, setShowBackupList] = useState(false);
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -281,6 +292,115 @@ const SettingsPage: React.FC = () => {
       window.electronAPI.store.remove('billiard-club-storage').catch(() => {});
     }
     window.location.reload();
+  };
+
+  // ===== Функции для бэкапов =====
+  const loadBackupList = async () => {
+    const api = window.electronAPI?.backup;
+    if (!api) return;
+    setBackupLoading(true);
+    try {
+      const list = await api.list();
+      setBackupList(list);
+    } catch {
+      setBackupList([]);
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    const api = window.electronAPI?.backup;
+    if (!api) return;
+    setBackupLoading(true);
+    setBackupStatus('');
+    try {
+      const result = await api.exportData();
+      if (result.success) {
+        setBackupStatus(`✅ Данные экспортированы: ${result.path}`);
+      } else {
+        setBackupStatus(`❌ ${result.error || 'Ошибка экспорта'}`);
+      }
+    } catch (err: unknown) {
+      setBackupStatus(`❌ ${err instanceof Error ? err.message : 'Ошибка'}`);
+    } finally {
+      setBackupLoading(false);
+      setTimeout(() => setBackupStatus(''), 8000);
+    }
+  };
+
+  const handleImportData = async () => {
+    const api = window.electronAPI?.backup;
+    if (!api) return;
+
+    const confirmed = window.confirm(
+      'Импортировать данные из файла? Текущие данные будут заменены. Перед этим автоматически создастся бэкап.'
+    );
+    if (!confirmed) return;
+
+    setBackupLoading(true);
+    setBackupStatus('');
+    try {
+      const result = await api.importData();
+      if (result.success) {
+        setBackupStatus('✅ Данные импортированы. Перезагрузка...');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setBackupStatus(`❌ ${result.error || 'Ошибка импорта'}`);
+      }
+    } catch (err: unknown) {
+      setBackupStatus(`❌ ${err instanceof Error ? err.message : 'Ошибка'}`);
+    } finally {
+      setBackupLoading(false);
+      setTimeout(() => setBackupStatus(''), 8000);
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    const api = window.electronAPI?.backup;
+    if (!api) return;
+    setBackupLoading(true);
+    try {
+      const result = await api.createNow();
+      if (result.success) {
+        setBackupStatus('✅ Бэкап создан');
+        await loadBackupList();
+      } else {
+        setBackupStatus(`❌ ${result.error || 'Ошибка'}`);
+      }
+    } catch {
+      setBackupStatus('❌ Ошибка создания бэкапа');
+    } finally {
+      setBackupLoading(false);
+      setTimeout(() => setBackupStatus(''), 5000);
+    }
+  };
+
+  const handleRestoreFromBackup = async (backupPath: string, backupName: string) => {
+    const api = window.electronAPI?.backup;
+    if (!api) return;
+
+    const confirmed = window.confirm(
+      `Восстановить данные из "${backupName}"? Текущие данные будут заменены (перед этим создастся бэкап).`
+    );
+    if (!confirmed) return;
+
+    setBackupLoading(true);
+    setBackupStatus('');
+    try {
+      const result = await api.restore(backupPath);
+      if (result.success) {
+        setBackupStatus('✅ Данные восстановлены. Перезагрузка...');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setBackupStatus(`❌ ${result.error || 'Ошибка восстановления'}`);
+      }
+    } catch (err: unknown) {
+      setBackupStatus(`❌ ${err instanceof Error ? err.message : 'Ошибка'}`);
+    } finally {
+      setBackupLoading(false);
+      setTimeout(() => setBackupStatus(''), 8000);
+    }
   };
 
   const updateTableSetting = (index: number, field: string, value: string | number | boolean) => {
@@ -624,6 +744,98 @@ const SettingsPage: React.FC = () => {
               Сбросить приложение
             </button>
           </div>
+        </div>
+        )}
+
+        {/* Резервное копирование */}
+        {canAccessAllSettings && (
+        <div className="settings-section settings-section-full">
+          <h3 className="settings-section-title">
+            <Shield size={18} />
+            Резервное копирование
+          </h3>
+
+          {backupStatus && (
+            <p style={{ fontSize: 13, marginBottom: 10, color: backupStatus.startsWith('✅') ? '#22c55e' : backupStatus.startsWith('❌') ? '#ef4444' : '#94a3b8' }}>
+              {backupStatus}
+            </p>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button onClick={handleExportData} className="btn btn-primary" disabled={backupLoading} style={{ fontSize: 13 }}>
+              <Download size={15} />
+              Экспорт данных
+            </button>
+            <button onClick={handleImportData} className="btn btn-ghost" disabled={backupLoading} style={{ fontSize: 13 }}>
+              <Upload size={15} />
+              Импорт из файла
+            </button>
+            <button onClick={handleCreateBackup} className="btn btn-ghost" disabled={backupLoading} style={{ fontSize: 13 }}>
+              <FolderArchive size={15} />
+              Создать бэкап сейчас
+            </button>
+            <button
+              onClick={() => { setShowBackupList(!showBackupList); if (!showBackupList) loadBackupList(); }}
+              className="btn btn-ghost"
+              disabled={backupLoading}
+              style={{ fontSize: 13 }}
+            >
+              <History size={15} />
+              {showBackupList ? 'Скрыть бэкапы' : 'Показать бэкапы'}
+            </button>
+          </div>
+
+          <div className="settings-info" style={{ marginBottom: 10 }}>
+            <p style={{ fontSize: 12, color: '#64748b' }}>
+              💾 Данные автоматически сохраняются каждые 30 сек, создаётся 5 ротационных бэкапов каждую минуту,
+              ежедневные снапшоты хранятся 30 дней. При закрытии окна данные принудительно записываются на диск.
+            </p>
+          </div>
+
+          {showBackupList && (
+            <div style={{ marginTop: 8 }}>
+              {backupLoading ? (
+                <p style={{ fontSize: 12, color: '#94a3b8' }}>Загрузка списка бэкапов...</p>
+              ) : backupList.length === 0 ? (
+                <p style={{ fontSize: 12, color: '#94a3b8' }}>Нет доступных бэкапов</p>
+              ) : (
+                <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid rgba(148,163,184,0.15)', borderRadius: 8, padding: 6 }}>
+                  {backupList.map((bp, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        borderBottom: idx < backupList.length - 1 ? '1px solid rgba(148,163,184,0.1)' : 'none',
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: bp.valid ? '#e2e8f0' : '#ef4444' }}>
+                          {bp.type === 'daily' ? '📅' : bp.type === 'emergency' ? '🚨' : '🔄'} {bp.name}
+                          {!bp.valid && ' (повреждён)'}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {new Date(bp.date).toLocaleString('ru-RU')} · {(bp.size / 1024).toFixed(1)} КБ
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreFromBackup(bp.path, bp.name)}
+                        className="btn btn-ghost"
+                        disabled={!bp.valid || backupLoading}
+                        style={{ padding: '3px 8px', fontSize: 11, whiteSpace: 'nowrap' }}
+                      >
+                        <RotateCcw size={12} />
+                        Восстановить
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         )}
 

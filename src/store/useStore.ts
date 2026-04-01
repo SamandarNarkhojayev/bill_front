@@ -225,9 +225,74 @@ interface AppStore {
   closeModal: () => void;
 }
 
+const STORAGE_KEY = 'billiard-club-storage';
+const STORAGE_MIRROR_KEY = 'billiard-club-storage-mirror'; // Резервная копия в localStorage
+const STORAGE_VERSION = 0;
+
 // ===== НАДЁЖНОЕ ФАЙЛОВОЕ ХРАНИЛИЩЕ (через IPC в Electron) =====
 // Защита от перезаписи данных до завершения гидратации
 let _hydrationComplete = false;
+let _autoSaveStarted = false;
+let _closeHookRegistered = false;
+
+const partializeStore = (state: AppStore) => ({
+  tables: state.tables,
+  barOrders: state.barOrders,
+  currentShift: state.currentShift,
+  sessionHistory: state.sessionHistory,
+  completedOrders: state.completedOrders,
+  settings: state.settings,
+  barMenu: state.barMenu,
+  barCategories: state.barCategories,
+  inventoryRevisions: state.inventoryRevisions,
+  sidebarCollapsed: state.sidebarCollapsed,
+  users: state.users,
+  shiftHistory: state.shiftHistory,
+  reservations: state.reservations,
+});
+
+const buildPersistedPayload = (state: AppStore) => JSON.stringify({
+  state: partializeStore(state),
+  version: STORAGE_VERSION,
+});
+
+async function persistStoreSnapshot(forceFlush = false) {
+  if (!_hydrationComplete) {
+    return;
+  }
+
+  const payload = buildPersistedPayload(useStore.getState());
+
+  try {
+    if (window.electronAPI?.store) {
+      await window.electronAPI.store.set(STORAGE_KEY, payload);
+      if (forceFlush) {
+        await window.electronAPI.store.flush();
+      }
+      return;
+    }
+  } catch (err) {
+    console.error('[Storage] persist snapshot error:', err);
+  }
+
+  localStorage.setItem(STORAGE_KEY, payload);
+}
+
+function registerClosePersistHook() {
+  if (_closeHookRegistered || typeof window === 'undefined') {
+    return;
+  }
+
+  _closeHookRegistered = true;
+
+  window.electronAPI?.app?.onBeforeClose?.(() => {
+    void persistStoreSnapshot(true).finally(() => {
+      window.electronAPI?.app?.confirmCloseReady().catch((err: unknown) => {
+        console.error('[Storage] close confirm error:', err);
+      });
+    });
+  });
+}
 
 const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
   getItem: async (name: string): Promise<string | null> => {
@@ -235,13 +300,20 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
       if (window.electronAPI?.store) {
         const value = await window.electronAPI.store.get(name);
         console.log('[Storage] getItem:', name, value ? `${value.length} bytes` : 'null');
-        return value ?? null;
+        if (value) return value;
       }
     } catch (err) {
       console.error('[Storage] getItem error:', err);
     }
-    // Fallback на localStorage (dev-mode без Electron)
-    return localStorage.getItem(name);
+    // Fallback: сначала пробуем основной ключ в localStorage, потом mirror
+    const primary = localStorage.getItem(name);
+    if (primary) return primary;
+    const mirror = localStorage.getItem(STORAGE_MIRROR_KEY);
+    if (mirror) {
+      console.log('[Storage] Восстановлено из localStorage mirror');
+      return mirror;
+    }
+    return null;
   },
   setItem: async (name: string, value: string): Promise<void> => {
     // КРИТИЧНО: не писать до завершения гидратации, иначе дефолты затрут данные
@@ -249,6 +321,14 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
       console.log('[Storage] setItem BLOCKED (hydration not complete)');
       return;
     }
+
+    // ЗЕРКАЛО: всегда дублируем в localStorage как резервную копию
+    try {
+      localStorage.setItem(STORAGE_MIRROR_KEY, value);
+    } catch {
+      // localStorage может быть переполнен — не критично
+    }
+
     try {
       if (window.electronAPI?.store) {
         await window.electronAPI.store.set(name, value);
@@ -298,10 +378,16 @@ function flushStorageToDisk() {
  * 3) Flush перед закрытием страницы (beforeunload)
  */
 function startAutoSave() {
+  if (_autoSaveStarted) {
+    return;
+  }
+
+  _autoSaveStarted = true;
+
   // Периодический flush каждые 30 секунд
   const autoSaveInterval = setInterval(() => {
     if (_hydrationComplete) {
-      flushStorageToDisk();
+      void persistStoreSnapshot(true);
     }
   }, 30_000);
 
@@ -309,14 +395,14 @@ function startAutoSave() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && _hydrationComplete) {
       console.log('[AutoSave] Visibility hidden — flushing...');
-      flushStorageToDisk();
+      void persistStoreSnapshot(true);
     }
   });
 
   // Flush при потере фокуса окна
   window.addEventListener('blur', () => {
     if (_hydrationComplete) {
-      flushStorageToDisk();
+      void persistStoreSnapshot(true);
     }
   });
 
@@ -324,6 +410,7 @@ function startAutoSave() {
   window.addEventListener('beforeunload', () => {
     if (_hydrationComplete) {
       console.log('[AutoSave] beforeunload — flushing...');
+      void persistStoreSnapshot(true);
       flushStorageToDisk();
     }
   });
@@ -997,23 +1084,10 @@ export const useStore = create<AppStore>()(
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
     }),
     {
-      name: 'billiard-club-storage',
+      name: STORAGE_KEY,
       storage: electronFileStorage,
-      partialize: (state) => ({
-        tables: state.tables,
-        barOrders: state.barOrders,
-        currentShift: state.currentShift,
-        sessionHistory: state.sessionHistory,
-        completedOrders: state.completedOrders,
-        settings: state.settings,
-        barMenu: state.barMenu,
-        barCategories: state.barCategories,
-        inventoryRevisions: state.inventoryRevisions,
-        sidebarCollapsed: state.sidebarCollapsed,
-        users: state.users,
-        shiftHistory: state.shiftHistory,
-        reservations: state.reservations,
-      }),
+      version: STORAGE_VERSION,
+      partialize: partializeStore,
       merge: (persistedState, currentState) => {
         // Если нет сохранённых данных — используем текущее состояние (дефолтное)
         if (!persistedState) {
@@ -1084,6 +1158,7 @@ export const useStore = create<AppStore>()(
           // Разрешаем запись ТОЛЬКО после завершения гидратации
           _hydrationComplete = true;
           console.log('[Store] Hydration flag set — writes enabled');
+          registerClosePersistHook();
           // Запускаем систему автосохранения
           startAutoSave();
         };
@@ -1091,3 +1166,5 @@ export const useStore = create<AppStore>()(
     }
   )
 );
+
+registerClosePersistHook();

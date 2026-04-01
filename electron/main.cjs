@@ -4,10 +4,21 @@ const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const ArduinoService = require('./arduino-service.cjs');
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 // Создаем экземпляр Arduino сервиса
 const arduino = new ArduinoService();
 let autoConnectInProgress = false;
 let autoConnectRetryTimer = null;
+let mainWindow = null;
+let allowWindowClose = false;
+let closeHandshakeInProgress = false;
+let pendingCloseResolver = null;
+let isAppQuitting = false;
 
 // ===== Сохранённый порт (файл в userData) =====
 function getSavedPortFile() {
@@ -268,9 +279,61 @@ function scheduleAutoConnectRetry(ms) {
   }, ms);
 }
 
+function resolvePendingClose() {
+  if (pendingCloseResolver) {
+    pendingCloseResolver();
+    pendingCloseResolver = null;
+  }
+}
+
+function waitForRendererBeforeClose(timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    let finished = false;
+    const timeout = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      pendingCloseResolver = null;
+      resolve(false);
+    }, timeoutMs);
+
+    pendingCloseResolver = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      pendingCloseResolver = null;
+      resolve(true);
+    };
+  });
+}
+
+async function performSafeWindowClose(win) {
+  try {
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('app:before-close');
+      await waitForRendererBeforeClose();
+    }
+  } catch (error) {
+    console.error('[Window] Renderer close handshake failed:', error?.message || error);
+  }
+
+  shutdownStorage();
+
+  allowWindowClose = true;
+  try {
+    if (process.platform === 'darwin' && !isAppQuitting) {
+      win.hide();
+    } else {
+      win.close();
+    }
+  } finally {
+    allowWindowClose = false;
+    closeHandshakeInProgress = false;
+  }
+}
+
 function createWindow() {
   // Создаём окно браузера
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     autoHideMenuBar: true,
@@ -285,6 +348,25 @@ function createWindow() {
     mainWindow.setMenuBarVisibility(false);
     Menu.setApplicationMenu(null);
   }
+
+  mainWindow.on('close', (event) => {
+    if (allowWindowClose) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (closeHandshakeInProgress) {
+      return;
+    }
+
+    closeHandshakeInProgress = true;
+    void performSafeWindowClose(mainWindow);
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
   // В режиме разработки загружаем из Vite dev server
   if (process.env.NODE_ENV === 'development') {
@@ -301,9 +383,27 @@ function createWindow() {
   });
 }
 
+app.on('second-instance', () => {
+  const [existingWindow] = BrowserWindow.getAllWindows();
+
+  if (!existingWindow) {
+    return;
+  }
+
+  if (existingWindow.isMinimized()) {
+    existingWindow.restore();
+  }
+
+  existingWindow.focus();
+});
+
 // Этот метод будет вызван когда Electron закончит
 // инициализацию и будет готов создавать окна браузера
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) {
+    return;
+  }
+
   // Инициализация надёжного хранилища (in-memory кэш + бэкапы)
   initStorage();
   initUpdater();
@@ -457,6 +557,12 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   // На macOS обычно пересоздают окно в приложении когда
   // кликают на иконку в доке и нет других открытых окон
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
@@ -468,6 +574,7 @@ app.on('activate', () => {
 const BACKUP_COUNT = 5;           // Количество ротационных бэкапов
 const BACKUP_INTERVAL = 60000;    // Бэкап каждые 60 секунд
 const WRITE_DEBOUNCE = 1000;      // Дебаунс записи 1 секунда
+const DAILY_SNAPSHOT_KEEP_DAYS = 30; // Хранить ежедневные снапшоты 30 дней
 
 // Пути
 function getStorePath() {
@@ -495,6 +602,7 @@ let _memoryStore = null;
 let _dirty = false;
 let _writeTimer = null;
 let _backupTimer = null;
+let _lastKnownDataSize = 0; // Размер последних валидных данных для проверки целостности
 
 /**
  * Атомарная запись на диск:
@@ -616,8 +724,27 @@ function flushToDisk() {
       console.error('[Storage] Refusing to write empty/invalid data');
       return;
     }
+
+    // ЗАЩИТА ЦЕЛОСТНОСТИ: если новые данные подозрительно маленькие
+    // (менее 30% от последних валидных), создаём аварийный бэкап
+    if (_lastKnownDataSize > 1000 && json.length < _lastKnownDataSize * 0.3) {
+      console.warn(`[Storage] ⚠️ Data shrank significantly: ${json.length} vs ${_lastKnownDataSize} bytes`);
+      console.warn('[Storage] Creating emergency backup before overwriting...');
+      try {
+        const emergencyPath = path.join(getBackupDir(), `app-storage.emergency-${Date.now()}.json`);
+        const currentMain = getStorePath();
+        if (fs.existsSync(currentMain)) {
+          fs.copyFileSync(currentMain, emergencyPath);
+          console.log('[Storage] Emergency backup saved:', emergencyPath);
+        }
+      } catch (e) {
+        console.error('[Storage] Emergency backup failed:', e.message);
+      }
+    }
+
     atomicWriteSync(getStorePath(), json);
     _dirty = false;
+    _lastKnownDataSize = json.length;
     console.log('[Storage] Flushed to disk:', (json.length / 1024).toFixed(1), 'KB');
   } catch (err) {
     console.error('[Storage] Flush error:', err.message);
@@ -666,6 +793,199 @@ function createBackup() {
 }
 
 /**
+ * Создание ежедневного снапшота (не ротируется, хранится DAILY_SNAPSHOT_KEEP_DAYS дней).
+ * Один файл в день: daily-2026-04-01.json
+ */
+function createDailySnapshot() {
+  try {
+    flushToDisk();
+    const mainPath = getStorePath();
+    if (!fs.existsSync(mainPath)) return;
+
+    const mainCheck = safeReadJSON(mainPath);
+    if (!mainCheck.ok || !isValidStore(mainCheck.data)) return;
+
+    const dailyDir = path.join(app.getPath('userData'), 'daily-snapshots');
+    if (!fs.existsSync(dailyDir)) {
+      fs.mkdirSync(dailyDir, { recursive: true });
+    }
+
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+    const snapshotPath = path.join(dailyDir, `daily-${dateStr}.json`);
+
+    // Если снапшот за сегодня уже есть — обновляем (перезаписываем более свежей версией)
+    fs.copyFileSync(mainPath, snapshotPath);
+    console.log('[Storage] Daily snapshot saved:', dateStr);
+
+    // Удаляем снапшоты старше DAILY_SNAPSHOT_KEEP_DAYS дней
+    const files = fs.readdirSync(dailyDir).filter(f => f.startsWith('daily-') && f.endsWith('.json'));
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - DAILY_SNAPSHOT_KEEP_DAYS);
+    files.forEach(file => {
+      const match = file.match(/daily-(\d{4}-\d{2}-\d{2})\.json/);
+      if (match) {
+        const fileDate = new Date(match[1]);
+        if (fileDate < cutoffDate) {
+          try {
+            fs.unlinkSync(path.join(dailyDir, file));
+            console.log('[Storage] Removed old daily snapshot:', file);
+          } catch { /* ignore */ }
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[Storage] Daily snapshot error:', err.message);
+  }
+}
+
+/**
+ * Получить список всех доступных бэкапов (ротационные + ежедневные + аварийные).
+ */
+function listAllBackups() {
+  const backups = [];
+
+  // Ротационные бэкапы
+  for (let i = 0; i < BACKUP_COUNT; i++) {
+    const bp = getBackupPath(i);
+    if (fs.existsSync(bp)) {
+      try {
+        const stat = fs.statSync(bp);
+        const check = safeReadJSON(bp);
+        backups.push({
+          type: 'rotation',
+          name: `Авто-бэкап #${i}`,
+          path: bp,
+          date: stat.mtime.toISOString(),
+          size: stat.size,
+          valid: check.ok && isValidStore(check.data),
+        });
+      } catch { /* skip */ }
+    }
+  }
+
+  // Ежедневные снапшоты
+  const dailyDir = path.join(app.getPath('userData'), 'daily-snapshots');
+  if (fs.existsSync(dailyDir)) {
+    const files = fs.readdirSync(dailyDir).filter(f => f.startsWith('daily-') && f.endsWith('.json')).sort().reverse();
+    files.forEach(file => {
+      const fullPath = path.join(dailyDir, file);
+      try {
+        const stat = fs.statSync(fullPath);
+        const check = safeReadJSON(fullPath);
+        const dateMatch = file.match(/daily-(\d{4}-\d{2}-\d{2})/);
+        backups.push({
+          type: 'daily',
+          name: `Снапшот ${dateMatch ? dateMatch[1] : file}`,
+          path: fullPath,
+          date: stat.mtime.toISOString(),
+          size: stat.size,
+          valid: check.ok && isValidStore(check.data),
+        });
+      } catch { /* skip */ }
+    });
+  }
+
+  // Аварийные бэкапы
+  const backupDir = getBackupDir();
+  if (fs.existsSync(backupDir)) {
+    const emergencyFiles = fs.readdirSync(backupDir).filter(f => f.includes('emergency')).sort().reverse();
+    emergencyFiles.forEach(file => {
+      const fullPath = path.join(backupDir, file);
+      try {
+        const stat = fs.statSync(fullPath);
+        const check = safeReadJSON(fullPath);
+        backups.push({
+          type: 'emergency',
+          name: `Аварийный бэкап (${new Date(stat.mtime).toLocaleString('ru-RU')})`,
+          path: fullPath,
+          date: stat.mtime.toISOString(),
+          size: stat.size,
+          valid: check.ok && isValidStore(check.data),
+        });
+      } catch { /* skip */ }
+    });
+  }
+
+  return backups;
+}
+
+/**
+ * Восстановить данные из указанного бэкап-файла.
+ */
+function restoreFromBackup(backupPath) {
+  const check = safeReadJSON(backupPath);
+  if (!check.ok || !isValidStore(check.data)) {
+    return { success: false, error: 'Файл бэкапа повреждён или пуст' };
+  }
+
+  // Сохраняем текущие данные как аварийный бэкап перед восстановлением
+  try {
+    const emergencyPath = path.join(getBackupDir(), `app-storage.pre-restore-${Date.now()}.json`);
+    if (fs.existsSync(getStorePath())) {
+      fs.copyFileSync(getStorePath(), emergencyPath);
+    }
+  } catch { /* ignore */ }
+
+  _memoryStore = check.data;
+  _dirty = true;
+  flushToDisk();
+  createBackup();
+  return { success: true };
+}
+
+/**
+ * Экспорт данных в произвольный файл (вызывается через диалог сохранения).
+ */
+async function exportData() {
+  const { dialog } = require('electron');
+  flushToDisk();
+
+  const mainPath = getStorePath();
+  if (!fs.existsSync(mainPath)) {
+    return { success: false, error: 'Нет данных для экспорта' };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog({
+    title: 'Экспорт данных',
+    defaultPath: `billiard-backup-${today}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { success: false, error: 'Отменено' };
+  }
+
+  try {
+    fs.copyFileSync(mainPath, result.filePath);
+    return { success: true, path: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Импорт данных из файла (вызывается через диалог открытия).
+ */
+async function importData() {
+  const { dialog } = require('electron');
+
+  const result = await dialog.showOpenDialog({
+    title: 'Импорт данных из бэкапа',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { success: false, error: 'Отменено' };
+  }
+
+  const filePath = result.filePaths[0];
+  return restoreFromBackup(filePath);
+}
+
+/**
  * Запускает периодическое создание бэкапов.
  */
 function startBackupTimer() {
@@ -692,7 +1012,22 @@ function shutdownStorage() {
 // Инициализация: загружаем данные в память при старте
 function initStorage() {
   readStorage(); // Загружает в _memoryStore
+
+  // Запомнить размер для проверки целостности
+  if (_memoryStore) {
+    try {
+      _lastKnownDataSize = JSON.stringify(_memoryStore).length;
+    } catch { /* ignore */ }
+  }
+
   startBackupTimer();
+  createDailySnapshot();
+
+  // Обновлять daily snapshot каждые 10 минут
+  setInterval(() => {
+    createDailySnapshot();
+  }, 10 * 60 * 1000);
+
   console.log('[Storage] Initialized, backups dir:', getBackupDir());
 }
 
@@ -706,18 +1041,61 @@ ipcMain.handle('store:set', (_event, key, value) => {
   const store = readStorage();
   store[key] = value;
   writeStorage(store);
+  flushToDisk();
 });
 
 ipcMain.handle('store:remove', (_event, key) => {
   const store = readStorage();
   delete store[key];
   writeStorage(store);
+  flushToDisk();
 });
 
 // Принудительный flush (вызывается из renderer)
 ipcMain.handle('store:flush', () => {
   flushToDisk();
   return { success: true };
+});
+
+ipcMain.handle('app:confirm-close-ready', () => {
+  resolvePendingClose();
+  return { success: true };
+});
+
+// === Backup IPC обработчики ===
+ipcMain.handle('backup:list', () => {
+  return listAllBackups();
+});
+
+ipcMain.handle('backup:restore', (_event, backupPath) => {
+  return restoreFromBackup(backupPath);
+});
+
+ipcMain.handle('backup:export', async () => {
+  return await exportData();
+});
+
+ipcMain.handle('backup:import', async () => {
+  return await importData();
+});
+
+ipcMain.handle('backup:create-now', () => {
+  try {
+    createBackup();
+    createDailySnapshot();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('backup:get-storage-path', () => {
+  return {
+    storagePath: getStorePath(),
+    backupDir: getBackupDir(),
+    dailyDir: path.join(app.getPath('userData'), 'daily-snapshots'),
+    userData: app.getPath('userData'),
+  };
 });
 
 // === Arduino IPC обработчики ===
@@ -914,6 +1292,8 @@ ipcMain.handle('print:get-printers', async () => {
 
 // Закрытие приложения — сохраняем данные и отключаемся от Arduino
 app.on('before-quit', async () => {
+  isAppQuitting = true;
+  resolvePendingClose();
   // КРИТИЧНО: сначала сбрасываем все данные на диск + бэкап
   shutdownStorage();
   if (arduino.isArduinoConnected()) {
