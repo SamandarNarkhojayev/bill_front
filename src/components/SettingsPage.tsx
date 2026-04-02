@@ -46,6 +46,10 @@ const SettingsPage: React.FC = () => {
   const [backupStatus, setBackupStatus] = useState('');
   const [showBackupList, setShowBackupList] = useState(false);
 
+  // ===== Состояния для обновлений =====
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState('');
+
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const formatPhone = (value: string, prevValue = '') => {
@@ -400,6 +404,31 @@ const SettingsPage: React.FC = () => {
     } finally {
       setBackupLoading(false);
       setTimeout(() => setBackupStatus(''), 8000);
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    const updaterApi = window.electronAPI?.updater;
+    if (!updaterApi) {
+      setUpdateStatus('❌ API обновлений недоступен');
+      return;
+    }
+
+    setUpdateChecking(true);
+    setUpdateStatus('🔍 Проверка обновлений...');
+
+    try {
+      const result = await updaterApi.checkForUpdates();
+      if (result.success) {
+        setUpdateStatus('✅ Обновления проверены');
+      } else {
+        setUpdateStatus(`❌ ${result.reason || 'Ошибка проверки'}`);
+      }
+    } catch (error) {
+      setUpdateStatus(`❌ ${error instanceof Error ? error.message : 'Ошибка'}`);
+    } finally {
+      setUpdateChecking(false);
+      setTimeout(() => setUpdateStatus(''), 5000);
     }
   };
 
@@ -940,6 +969,39 @@ const SettingsPage: React.FC = () => {
               {portLoading ? 'Поиск...' : 'Нет портов. Подключите ESP32.'}
             </p>
           )}
+        </div>
+
+        {/* Обновления */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <RefreshCw size={18} />
+            Обновления
+          </h3>
+          <div className="settings-fields">
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button 
+                onClick={handleCheckForUpdates} 
+                className="btn btn-primary" 
+                disabled={updateChecking}
+                style={{ padding: '8px 16px' }}
+              >
+                <RefreshCw size={16} className={updateChecking ? 'animate-spin' : ''} />
+                {updateChecking ? 'Проверка...' : 'Проверить обновления'}
+              </button>
+              {updateStatus && (
+                <span style={{ 
+                  fontSize: 13, 
+                  color: updateStatus.startsWith('✅') ? '#22c55e' : 
+                         updateStatus.startsWith('❌') ? '#ef4444' : '#94a3b8' 
+                }}>
+                  {updateStatus}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
+              Ручная проверка наличия новых версий приложения
+            </p>
+          </div>
         </div>
       </div>
     </div>
