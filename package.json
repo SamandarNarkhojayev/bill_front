@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "2.11.0",
+  "version": "2.11.1",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -76,7 +76,13 @@
         }
       ],
       "icon": "public/icon.png",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "identity": null,
+      "notarize": false
     },
     "linux": {
       "artifactName": "Biliardo-${version}-${arch}.${ext}",

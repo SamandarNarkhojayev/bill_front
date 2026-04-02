@@ -13,27 +13,20 @@ import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
 import LogoutConfirmModal from './components/LogoutConfirmModal'
 import { playTimerEndSound } from './utils/sounds'
-import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/arduino'
+import type { RelayChangeEvent, ButtonPressEvent, RelayInfo, UpdaterState } from './types/arduino'
 import './App.css'
-
-// Утилита для расчета стоимости сессии (скопирована из Dashboard)
-function calculateSessionTableCost(
-  startTime: number,
-  currentTime: number,
-  pricePerHour: number,
-  mode: 'time' | 'amount',
-  fixedAmount?: number
-): number {
-  if (mode === 'amount' && fixedAmount) return fixedAmount;
-  const elapsedHours = (currentTime - startTime) / (1000 * 60 * 60);
-  return Math.round(elapsedHours * pricePerHour * 100) / 100;
-}
 
 function App() {
   const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
   const [showUpdateModal, setShowUpdateModal] = useState(false)
-  const [updateVersion, setUpdateVersion] = useState<string>('')
+  const [updater, setUpdater] = useState<UpdaterState>({
+    status: 'idle',
+    message: '',
+    currentVersion: '',
+    availableVersion: null,
+    percent: null
+  })
 
   // Применяем тему
   useEffect(() => {
@@ -72,9 +65,7 @@ function App() {
 
   // Слушаем событие для показа модального окна обновления
   useEffect(() => {
-    const handleShowUpdateModal = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      setUpdateVersion(customEvent.detail.version);
+    const handleShowUpdateModal = () => {
       setShowUpdateModal(true);
     };
 
@@ -82,8 +73,27 @@ function App() {
     return () => window.removeEventListener('show-update-modal', handleShowUpdateModal);
   }, []);
 
+  // Слушаем статус обновлений
+  useEffect(() => {
+    const updaterApi = window.electronAPI?.updater;
+    if (!updaterApi) return;
+
+    updaterApi.getState().then(setUpdater).catch(() => null);
+    updaterApi.onStatus(setUpdater);
+
+    return () => {
+      updaterApi.removeAllListeners();
+    };
+  }, []);
+
+  // Автоматически закрываем модал обновления при успешной установке
+  useEffect(() => {
+    if (updater.status === 'installed') {
+      setShowUpdateModal(false);
+    }
+  }, [updater.status]);
+
   const handleConfirmUpdate = async () => {
-    setShowUpdateModal(false);
     const updaterApi = window.electronAPI?.updater;
     if (!updaterApi) return;
 
@@ -97,6 +107,17 @@ function App() {
       await updaterApi.installUpdate();
     } catch (error) {
       console.error('Update installation failed:', error);
+    }
+  };
+
+  const handleRestartApp = async () => {
+    const updaterApi = window.electronAPI?.updater;
+    if (!updaterApi) return;
+
+    try {
+      await updaterApi.installUpdate();
+    } catch (error) {
+      console.error('Restart failed:', error);
     }
   };
 
@@ -210,9 +231,10 @@ function App() {
       )}
       {showUpdateModal && (
         <UpdateModal
-          version={updateVersion}
+          updater={updater}
           onConfirm={handleConfirmUpdate}
           onCancel={() => setShowUpdateModal(false)}
+          onRestart={handleRestartApp}
         />
       )}
     </div>
