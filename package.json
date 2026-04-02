@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "2.11.1",
+  "version": "2.11.2",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -35,8 +35,9 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://github.com/SamandarNarkhojayev/bill_front/releases/latest/download"
+        "provider": "github",
+        "owner": "SamandarNarkhojayev",
+        "repo": "bill_front"
       }
     ],
     "files": [
