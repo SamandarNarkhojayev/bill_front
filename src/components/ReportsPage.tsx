@@ -316,26 +316,50 @@ const ReportsPage: React.FC = () => {
 
       {/* Выбор смены */}
       {viewMode === 'shift' && (
-        <div className="date-nav" style={{ gap: 12, flexWrap: 'wrap' }}>
-          <button
+        <div className="shift-selector">
+          <div
             onClick={() => setSelectedShiftId(null)}
-            className={`btn btn-sm ${!selectedShiftId && currentShift ? 'btn-primary' : 'btn-ghost'}`}
+            className={`shift-item ${!selectedShiftId && currentShift ? 'active' : ''}`}
           >
-            <Briefcase size={14} />
-            {currentShift?.isActive ? 'Текущая смена' : 'Нет активной смены'}
-          </button>
+            <div className="shift-item-icon">
+              <Briefcase size={16} />
+            </div>
+            <div className="shift-item-content">
+              <div className="shift-item-title">
+                {currentShift?.isActive ? 'Текущая смена' : 'Нет активной смены'}
+              </div>
+              {currentShift?.isActive && (
+                <div className="shift-item-details">
+                  Начало: {new Date(currentShift.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )}
+            </div>
+          </div>
           {shiftHistory.slice(0, 10).map((shift) => {
             const start = new Date(shift.startTime);
-            const label = start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' +
-              start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            const end = shift.endTime ? new Date(shift.endTime) : null;
+            const duration = end ? Math.floor((end.getTime() - start.getTime()) / (1000 * 60)) : null; // в минутах
             return (
-              <button
+              <div
                 key={shift.id}
                 onClick={() => setSelectedShiftId(shift.id)}
-                className={`btn btn-sm ${selectedShiftId === shift.id ? 'btn-primary' : 'btn-ghost'}`}
+                className={`shift-item ${selectedShiftId === shift.id ? 'active' : ''}`}
               >
-                {label} — {shift.userName}
-              </button>
+                <div className="shift-item-icon">
+                  <Briefcase size={16} />
+                </div>
+                <div className="shift-item-content">
+                  <div className="shift-item-title">
+                    {start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                  </div>
+                  <div className="shift-item-details">
+                    {start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    {end ? ` — ${end.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : ' (активна)'}
+                    {duration && ` (${duration} мин)`}
+                  </div>
+                  <div className="shift-item-user">{shift.userName}</div>
+                </div>
+              </div>
             );
           })}
         </div>

@@ -169,6 +169,7 @@ interface AppStore {
   shiftHistory: Shift[];
   startShift: () => void;
   endShift: () => void;
+  confirmEndShiftAndLogout: () => void;
 
   currentPage: PageType;
   setCurrentPage: (page: PageType) => void;
@@ -439,7 +440,12 @@ export const useStore = create<AppStore>()(
         );
         if (user) {
           set({ isAuthenticated: true, currentUser: user });
-          // Автоматически стартуем смену при входе
+          // Завершаем предыдущую смену, если она была активна (например, при внезапном закрытии приложения)
+          if (get().currentShift) {
+            get().endShift();
+            get().addToast('info', 'Предыдущая смена завершена автоматически');
+          }
+          // Автоматически стартуем новую смену при входе
           const shift: Shift = {
             id: generateId(),
             userId: user.id,
@@ -457,8 +463,20 @@ export const useStore = create<AppStore>()(
       logout: () => {
         const shift = get().currentShift;
         if (shift?.isActive) {
+          // Открываем модалку подтверждения завершения смены
+          get().openModal('logout-confirm', { shift });
+        } else {
+          // Выходим без модалки
+          set({ isAuthenticated: false, currentUser: null, currentPage: 'dashboard' });
+        }
+      },
+
+      confirmEndShiftAndLogout: () => {
+        const shift = get().currentShift;
+        if (shift?.isActive) {
           get().endShift();
         }
+        get().closeModal();
         set({ isAuthenticated: false, currentUser: null, currentPage: 'dashboard' });
       },
 

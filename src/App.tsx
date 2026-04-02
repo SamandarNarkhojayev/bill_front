@@ -11,6 +11,7 @@ import UsersPage from './components/UsersPage'
 import ToastContainer from './components/ToastContainer'
 import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
+import LogoutConfirmModal from './components/LogoutConfirmModal'
 import { playTimerEndSound } from './utils/sounds'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo } from './types/arduino'
 import './App.css'
@@ -29,7 +30,7 @@ function calculateSessionTableCost(
 }
 
 function App() {
-  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession } = useStore()
+  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [updateVersion, setUpdateVersion] = useState<string>('')
@@ -200,6 +201,13 @@ function App() {
       </main>
       <AdBanner />
       <ToastContainer />
+      {activeModal === 'logout-confirm' && modalData?.shift && (
+        <LogoutConfirmModal
+          shift={modalData.shift as Shift}
+          onConfirm={confirmEndShiftAndLogout}
+          onCancel={closeModal}
+        />
+      )}
       {showUpdateModal && (
         <UpdateModal
           version={updateVersion}

@@ -1746,6 +1746,163 @@
   color: #f1f5f9;
 }
 
+.shift-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.shift-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 160px;
+  flex-shrink: 0;
+  max-width: 240px;
+}
+
+.shift-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.shift-item.active {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.shift-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+}
+
+.shift-item.active .shift-item-icon {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.shift-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.shift-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.shift-item.active .shift-item-title {
+  color: #10b981;
+}
+
+.shift-item-details {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 2px;
+}
+
+.shift-item-user {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* Light theme for shift items */
+[data-theme="light"] .shift-item {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #475569;
+}
+
+[data-theme="light"] .shift-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .shift-item.active {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #047857;
+}
+
+[data-theme="light"] .shift-item-icon {
+  background: rgba(0, 0, 0, 0.05);
+  color: #64748b;
+}
+
+[data-theme="light"] .shift-item.active .shift-item-icon {
+  background: rgba(16, 185, 129, 0.2);
+  color: #047857;
+}
+
+[data-theme="light"] .shift-item-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .shift-item.active .shift-item-title {
+  color: #047857;
+}
+
+[data-theme="light"] .shift-item-details {
+  color: #64748b;
+}
+
+[data-theme="light"] .shift-item-user {
+  color: #94a3b8;
+}
+
+/* Light theme for header shift */
+[data-theme="light"] .header-shift-user {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .header-shift-timer {
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+}
+
+[data-theme="light"] .header-shift-revenue {
+  background: rgba(217, 119, 6, 0.1);
+  color: #d97706;
+}
+
+/* Light theme for shift history */
+[data-theme="light"] .shift-history-item {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .shift-history-user {
+  color: #1e293b;
+}
+
+[data-theme="light"] .shift-history-date {
+  color: #64748b;
+}
+
+[data-theme="light"] .shift-history-duration {
+  color: #059669;
+}
+
 .report-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -3735,37 +3892,17 @@
   gap: 12px;
 }
 
-.header-shift-btn {
+.header-shift-info {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 10px;
-  font-size: 12px;
+  gap: 8px;
+}
+
+.header-shift-user {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
-  border: 1px solid;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.header-shift-btn.shift-inactive {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-}
-
-.header-shift-btn.shift-inactive:hover {
-  background: rgba(16, 185, 129, 0.2);
-}
-
-.header-shift-btn.shift-active {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-}
-
-.header-shift-btn.shift-active:hover {
-  background: rgba(239, 68, 68, 0.2);
 }
 
 .header-shift-timer {
@@ -3780,6 +3917,39 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.header-shift-revenue {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.header-shift-end-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header-shift-end-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 @keyframes pulse-glow {
@@ -4167,27 +4337,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 12px 18px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.04);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .shift-history-user {
-  color: #f1f5f9;
-  font-weight: 500;
+  color: #ffffff;
+  font-weight: 600;
   min-width: 120px;
 }
 
 .shift-history-date {
-  color: #94a3b8;
+  color: #cbd5e1;
   flex: 1;
   text-align: center;
+  font-weight: 400;
 }
 
 .shift-history-duration {
-  color: #10b981;
+  color: #34d399;
   font-weight: 600;
   min-width: 60px;
   text-align: right;
@@ -4780,4 +4951,133 @@
 
 .update-modal-actions .btn {
   min-width: 140px;
+}
+
+/* ===== LOGOUT CONFIRM MODAL ===== */
+.logout-confirm-modal {
+  position: relative;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: modalSlideUp 0.3s ease-out;
+}
+
+.logout-confirm-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  border-radius: 50%;
+  color: white;
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.logout-confirm-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #f8fafc;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.logout-confirm-details {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.logout-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.logout-confirm-row:last-child {
+  margin-bottom: 0;
+}
+
+.logout-confirm-label {
+  font-size: 14px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.logout-confirm-value {
+  font-size: 16px;
+  color: #10b981;
+  font-weight: 600;
+}
+
+.logout-confirm-description {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.logout-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.logout-confirm-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.logout-confirm-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+/* Light theme for logout confirm modal */
+[data-theme="light"] .logout-confirm-modal {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .logout-confirm-icon {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+}
+
+[data-theme="light"] .logout-confirm-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .logout-confirm-details {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="light"] .logout-confirm-label {
+  color: #64748b;
+}
+
+[data-theme="light"] .logout-confirm-value {
+  color: #047857;
+}
+
+[data-theme="light"] .logout-confirm-description {
+  color: #64748b;
 }

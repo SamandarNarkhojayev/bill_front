@@ -5,12 +5,13 @@ import {
   Timer,
   Download,
   RefreshCw,
+  DollarSign,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { UpdaterState } from '../types/arduino';
 
 const AppHeader: React.FC = () => {
-  const { currentShift } = useStore();
+  const { currentShift, endShift, addToast, sessionHistory, settings } = useStore();
   const [now, setNow] = useState(Date.now());
   const [updater, setUpdater] = useState<UpdaterState>({
     status: 'idle',
@@ -77,6 +78,15 @@ const AppHeader: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const getShiftRevenue = () => {
+    if (!currentShift) return 0;
+    const shiftStart = currentShift.startTime;
+    const shiftEnd = currentShift.endTime || now;
+    return sessionHistory
+      .filter((s) => s.startTime >= shiftStart && s.startTime <= shiftEnd)
+      .reduce((sum, s) => sum + s.totalCost, 0);
+  };
+
   return (
     <header className="app-header">
       <div className="header-left">
@@ -97,9 +107,16 @@ const AppHeader: React.FC = () => {
         {/* Таймер смены */}
         {currentShift?.isActive && (
           <div className="header-shift active">
-            <div className="header-shift-timer">
-              <Timer size={14} />
-              <span>{formatShiftDuration(currentShift.startTime)}</span>
+            <div className="header-shift-info">
+              <span className="header-shift-user">{currentShift.userName}</span>
+              <div className="header-shift-timer">
+                <Timer size={14} />
+                <span>{formatShiftDuration(currentShift.startTime)}</span>
+              </div>
+              <div className="header-shift-revenue">
+                <DollarSign size={14} />
+                <span>{getShiftRevenue().toLocaleString()} {settings.currency}</span>
+              </div>
             </div>
           </div>
         )}
