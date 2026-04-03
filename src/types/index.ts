@@ -44,8 +44,10 @@ export interface TableSession {
   startTime: number; // timestamp
   endTime: number | null;
   mode: SessionMode;
+  tariffName?: string | null; // название выбранного тарифа (если сессия запущена по тарифу)
   plannedDuration: number | null; // в минутах (для mode='time')
   fixedAmount: number | null; // фиксированная сумма (для mode='amount')
+  packagePrice: number | null; // фиксированная цена пакета/тарифа
   barOrders: BarOrderItem[];
   totalTableCost: number;
   totalBarCost: number;
@@ -142,6 +144,7 @@ export interface SessionRecord {
   tableId: number;
   tableName: string;
   mode: SessionMode;
+  tariffName?: string | null;
   startTime: number;
   endTime: number;
   duration: number; // минуты
@@ -183,9 +186,107 @@ export interface TableSettings {
   isActive: boolean;
 }
 
+// ===== ТУРНИРЫ =====
+
+export type TournamentStatus = 'draft' | 'active' | 'completed' | 'cancelled';
+
+export type BracketType =
+  | 'single-elimination'
+  | 'double-elimination'
+  | 'round-robin'
+  | 'swiss'
+  | 'group-playoff'
+  | 'page-playoff';
+
+export interface TournamentParticipant {
+  id: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string;
+  birthYear?: number;
+  phone?: string;
+  photo?: string;
+  tableNumber?: number;
+  position: number;
+}
+
+export type MatchStatus = 'pending' | 'in-progress' | 'completed' | 'bye';
+
+export interface TournamentMatch {
+  id: string;
+  round: number;
+  matchNumber: number;
+  participant1?: TournamentParticipant;
+  participant2?: TournamentParticipant;
+  winner?: TournamentParticipant;
+  score1?: number;
+  score2?: number;
+  matchStatus?: MatchStatus;
+  tableId?: number;
+  tableNumber?: number;
+  startTime?: number;
+  endTime?: number;
+}
+
+export interface TournamentPrizePlace {
+  place: number;
+  prize: string;
+}
+
+export interface TournamentPlacement {
+  place: number;
+  participantId: string;
+  participantName: string;
+  prize?: string;
+}
+
+export interface Tournament {
+  id: string;
+  name: string;
+  status: TournamentStatus;
+  bracketType: BracketType;
+  participantCountMode?: 'fixed' | 'min' | 'max';
+  participantCount: number;
+  participants: TournamentParticipant[];
+  tableIds: number[]; // Столы, участвующие в турнире
+  tableCount?: number; // Количество виртуальных столов для отображения
+  matches: TournamentMatch[];
+  currentRound?: number;
+  winnerId?: string; // id победителя турнира
+  prizePlaces?: TournamentPrizePlace[];
+  placements?: TournamentPlacement[];
+  scheduledStartTime?: number;
+  startTime?: number;
+  endTime?: number;
+  prizeFund?: number;
+  entryFee?: number;
+}
+
+// ===== ТАРИФЫ =====
+
+export interface TariffMenuProduct {
+  productId: string;
+  productName: string;
+  quantity: number;
+}
+
+export interface Tariff {
+  id: string;
+  name: string;
+  tableIds: number[]; // Столы, к которым применяется тариф
+  startTime: string; // HH:MM формат
+  endTime: string; // HH:MM формат
+  durationHours: number; // Продолжительность пакета в часах
+  price: number; // Цена пакета
+  menuProducts: TariffMenuProduct[]; // Дополнительные продукты из меню
+  isActive: boolean;
+  createdAt: number;
+}
+
 // ===== НАВИГАЦИЯ =====
 
-export type PageType = 'dashboard' | 'bar' | 'reports' | 'settings' | 'users';
+export type PageType = 'dashboard' | 'bar' | 'reports' | 'settings' | 'users' | 'tournaments' | 'tariffs';
 
 // ===== ТОСТЫ =====
 

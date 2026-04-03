@@ -27,17 +27,49 @@ const dateToStr = (d: Date) => {
 
 // Утилита: строка → локальный Date
 const strToDate = (s: string) => {
+  if (!s || typeof s !== 'string' || !s.includes('-')) return new Date();
   const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  const parsed = new Date(y, m - 1, d);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const safeNumber = (value: unknown, fallback = 0): number => {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+};
+
+const safeDate = (value: unknown): Date | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const formatMoney = (value: unknown, currency: string): string => {
+  return `${safeNumber(value).toLocaleString()} ${currency}`;
 };
 
 const ReportsPage: React.FC = () => {
   const { sessionHistory, settings, currentShift, shiftHistory, addToast } = useStore();
+  const isSafeWebViewMode = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const ua = navigator.userAgent.toLowerCase();
+      const embedded = window.self !== window.top;
+      return embedded || ua.includes('vscode') || ua.includes('webview');
+    } catch {
+      return true;
+    }
+  }, []);
   const [selectedDate, setSelectedDate] = useState(dateToStr(new Date()));
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all' | 'shift'>('day');
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState(dateToStr(new Date()));
   const [rangeEnd, setRangeEnd] = useState(dateToStr(new Date()));
+  const [showHistoryFilters, setShowHistoryFilters] = useState(false);
+  const [historyTableFilter, setHistoryTableFilter] = useState<'all' | string>('all');
+  const [historyModeFilter, setHistoryModeFilter] = useState<'all' | 'tariff' | 'time' | 'infinite'>('all');
+  const [historyAmountSort, setHistoryAmountSort] = useState<'default' | 'max' | 'min'>('default');
+  const [historyTimeSort, setHistoryTimeSort] = useState<'default' | 'max' | 'min'>('default');
+  const [historyTableTimeSort, setHistoryTableTimeSort] = useState<'default' | 'max' | 'min'>('default');
 
   // Активная смена или выбранная из истории
   const activeShift = useMemo(() => {
@@ -50,19 +82,26 @@ const ReportsPage: React.FC = () => {
 
   // Фильтрация по дате
   const filteredSessions = useMemo(() => {
-    if (viewMode === 'all') return sessionHistory;
+    const normalized = sessionHistory.filter((s) => {
+      if (!s || typeof s !== 'object') return false;
+      const startOk = typeof s.startTime === 'number' && Number.isFinite(s.startTime);
+      const dateOk = typeof s.date === 'string' && s.date.length >= 8;
+      return startOk && dateOk;
+    });
+
+    if (viewMode === 'all') return normalized;
     if (viewMode === 'shift') {
       const shift = activeShift;
       if (!shift) return [];
       const start = shift.startTime;
       const end = shift.endTime || Date.now();
-      return sessionHistory.filter((s) => s.startTime >= start && s.startTime <= end);
+      return normalized.filter((s) => s.startTime >= start && s.startTime <= end);
     }
     if (viewMode === 'day') {
-      return sessionHistory.filter((s) => s.date === selectedDate);
+      return normalized.filter((s) => s.date === selectedDate);
     }
     if (viewMode === 'range') {
-      return sessionHistory.filter((s) => s.date >= rangeStart && s.date <= rangeEnd);
+      return normalized.filter((s) => s.date >= rangeStart && s.date <= rangeEnd);
     }
     // week — понедельник–воскресенье
     const sel = strToDate(selectedDate);
@@ -74,17 +113,17 @@ const ReportsPage: React.FC = () => {
     sunday.setDate(monday.getDate() + 6);
     const wStart = dateToStr(monday);
     const wEnd = dateToStr(sunday);
-    return sessionHistory.filter((s) => s.date >= wStart && s.date <= wEnd);
+    return normalized.filter((s) => s.date >= wStart && s.date <= wEnd);
   }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd, activeShift]);
 
   // Статистика
   const stats = useMemo(() => {
-    const tableRev = filteredSessions.reduce((sum, s) => sum + s.tableCost, 0);
-    const barRev = filteredSessions.reduce((sum, s) => sum + s.barCost, 0);
+    const tableRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.tableCost), 0);
+    const barRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.barCost), 0);
     const totalRev = tableRev + barRev;
-    const totalHours = filteredSessions.reduce((sum, s) => sum + s.duration, 0) / 60;
+    const totalHours = filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / 60;
     const avgSession = filteredSessions.length > 0
-      ? Math.round(filteredSessions.reduce((sum, s) => sum + s.duration, 0) / filteredSessions.length)
+      ? Math.round(filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / filteredSessions.length)
       : 0;
     const avgCheck = filteredSessions.length > 0
       ? Math.round(totalRev / filteredSessions.length)
@@ -95,25 +134,92 @@ const ReportsPage: React.FC = () => {
     filteredSessions.forEach((s) => {
       if (!byTable[s.tableName]) byTable[s.tableName] = { sessions: 0, revenue: 0, hours: 0 };
       byTable[s.tableName].sessions++;
-      byTable[s.tableName].revenue += s.totalCost;
-      byTable[s.tableName].hours += s.duration / 60;
+      byTable[s.tableName].revenue += safeNumber(s.totalCost, safeNumber(s.tableCost) + safeNumber(s.barCost));
+      byTable[s.tableName].hours += safeNumber(s.duration) / 60;
     });
 
     // По часам дня
     const byHour: number[] = new Array(24).fill(0);
     filteredSessions.forEach((s) => {
-      const hour = new Date(s.startTime).getHours();
-      byHour[hour]++;
+      const start = safeDate(s.startTime);
+      if (!start) return;
+      const hour = start.getHours();
+      if (hour >= 0 && hour < 24) byHour[hour]++;
     });
 
     return { tableRev, barRev, totalRev, totalHours, avgSession, avgCheck, byTable, byHour, count: filteredSessions.length };
   }, [filteredSessions]);
 
+  const historyTableNames = useMemo(() => {
+    return Array.from(new Set(filteredSessions.map((s) => s.tableName))).sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [filteredSessions]);
+
+  const historySessions = useMemo(() => {
+    let list = filteredSessions.slice();
+
+    if (historyTableFilter !== 'all') {
+      list = list.filter((s) => s.tableName === historyTableFilter);
+    }
+
+    if (historyModeFilter === 'tariff') {
+      list = list.filter((s) => Boolean(s.tariffName && s.tariffName.trim()));
+    }
+    if (historyModeFilter === 'time') {
+      list = list.filter((s) => s.mode === 'time' && !s.tariffName);
+    }
+    if (historyModeFilter === 'infinite') {
+      list = list.filter((s) => s.mode === 'unlimited' && !s.tariffName);
+    }
+
+    if (historyAmountSort === 'max') {
+      list.sort((a, b) => safeNumber(a.totalCost) - safeNumber(b.totalCost));
+    }
+    if (historyAmountSort === 'min') {
+      list.sort((a, b) => safeNumber(b.totalCost) - safeNumber(a.totalCost));
+    }
+
+    if (historyTimeSort === 'max') {
+      list.sort((a, b) => safeNumber(a.duration) - safeNumber(b.duration));
+    }
+    if (historyTimeSort === 'min') {
+      list.sort((a, b) => safeNumber(b.duration) - safeNumber(a.duration));
+    }
+
+    // Фильтр для столов по времени - сначала группируем и находим totals по столам
+    if (historyTableTimeSort !== 'default') {
+      const tableTimeTotals: Record<string, number> = {};
+      list.forEach((s) => {
+        tableTimeTotals[s.tableName] = (tableTimeTotals[s.tableName] || 0) + safeNumber(s.duration);
+      });
+      if (historyTableTimeSort === 'max') {
+        list.sort((a, b) => (tableTimeTotals[a.tableName] || 0) - (tableTimeTotals[b.tableName] || 0));
+      }
+      if (historyTableTimeSort === 'min') {
+        list.sort((a, b) => (tableTimeTotals[b.tableName] || 0) - (tableTimeTotals[a.tableName] || 0));
+      }
+    }
+
+    return list;
+  }, [filteredSessions, historyTableFilter, historyModeFilter, historyAmountSort, historyTimeSort, historyTableTimeSort]);
+
+  const resetHistoryFilters = () => {
+    setHistoryTableFilter('all');
+    setHistoryModeFilter('all');
+    setHistoryAmountSort('default');
+    setHistoryTimeSort('default');
+    setHistoryTableTimeSort('default');
+  };
+
   const maxByHour = Math.max(...stats.byHour, 1);
 
   // Экспорт отчёта в CSV
   const exportReport = () => {
-    const modeLabel = (m: string) => m === 'time' ? 'По времени' : m === 'amount' ? 'На сумму' : 'Бессрочно';
+    const modeLabel = (m: string, tariffName?: string | null) => {
+      if (tariffName && tariffName.trim()) return `Тариф: ${tariffName}`;
+      if (m === 'time') return 'По времени';
+      if (m === 'amount') return 'На сумму';
+      return 'Бессрочно';
+    };
     const header = 'Стол;Режим;Начало;Конец;Время (мин);Стол (' + settings.currency + ');Бар (' + settings.currency + ');Итого (' + settings.currency + ')';
     const rows = filteredSessions
       .slice()
@@ -121,7 +227,7 @@ const ReportsPage: React.FC = () => {
       .map((s) => {
         const start = new Date(s.startTime).toLocaleString('ru-RU');
         const end = new Date(s.endTime).toLocaleString('ru-RU');
-        return `${s.tableName};${modeLabel(s.mode)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost}`;
+        return `${s.tableName};${modeLabel(s.mode, s.tariffName)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost}`;
       });
 
     // Итоги
@@ -174,7 +280,9 @@ const ReportsPage: React.FC = () => {
   };
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('ru-RU', {
+    const d = safeDate(timestamp);
+    if (!d) return '—';
+    return d.toLocaleTimeString('ru-RU', {
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -301,7 +409,7 @@ const ReportsPage: React.FC = () => {
               Всё время
             </button>
           </div>
-          {filteredSessions.length > 0 && (
+          {filteredSessions.length > 0 && !isSafeWebViewMode && (
             <>
               <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Download size={14} /> Экспорт
@@ -313,6 +421,14 @@ const ReportsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {isSafeWebViewMode && (
+        <div className="date-nav" style={{ marginBottom: 12 }}>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>
+            Облегчённый режим отчётов для встроенного браузера VS Code
+          </span>
+        </div>
+      )}
 
       {/* Выбор смены */}
       {viewMode === 'shift' && (
@@ -446,7 +562,7 @@ const ReportsPage: React.FC = () => {
           <div>
             <p className="report-stat-label">Общая выручка</p>
             <p className="report-stat-value">
-              {stats.totalRev.toLocaleString()} {settings.currency}
+              {formatMoney(stats.totalRev, settings.currency)}
             </p>
           </div>
         </div>
@@ -457,7 +573,7 @@ const ReportsPage: React.FC = () => {
           <div>
             <p className="report-stat-label">Столы</p>
             <p className="report-stat-value">
-              {stats.tableRev.toLocaleString()} {settings.currency}
+              {formatMoney(stats.tableRev, settings.currency)}
             </p>
           </div>
         </div>
@@ -468,7 +584,7 @@ const ReportsPage: React.FC = () => {
           <div>
             <p className="report-stat-label">Бар</p>
             <p className="report-stat-value">
-              {stats.barRev.toLocaleString()} {settings.currency}
+              {formatMoney(stats.barRev, settings.currency)}
             </p>
           </div>
         </div>
@@ -488,7 +604,7 @@ const ReportsPage: React.FC = () => {
           <div>
             <p className="report-stat-label">Средний счёт</p>
             <p className="report-stat-value">
-              {stats.avgCheck.toLocaleString()} {settings.currency}
+              {formatMoney(stats.avgCheck, settings.currency)}
             </p>
           </div>
         </div>
@@ -504,6 +620,7 @@ const ReportsPage: React.FC = () => {
       </div>
 
       {/* Графики */}
+      {!isSafeWebViewMode && (
       <div className="report-charts">
         {/* По столам */}
         <div className="report-chart-card">
@@ -521,7 +638,7 @@ const ReportsPage: React.FC = () => {
                   />
                 </div>
                 <span className="report-bar-value">
-                  {data.revenue.toLocaleString()} {settings.currency}
+                  {formatMoney(data.revenue, settings.currency)}
                 </span>
               </div>
             ))}
@@ -549,14 +666,107 @@ const ReportsPage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Таблица сессий */}
       <div className="report-table-card">
-        <h3 className="report-chart-title">История игр</h3>
-        {filteredSessions.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+          <h3 className="report-chart-title" style={{ marginBottom: 0 }}>История игр</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowHistoryFilters((prev) => !prev)}
+              className="btn btn-ghost btn-sm"
+              title="Фильтры истории"
+            >
+              <Filter size={14} />
+              Фильтр
+            </button>
+            {(historyTableFilter !== 'all' || historyModeFilter !== 'all' || historyAmountSort !== 'default' || historyTimeSort !== 'default' || historyTableTimeSort !== 'default') && (
+              <button onClick={resetHistoryFilters} className="btn btn-ghost btn-sm" title="Сбросить фильтрацию">
+                Сбросить фильтрацию
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showHistoryFilters && (
+          <div className="date-nav" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <select
+              className="form-input"
+              value={historyTableFilter}
+              onChange={(e) => setHistoryTableFilter(e.target.value)}
+              style={{ width: 180 }}
+            >
+              <option value="all">Все столы</option>
+              {historyTableNames.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+
+            <select
+              className="form-input"
+              value={historyAmountSort}
+              onChange={(e) => setHistoryAmountSort(e.target.value as 'default' | 'max' | 'min')}
+              style={{ width: 220 }}
+            >
+              <option value="default">Сумма: по умолчанию</option>
+              <option value="max">Сумма: максимальная</option>
+              <option value="min">Сумма: минимальная</option>
+            </select>
+
+            <select
+              className="form-input"
+              value={historyTimeSort}
+              onChange={(e) => setHistoryTimeSort(e.target.value as 'default' | 'max' | 'min')}
+              style={{ width: 220 }}
+            >
+              <option value="default">Время: по умолчанию</option>
+              <option value="max">Время: максимальное</option>
+              <option value="min">Время: минимальное</option>
+            </select>
+
+            <select
+              className="form-input"
+              value={historyTableTimeSort}
+              onChange={(e) => setHistoryTableTimeSort(e.target.value as 'default' | 'max' | 'min')}
+              style={{ width: 240 }}
+            >
+              <option value="default">Стол по времени: по умолчанию</option>
+              <option value="max">Стол по времени: больше всего</option>
+              <option value="min">Стол по времени: меньше всего</option>
+            </select>
+
+            <button
+              onClick={() => setHistoryModeFilter('tariff')}
+              className={`btn btn-sm ${historyModeFilter === 'tariff' ? 'btn-primary' : 'btn-ghost'}`}
+            >
+              Тариф
+            </button>
+            <button
+              onClick={() => setHistoryModeFilter('time')}
+              className={`btn btn-sm ${historyModeFilter === 'time' ? 'btn-primary' : 'btn-ghost'}`}
+            >
+              Время
+            </button>
+            <button
+              onClick={() => setHistoryModeFilter('infinite')}
+              className={`btn btn-sm ${historyModeFilter === 'infinite' ? 'btn-primary' : 'btn-ghost'}`}
+            >
+              Бессрочно
+            </button>
+            <button
+              onClick={() => setHistoryModeFilter('all')}
+              className={`btn btn-sm ${historyModeFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+            >
+              Все режимы
+            </button>
+          </div>
+        )}
+
+        {historySessions.length === 0 ? (
           <div className="report-empty">
             <BarChart3 size={48} className="text-slate-600" />
-            <p>Нет записей за выбранный период</p>
+            <p>Нет записей по выбранным фильтрам</p>
           </div>
         ) : (
           <div className="report-table-wrapper">
@@ -575,24 +785,32 @@ const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredSessions
+                {historySessions
                   .slice()
                   .reverse()
                   .map((session) => (
                     <tr key={session.id}>
                       <td>{session.tableName}</td>
-                      <td>{session.mode === 'time' ? 'По времени' : session.mode === 'amount' ? 'На сумму' : 'Бессрочно'}</td>
+                      <td>
+                        {session.tariffName && session.tariffName.trim()
+                          ? `Тариф: ${session.tariffName}`
+                          : session.mode === 'time'
+                            ? 'По времени'
+                            : session.mode === 'amount'
+                              ? 'На сумму'
+                              : 'Бессрочно'}
+                      </td>
                       <td>{formatTime(session.startTime)}</td>
                       <td>{formatTime(session.endTime)}</td>
                       <td>{session.duration} мин</td>
                       <td className="text-emerald-400">
-                        {session.tableCost.toLocaleString()} {settings.currency}
+                        {formatMoney(session.tableCost, settings.currency)}
                       </td>
                       <td className="text-amber-400">
-                        {session.barCost.toLocaleString()} {settings.currency}
+                        {formatMoney(session.barCost, settings.currency)}
                       </td>
                       <td className="font-bold">
-                        {session.totalCost.toLocaleString()} {settings.currency}
+                        {formatMoney(session.totalCost, settings.currency)}
                       </td>
                       <td>
                         <button

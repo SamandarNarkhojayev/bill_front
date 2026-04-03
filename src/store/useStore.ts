@@ -18,6 +18,8 @@ import type {
   UserRole,
   Shift,
   Reservation,
+  Tournament,
+  Tariff,
 } from '../types';
 
 // ===== ГЕНЕРАЦИЯ ID =====
@@ -177,7 +179,7 @@ interface AppStore {
   toggleSidebar: () => void;
 
   tables: BilliardTable[];
-  startSession: (tableId: number, mode: SessionMode, options?: { hours?: number; minutes?: number; amount?: number }) => void;
+  startSession: (tableId: number, mode: SessionMode, options?: { hours?: number; minutes?: number; amount?: number; plannedDurationSeconds?: number; packagePrice?: number; tariffName?: string }) => void;
   endSession: (tableId: number) => void;
   toggleLight: (tableId: number) => void;
   setLightState: (tableId: number, on: boolean) => void;
@@ -195,7 +197,7 @@ interface AppStore {
   addBarCategory: (cat: Omit<BarCategoryConfig, 'id'>) => void;
   updateBarCategory: (id: string, cat: Partial<BarCategoryConfig>) => void;
   removeBarCategory: (id: string) => void;
-  addBarOrderToTable: (tableId: number, menuItem: BarMenuItem, quantity: number) => void;
+  addBarOrderToTable: (tableId: number, menuItem: BarMenuItem, quantity: number, options?: { priceOverride?: number; silent?: boolean }) => void;
   createBarOrder: (tableId: number | null, items: { menuItem: BarMenuItem; quantity: number }[]) => void;
   sellFromBar: (items: { menuItem: BarMenuItem; quantity: number }[]) => void;
   updateStock: (menuItemId: string, delta: number) => void;
@@ -213,6 +215,18 @@ interface AppStore {
   addReservation: (tableId: number, customerName: string, customerPhone: string, reservedFor: number, notes: string) => void;
   cancelReservation: (reservationId: string) => void;
 
+  // Турниры
+  tournaments: Tournament[];
+  addTournament: (tournament: Tournament) => void;
+  updateTournament: (id: string, updates: Partial<Tournament>) => void;
+  removeTournament: (id: string) => void;
+
+  // Тарифы
+  tariffs: Tariff[];
+  addTariff: (tariff: Tariff) => void;
+  updateTariff: (id: string, updates: Partial<Tariff>) => void;
+  removeTariff: (id: string) => void;
+
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => void;
 
@@ -229,6 +243,30 @@ interface AppStore {
 const STORAGE_KEY = 'billiard-club-storage';
 const STORAGE_MIRROR_KEY = 'billiard-club-storage-mirror'; // Резервная копия в localStorage
 const STORAGE_VERSION = 0;
+
+const safeLocalStorageGet = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalStorageSet = (key: string, value: string): void => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+};
+
+const safeLocalStorageRemove = (key: string): void => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+};
 
 // ===== НАДЁЖНОЕ ФАЙЛОВОЕ ХРАНИЛИЩЕ (через IPC в Electron) =====
 // Защита от перезаписи данных до завершения гидратации
@@ -250,6 +288,8 @@ const partializeStore = (state: AppStore) => ({
   users: state.users,
   shiftHistory: state.shiftHistory,
   reservations: state.reservations,
+  tournaments: state.tournaments,
+  tariffs: state.tariffs,
 });
 
 const buildPersistedPayload = (state: AppStore) => JSON.stringify({
@@ -276,7 +316,7 @@ async function persistStoreSnapshot(forceFlush = false) {
     console.error('[Storage] persist snapshot error:', err);
   }
 
-  localStorage.setItem(STORAGE_KEY, payload);
+  safeLocalStorageSet(STORAGE_KEY, payload);
 }
 
 function registerClosePersistHook() {
@@ -307,9 +347,9 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
       console.error('[Storage] getItem error:', err);
     }
     // Fallback: сначала пробуем основной ключ в localStorage, потом mirror
-    const primary = localStorage.getItem(name);
+    const primary = safeLocalStorageGet(name);
     if (primary) return primary;
-    const mirror = localStorage.getItem(STORAGE_MIRROR_KEY);
+    const mirror = safeLocalStorageGet(STORAGE_MIRROR_KEY);
     if (mirror) {
       console.log('[Storage] Восстановлено из localStorage mirror');
       return mirror;
@@ -324,11 +364,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
     }
 
     // ЗЕРКАЛО: всегда дублируем в localStorage как резервную копию
-    try {
-      localStorage.setItem(STORAGE_MIRROR_KEY, value);
-    } catch {
-      // localStorage может быть переполнен — не критично
-    }
+    safeLocalStorageSet(STORAGE_MIRROR_KEY, value);
 
     try {
       if (window.electronAPI?.store) {
@@ -339,7 +375,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
       console.error('[Storage] setItem error:', err);
     }
     // Fallback на localStorage
-    localStorage.setItem(name, value);
+    safeLocalStorageSet(name, value);
   },
   removeItem: async (name: string): Promise<void> => {
     try {
@@ -350,7 +386,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
     } catch (err) {
       console.error('[Storage] removeItem error:', err);
     }
-    localStorage.removeItem(name);
+    safeLocalStorageRemove(name);
   },
 }));
 
@@ -553,16 +589,20 @@ export const useStore = create<AppStore>()(
       tables: defaultTables,
 
       startSession: (tableId, mode, options = {}) => {
-        const { hours = 0, minutes = 0, amount = 0 } = options;
+        const { hours = 0, minutes = 0, amount = 0, plannedDurationSeconds, packagePrice, tariffName } = options;
         const table = get().tables.find((t) => t.id === tableId);
         const pricePerHour = table?.pricePerHour || get().settings.defaultPricePerHour;
         let plannedDuration: number | null = null;
-        if (mode === 'time') {
+        if (typeof plannedDurationSeconds === 'number' && plannedDurationSeconds > 0) {
+          plannedDuration = Math.max(1, Math.ceil(plannedDurationSeconds));
+        } else if (mode === 'time') {
           plannedDuration = (hours * 60 + minutes) * 60; // в секундах
         } else if (mode === 'amount' && amount > 0) {
           plannedDuration = Math.max(1, Math.ceil((amount / pricePerHour) * 3600)); // в секундах
         }
         const fixedAmount = mode === 'amount' ? amount : null;
+        const normalizedPackagePrice = typeof packagePrice === 'number' && packagePrice > 0 ? packagePrice : null;
+        const normalizedTariffName = (typeof tariffName === 'string' && tariffName.trim()) ? tariffName.trim() : null;
 
         // Убрать бронь если запускаем забронированный стол
         const existingReservation = get().reservations.find((r) => r.tableId === tableId);
@@ -585,8 +625,10 @@ export const useStore = create<AppStore>()(
                     startTime: Date.now(),
                     endTime: null,
                     mode,
+                    tariffName: normalizedTariffName,
                     plannedDuration,
                     fixedAmount,
+                    packagePrice: normalizedPackagePrice,
                     barOrders: [],
                     totalTableCost: 0,
                     totalBarCost: 0,
@@ -614,13 +656,15 @@ export const useStore = create<AppStore>()(
         const session = table.currentSession;
         const endTime = Date.now();
         const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
-        const tableCost = calculateSessionTableCost(
-          session.startTime,
-          endTime,
-          table.pricePerHour,
-          session.mode,
-          session.fixedAmount
-        );
+        const tableCost = (typeof session.packagePrice === 'number' && Number.isFinite(session.packagePrice))
+          ? session.packagePrice
+          : calculateSessionTableCost(
+              session.startTime,
+              endTime,
+              table.pricePerHour,
+              session.mode,
+              session.fixedAmount
+            );
 
         const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -629,6 +673,7 @@ export const useStore = create<AppStore>()(
           tableId: table.id,
           tableName: table.name,
           mode: session.mode,
+          tariffName: session.tariffName ?? null,
           startTime: session.startTime,
           endTime,
           duration: durationMinutes,
@@ -817,7 +862,9 @@ export const useStore = create<AppStore>()(
         }));
       },
 
-      addBarOrderToTable: (tableId, menuItem, quantity) => {
+      addBarOrderToTable: (tableId, menuItem, quantity, options = {}) => {
+        const { priceOverride, silent = false } = options;
+        const orderItemPrice = typeof priceOverride === 'number' ? priceOverride : menuItem.price;
         // Списать со склада
         if (menuItem.stock > 0) {
           set((state) => ({
@@ -836,7 +883,7 @@ export const useStore = create<AppStore>()(
               menuItemId: menuItem.id,
               menuItemName: menuItem.name,
               quantity,
-              price: menuItem.price,
+              price: orderItemPrice,
               timestamp: Date.now(),
             };
             return {
@@ -844,7 +891,7 @@ export const useStore = create<AppStore>()(
               currentSession: {
                 ...table.currentSession,
                 barOrders: [...table.currentSession.barOrders, orderItem],
-                totalBarCost: table.currentSession.totalBarCost + menuItem.price * quantity,
+                totalBarCost: table.currentSession.totalBarCost + orderItemPrice * quantity,
               },
             };
           }),
@@ -852,7 +899,9 @@ export const useStore = create<AppStore>()(
         if (get().settings.soundEnabled) {
           playOrderSound();
         }
-        get().addToast('success', `${menuItem.name} × ${quantity} добавлено`);
+        if (!silent) {
+          get().addToast('success', `${menuItem.name} × ${quantity} добавлено`);
+        }
       },
 
       createBarOrder: (tableId, items) => {
@@ -994,8 +1043,8 @@ export const useStore = create<AppStore>()(
       getTodayRevenue: () => {
         const today = localDateStr();
         const todaySessions = get().sessionHistory.filter((s) => s.date === today);
-        const tableRev = todaySessions.reduce((sum, s) => sum + s.tableCost, 0);
-        const barRev = todaySessions.reduce((sum, s) => sum + s.barCost, 0);
+        const tableRev = todaySessions.reduce((sum, s) => sum + (Number.isFinite(s.tableCost) ? s.tableCost : 0), 0);
+        const barRev = todaySessions.reduce((sum, s) => sum + (Number.isFinite(s.barCost) ? s.barCost : 0), 0);
         return { table: tableRev, bar: barRev, total: tableRev + barRev };
       },
 
@@ -1041,6 +1090,48 @@ export const useStore = create<AppStore>()(
           ),
         }));
         get().addToast('info', 'Бронь отменена');
+      },
+
+      // ===== ТУРНИРЫ =====
+      tournaments: [],
+
+      addTournament: (tournament) => {
+        set((state) => ({ tournaments: [...state.tournaments, tournament] }));
+      },
+
+      updateTournament: (id, updates) => {
+        set((state) => ({
+          tournaments: state.tournaments.map((t) =>
+            t.id === id ? { ...t, ...updates } : t
+          ),
+        }));
+      },
+
+      removeTournament: (id) => {
+        set((state) => ({
+          tournaments: state.tournaments.filter((t) => t.id !== id),
+        }));
+      },
+
+      // ===== ТАРИФЫ =====
+      tariffs: [],
+
+      addTariff: (tariff) => {
+        set((state) => ({ tariffs: [...state.tariffs, tariff] }));
+      },
+
+      updateTariff: (id, updates) => {
+        set((state) => ({
+          tariffs: state.tariffs.map((t) =>
+            t.id === id ? { ...t, ...updates } : t
+          ),
+        }));
+      },
+
+      removeTariff: (id) => {
+        set((state) => ({
+          tariffs: state.tariffs.filter((t) => t.id !== id),
+        }));
       },
 
       settings: defaultSettings,

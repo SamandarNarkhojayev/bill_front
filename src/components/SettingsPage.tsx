@@ -4,7 +4,6 @@ import {
   Save,
   RotateCcw,
   Lightbulb,
-  Hash,
   Building2,
   Trash2,
   Cpu,
@@ -432,12 +431,6 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const updateTableSetting = (index: number, field: string, value: string | number | boolean) => {
-    const newTables = [...localSettings.tables];
-    newTables[index] = { ...newTables[index], [field]: value };
-    setLocalSettings((prev) => ({ ...prev, tables: newTables }));
-  };
-
   return (
     <div className="page-content">
       <div className="page-header">
@@ -608,50 +601,6 @@ const SettingsPage: React.FC = () => {
                 <div className="toggle-dot" />
               </button>
             </div>
-          </div>
-        </div>
-        )}
-
-        {/* Столы */}
-        {canAccessAllSettings && (
-        <div className="settings-section settings-section-full">
-          <div className="settings-section-header">
-            <h3 className="settings-section-title">
-              <Hash size={18} />
-              Столы
-            </h3>
-            <span className="settings-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Cpu size={14} />
-              Кол-во столов определяется автоматически ({localSettings.tables.length} реле)
-            </span>
-          </div>
-          <div className="settings-tables">
-            <div className="settings-table-header">
-              <span>Название</span>
-              <span>Реле №</span>
-              <span>Цена/час</span>
-            </div>
-            {localSettings.tables.map((table, index) => (
-              <div key={index} className="settings-table-row">
-                <input
-                  type="text"
-                  value={table.name}
-                  onChange={(e) => updateTableSetting(index, 'name', e.target.value)}
-                  className="form-input"
-                />
-                <span className="settings-relay-badge">
-                  {table.relayNumber}
-                </span>
-                <input
-                  type="number"
-                  value={table.pricePerHour}
-                  onChange={(e) =>
-                    updateTableSetting(index, 'pricePerHour', Number(e.target.value))
-                  }
-                  className="form-input form-input-sm"
-                />
-              </div>
-            ))}
           </div>
         </div>
         )}

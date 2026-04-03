@@ -11,6 +11,8 @@ import {
   PanelLeftOpen,
   Users,
   LogOut,
+  Trophy,
+  Tag,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { PageType } from '../types';
@@ -18,6 +20,8 @@ import type { PageType } from '../types';
 const menuItems: { id: PageType; label: string; icon: React.ReactNode }[] = [
   { id: 'dashboard', label: 'Столы', icon: <LayoutDashboard size={20} /> },
   { id: 'bar', label: 'Бар', icon: <Wine size={20} /> },
+  { id: 'tournaments', label: 'Турниры', icon: <Trophy size={20} /> },
+  { id: 'tariffs', label: 'Тарифы', icon: <Tag size={20} /> },
   { id: 'reports', label: 'Отчёты', icon: <BarChart3 size={20} /> },
   { id: 'users', label: 'Пользователи', icon: <Users size={20} /> },
   { id: 'settings', label: 'Настройки', icon: <Settings size={20} /> },

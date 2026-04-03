@@ -19,7 +19,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { BilliardTable, SessionMode } from '../types';
+import type { BilliardTable, SessionMode, Tariff } from '../types';
 import TableModal from './TableModal';
 import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
 import { printReceipt } from '../utils/receipt';
@@ -136,6 +136,10 @@ const TableCard: React.FC<{
       setCurrentCost(0);
       return;
     }
+    if (typeof session.packagePrice === 'number' && Number.isFinite(session.packagePrice)) {
+      setCurrentCost(session.packagePrice);
+      return;
+    }
     const interval = setInterval(() => {
       setCurrentCost(
         calculateSessionTableCost(
@@ -150,9 +154,15 @@ const TableCard: React.FC<{
     return () => clearInterval(interval);
   }, [session, table.pricePerHour]);
 
-  const barTotal = session?.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0) || 0;
+  const barTotal = session?.barOrders.reduce((sum, item) => {
+    const price = Number.isFinite(item.price) ? item.price : 0;
+    const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
+    return sum + price * qty;
+  }, 0) || 0;
 
-  const modeLabel = session?.mode === 'time'
+  const modeLabel = session?.tariffName
+    ? session.tariffName
+    : session?.mode === 'time'
     ? 'По времени'
     : session?.mode === 'amount'
     ? 'На сумму'
@@ -302,7 +312,7 @@ const TableCard: React.FC<{
 const Dashboard: React.FC = () => {
   const {
     tables, startSession, endSession, settings, getTodayRevenue, getTodaySessions, openModal,
-    reservations, addReservation, cancelReservation,
+    reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu,
   } = useStore();
   const [showStartModal, setShowStartModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
@@ -314,6 +324,7 @@ const Dashboard: React.FC = () => {
   const [timeHours, setTimeHours] = useState(1);
   const [timeMinutes, setTimeMinutes] = useState(0);
   const [fixedAmount, setFixedAmount] = useState(5000);
+  const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
 
   // Бронирование
   const [reserveName, setReserveName] = useState('');
@@ -331,6 +342,7 @@ const Dashboard: React.FC = () => {
     setTimeHours(1);
     setTimeMinutes(0);
     setFixedAmount(5000);
+    setSelectedTariff(null);
     setShowStartModal(true);
   };
 
@@ -344,10 +356,27 @@ const Dashboard: React.FC = () => {
       hours: timeHours,
       minutes: timeMinutes,
       amount: fixedAmount,
+      plannedDurationSeconds: selectedTariff ? Math.max(1, Math.round(selectedTariff.durationHours * 3600)) : undefined,
+      packagePrice: selectedTariff ? selectedTariff.price : undefined,
+      tariffName: selectedTariff ? selectedTariff.name : undefined,
     });
 
     if (settings.soundEnabled) playStartSound();
     setShowStartModal(false);
+
+    // Если был выбран тариф — автоматически добавляем продукты из бара
+    if (selectedTariff && selectedTariff.menuProducts.length > 0) {
+      const tableId = selectedTable;
+      setTimeout(() => {
+        selectedTariff.menuProducts.forEach((tp) => {
+          const menuItem = barMenu.find((m) => m.id === tp.productId);
+          if (menuItem) {
+            addBarOrderToTable(tableId, menuItem, tp.quantity, { priceOverride: 0, silent: true });
+          }
+        });
+      }, 100);
+    }
+    setSelectedTariff(null);
   };
 
   const handleStop = (tableId: number) => {
@@ -572,24 +601,24 @@ const Dashboard: React.FC = () => {
             {/* Выбор режима */}
             <div className="mode-selector">
               <button
-                onClick={() => setSelectedMode('time')}
-                className={`mode-btn ${selectedMode === 'time' ? 'active mode-time' : ''}`}
+                onClick={() => { setSelectedMode('time'); setSelectedTariff(null); }}
+                className={`mode-btn ${selectedMode === 'time' && !selectedTariff ? 'active mode-time' : ''}`}
               >
                 <Timer size={24} />
                 <span className="mode-btn-label">По времени</span>
                 <span className="mode-btn-desc">Выбрать длительность</span>
               </button>
               <button
-                onClick={() => setSelectedMode('amount')}
-                className={`mode-btn ${selectedMode === 'amount' ? 'active mode-amount' : ''}`}
+                onClick={() => { setSelectedMode('amount'); setSelectedTariff(null); setFixedAmount(5000); }}
+                className={`mode-btn ${selectedMode === 'amount' && !selectedTariff ? 'active mode-amount' : ''}`}
               >
                 <Banknote size={24} />
                 <span className="mode-btn-label">На сумму</span>
                 <span className="mode-btn-desc">Фиксированная оплата</span>
               </button>
               <button
-                onClick={() => setSelectedMode('unlimited')}
-                className={`mode-btn ${selectedMode === 'unlimited' ? 'active mode-unlimited' : ''}`}
+                onClick={() => { setSelectedMode('unlimited'); setSelectedTariff(null); }}
+                className={`mode-btn ${selectedMode === 'unlimited' && !selectedTariff ? 'active mode-unlimited' : ''}`}
               >
                 <InfinityIcon size={24} />
                 <span className="mode-btn-label">Бессрочно</span>
@@ -597,8 +626,76 @@ const Dashboard: React.FC = () => {
               </button>
             </div>
 
+            {/* Сохранённые тарифы (видны только если текущее время попадает в диапазон тарифа) */}
+            {(() => {
+              const now = new Date();
+              const currentMinutes = now.getHours() * 60 + now.getMinutes();
+              const tableTariffs = tariffs.filter((t) => {
+                if (!t.isActive || selectedTable === null || !t.tableIds.includes(selectedTable)) return false;
+                const [sh, sm] = t.startTime.split(':').map(Number);
+                const [eh, em] = t.endTime.split(':').map(Number);
+                const start = sh * 60 + sm;
+                const end = eh * 60 + em;
+                // Поддержка ночных тарифов (например 22:00–06:00)
+                if (start <= end) {
+                  return currentMinutes >= start && currentMinutes < end;
+                } else {
+                  return currentMinutes >= start || currentMinutes < end;
+                }
+              });
+              if (tableTariffs.length === 0) return null;
+              return (
+                <div style={{ marginTop: 4 }}>
+                  <p style={{ fontSize: 12, color: '#64748b', marginBottom: 8, fontWeight: 500 }}>Или выберите тариф:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {tableTariffs.map((tariff) => (
+                      <button
+                        key={tariff.id}
+                        onClick={() => {
+                          if (!selectedTable) return;
+                          // Выбираем тариф: режим "на сумму" с ценой тарифа (итоговая цена за всё)
+                          setSelectedTariff(tariff);
+                          setSelectedMode('amount');
+                          setFixedAmount(tariff.price);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          borderRadius: 10,
+                          border: selectedTariff?.id === tariff.id
+                            ? '2px solid rgba(139, 92, 246, 0.6)'
+                            : '1px solid rgba(139, 92, 246, 0.25)',
+                          background: selectedTariff?.id === tariff.id
+                            ? 'rgba(139, 92, 246, 0.15)'
+                            : 'rgba(139, 92, 246, 0.06)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#c4b5fd' }}>
+                            {tariff.name}
+                          </span>
+                          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                            {tariff.startTime}–{tariff.endTime} · {tariff.durationHours} ч
+                            {tariff.menuProducts.length > 0 && ` · +${tariff.menuProducts.length} продукт.`}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#a78bfa' }}>
+                          {tariff.price.toLocaleString()} {settings.currency}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Настройки для режима "по времени" */}
-            {selectedMode === 'time' && (
+            {selectedMode === 'time' && !selectedTariff && (
               <div className="time-selector">
                 <label className="modal-label">Длительность</label>
                 <div className="time-presets">
@@ -639,7 +736,7 @@ const Dashboard: React.FC = () => {
             )}
 
             {/* Настройки для режима "на сумму" */}
-            {selectedMode === 'amount' && (
+            {selectedMode === 'amount' && !selectedTariff && (
               <div className="amount-selector">
                 <label className="modal-label">Сумма</label>
                 <div className="amount-presets">
@@ -669,11 +766,42 @@ const Dashboard: React.FC = () => {
             )}
 
             {/* Бессрочный */}
-            {selectedMode === 'unlimited' && (
+            {selectedMode === 'unlimited' && !selectedTariff && (
               <div className="unlimited-info">
                 <p className="unlimited-text">
                   Стол будет открыт без ограничений. Оплата по факту времени.
                 </p>
+              </div>
+            )}
+
+            {/* Инфо о выбранном тарифе */}
+            {selectedTariff && (
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: 12,
+                background: 'rgba(139, 92, 246, 0.08)',
+                border: '1px solid rgba(139, 92, 246, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#c4b5fd' }}>
+                    Тариф: {selectedTariff.name}
+                  </span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: '#a78bfa' }}>
+                    {selectedTariff.price.toLocaleString()} {settings.currency}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span>⏱ Игра: {selectedTariff.durationHours} ч</span>
+                  {selectedTariff.menuProducts.length > 0 && (
+                    <span>
+                      🍺 Включено: {selectedTariff.menuProducts.map(p => `${p.productName} ×${p.quantity}`).join(', ')}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Цена итоговая (время + бар)</span>
+                </div>
               </div>
             )}
 

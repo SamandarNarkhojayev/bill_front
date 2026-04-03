@@ -8,6 +8,8 @@ import BarPage from './components/BarPage'
 import ReportsPage from './components/ReportsPage'
 import SettingsPage from './components/SettingsPage'
 import UsersPage from './components/UsersPage'
+import TournamentPage from './components/TournamentPage'
+import TariffsPage from './components/TariffsPage'
 import ToastContainer from './components/ToastContainer'
 import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
@@ -198,6 +200,10 @@ function App() {
         return canManageUsers ? <UsersPage /> : <Dashboard />
       default:
         return <Dashboard />
+      case 'tournaments':
+        return <TournamentPage />
+      case 'tariffs':
+        return <TariffsPage />
     }
   }
 
