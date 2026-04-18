@@ -23,23 +23,14 @@ import type { BilliardTable, SessionMode, Tariff } from '../types';
 import TableModal from './TableModal';
 import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
 import { printReceipt } from '../utils/receipt';
-
-const calculateSessionTableCost = (
-  startTime: number,
-  endTime: number,
-  pricePerHour: number,
-  mode: SessionMode,
-  fixedAmount: number | null
-) => {
-  const durationMinutes = Math.ceil((endTime - startTime) / 60000);
-  const elapsedCost = Math.ceil((durationMinutes / 60) * pricePerHour);
-
-  if (mode === 'amount' && fixedAmount) {
-    return Math.min(elapsedCost, fixedAmount);
-  }
-
-  return elapsedCost;
-};
+import {
+  calculateSessionTableCost,
+  estimateCostForDuration,
+  estimateDurationSecondsForAmount,
+  getCurrentPricePerHour,
+  isMinuteInRange,
+  parseTimeToMinutes,
+} from '../utils/pricing';
 
 const formatPhone = (value: string, prevValue = '') => {
   let digits = value.replace(/\D/g, '');
@@ -146,13 +137,17 @@ const TableCard: React.FC<{
           session.startTime,
           Date.now(),
           table.pricePerHour,
+          table.priceSchedule,
           session.mode,
-          session.fixedAmount
+          session.fixedAmount,
+          session.packagePrice
         )
       );
     }, 1000);
     return () => clearInterval(interval);
-  }, [session, table.pricePerHour]);
+  }, [session, table.pricePerHour, table.priceSchedule]);
+
+  const activePricePerHour = getCurrentPricePerHour(Date.now(), table.pricePerHour, table.priceSchedule);
 
   const barTotal = session?.barOrders.reduce((sum, item) => {
     const price = Number.isFinite(item.price) ? item.price : 0;
@@ -262,9 +257,11 @@ const TableCard: React.FC<{
           <div className="table-card-empty">
             <div className="table-card-price">
               <Zap size={14} />
-              {table.pricePerHour.toLocaleString()} {settings.currency}/час
+              {activePricePerHour.toLocaleString()} {settings.currency}/час
             </div>
-            <p className="table-card-hint">Готов к игре</p>
+            <p className="table-card-hint">
+              {table.priceSchedule.length > 0 ? 'Цена по времени суток активна' : 'Готов к игре'}
+            </p>
           </div>
         )}
 
@@ -335,6 +332,26 @@ const Dashboard: React.FC = () => {
 
   const revenue = getTodayRevenue();
   const todaySessions = getTodaySessions();
+  const selectedTableData = selectedTable ? tables.find((t) => t.id === selectedTable) : null;
+  const selectedTableCurrentRate = selectedTableData
+    ? getCurrentPricePerHour(Date.now(), selectedTableData.pricePerHour, selectedTableData.priceSchedule)
+    : 0;
+  const timeEstimateCost = selectedTableData
+    ? estimateCostForDuration(
+        Date.now(),
+        ((timeHours * 60) + timeMinutes) * 60,
+        selectedTableData.pricePerHour,
+        selectedTableData.priceSchedule
+      )
+    : 0;
+  const amountEstimateSeconds = selectedTableData
+    ? estimateDurationSecondsForAmount(
+        Date.now(),
+        fixedAmount,
+        selectedTableData.pricePerHour,
+        selectedTableData.priceSchedule
+      )
+    : 0;
 
   const handleStart = (tableId: number) => {
     setSelectedTable(tableId);
@@ -399,8 +416,10 @@ const Dashboard: React.FC = () => {
         session.startTime,
         endTime,
         table.pricePerHour,
+        table.priceSchedule,
         session.mode,
-        session.fixedAmount
+        session.fixedAmount,
+        session.packagePrice
       );
       const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -445,8 +464,10 @@ const Dashboard: React.FC = () => {
       session.startTime,
       endTime,
       table.pricePerHour,
+      table.priceSchedule,
       session.mode,
-      session.fixedAmount
+      session.fixedAmount,
+      session.packagePrice
     );
     const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -532,8 +553,6 @@ const Dashboard: React.FC = () => {
     return reservations.find((r) => r.tableId === tableId) || null;
   };
 
-  const selectedTableData = selectedTable ? tables.find((t) => t.id === selectedTable) : null;
-
   return (
     <div className="dashboard">
       {/* Статистика за день */}
@@ -595,7 +614,8 @@ const Dashboard: React.FC = () => {
             </h2>
 
             <p className="modal-hint" style={{ marginBottom: '16px' }}>
-              Тариф: {selectedTableData.pricePerHour.toLocaleString()} {settings.currency}/час
+              Сейчас: {selectedTableCurrentRate.toLocaleString()} {settings.currency}/час
+              {selectedTableData.priceSchedule.length > 0 && ` · вне интервалов ${selectedTableData.pricePerHour.toLocaleString()} ${settings.currency}/час`}
             </p>
 
             {/* Выбор режима */}
@@ -632,16 +652,7 @@ const Dashboard: React.FC = () => {
               const currentMinutes = now.getHours() * 60 + now.getMinutes();
               const tableTariffs = tariffs.filter((t) => {
                 if (!t.isActive || selectedTable === null || !t.tableIds.includes(selectedTable)) return false;
-                const [sh, sm] = t.startTime.split(':').map(Number);
-                const [eh, em] = t.endTime.split(':').map(Number);
-                const start = sh * 60 + sm;
-                const end = eh * 60 + em;
-                // Поддержка ночных тарифов (например 22:00–06:00)
-                if (start <= end) {
-                  return currentMinutes >= start && currentMinutes < end;
-                } else {
-                  return currentMinutes >= start || currentMinutes < end;
-                }
+                return isMinuteInRange(currentMinutes, parseTimeToMinutes(t.startTime), parseTimeToMinutes(t.endTime));
               });
               if (tableTariffs.length === 0) return null;
               return (
@@ -729,7 +740,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 {(timeHours > 0 || timeMinutes > 0) && (
                   <div className="time-estimate">
-                    Стоимость: {Math.ceil(((timeHours * 60 + timeMinutes) / 60) * selectedTableData.pricePerHour).toLocaleString()} {settings.currency}
+                    Стоимость: {timeEstimateCost.toLocaleString()} {settings.currency}
                   </div>
                 )}
               </div>
@@ -760,7 +771,7 @@ const Dashboard: React.FC = () => {
                   step={500}
                 />
                 <div className="time-estimate">
-                  ≈ {Math.round((fixedAmount / selectedTableData.pricePerHour) * 60)} минут игры
+                  ≈ {Math.max(1, Math.round(amountEstimateSeconds / 60))} минут игры
                 </div>
               </div>
             )}
@@ -934,8 +945,10 @@ const EndSessionModal: React.FC<{
     session.startTime,
     endTime,
     table.pricePerHour,
+    table.priceSchedule,
     session.mode,
-    session.fixedAmount
+    session.fixedAmount,
+    session.packagePrice
   );
 
   const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);

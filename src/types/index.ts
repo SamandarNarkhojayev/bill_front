@@ -28,6 +28,13 @@ export type TableStatus = 'free' | 'occupied' | 'reserved' | 'maintenance';
 
 export type SessionMode = 'time' | 'amount' | 'unlimited';
 
+export interface TablePriceRule {
+  id: string;
+  startTime: string;
+  endTime: string;
+  pricePerHour: number;
+}
+
 export interface BilliardTable {
   id: number;
   name: string;
@@ -35,6 +42,7 @@ export interface BilliardTable {
   status: TableStatus;
   lightOn: boolean;
   pricePerHour: number;
+  priceSchedule: TablePriceRule[];
   currentSession: TableSession | null;
 }
 
@@ -183,6 +191,7 @@ export interface TableSettings {
   name: string;
   relayNumber: number;
   pricePerHour: number;
+  priceSchedule: TablePriceRule[];
   isActive: boolean;
 }
 

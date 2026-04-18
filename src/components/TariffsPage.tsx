@@ -1,7 +1,78 @@
 import React, { useState } from 'react';
 import { Tag, Plus, Clock, Trash2, Edit, Package, ShoppingBag, Hash, Cpu } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { Tariff, TariffMenuProduct, BarMenuItem } from '../types';
+import { parseTimeToMinutes } from '../utils/pricing';
+import type { Tariff, TariffMenuProduct, BarMenuItem, TablePriceRule } from '../types';
+
+const DAY_MINUTES = 24 * 60;
+
+const formatMinutes = (value: number) => {
+  const hours = Math.floor(value / 60) % 24;
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const getRuleSegments = (rule: Pick<TablePriceRule, 'startTime' | 'endTime'>): Array<{ start: number; end: number }> => {
+  const start = parseTimeToMinutes(rule.startTime);
+  const end = parseTimeToMinutes(rule.endTime);
+
+  if (start === end) {
+    return [{ start: 0, end: DAY_MINUTES }];
+  }
+
+  if (start < end) {
+    return [{ start, end }];
+  }
+
+  return [
+    { start, end: DAY_MINUTES },
+    { start: 0, end },
+  ];
+};
+
+const rulesOverlap = (left: Pick<TablePriceRule, 'startTime' | 'endTime'>, right: Pick<TablePriceRule, 'startTime' | 'endTime'>): boolean => {
+  const leftSegments = getRuleSegments(left);
+  const rightSegments = getRuleSegments(right);
+
+  return leftSegments.some((leftSegment) => (
+    rightSegments.some((rightSegment) => (
+      leftSegment.start < rightSegment.end && rightSegment.start < leftSegment.end
+    ))
+  ));
+};
+
+const findPriceScheduleConflict = (rules: TablePriceRule[]): { firstRule: TablePriceRule; secondRule: TablePriceRule } | null => {
+  for (let i = 0; i < rules.length; i += 1) {
+    const currentRule = rules[i];
+    const currentStart = parseTimeToMinutes(currentRule.startTime);
+    const currentEnd = parseTimeToMinutes(currentRule.endTime);
+
+    if (currentStart === currentEnd) {
+      return { firstRule: currentRule, secondRule: currentRule };
+    }
+
+    for (let j = i + 1; j < rules.length; j += 1) {
+      const compareRule = rules[j];
+      if (rulesOverlap(currentRule, compareRule)) {
+        return { firstRule: currentRule, secondRule: compareRule };
+      }
+    }
+  }
+
+  return null;
+};
+
+const getPriceScheduleConflictMessage = (rules: TablePriceRule[]): string | null => {
+  const conflict = findPriceScheduleConflict(rules);
+  if (!conflict) {
+    return null;
+  }
+
+  const isSameRuleConflict = conflict.firstRule.id === conflict.secondRule.id;
+  return isSameRuleConflict
+    ? 'Начало и конец интервала не должны совпадать'
+    : `Интервалы ${conflict.firstRule.startTime}–${conflict.firstRule.endTime} и ${conflict.secondRule.startTime}–${conflict.secondRule.endTime} пересекаются`;
+};
 
 const TariffsPage: React.FC = () => {
   const { settings, updateSettings, currentUser, barMenu, addToast, tariffs, addTariff, updateTariff, removeTariff } = useStore();
@@ -18,13 +89,145 @@ const TariffsPage: React.FC = () => {
   const [price, setPrice] = useState(0);
   const [selectedProducts, setSelectedProducts] = useState<TariffMenuProduct[]>([]);
   const [isActive, setIsActive] = useState(true);
+  const [showBulkPriceEditor, setShowBulkPriceEditor] = useState(false);
+  const [bulkSelectedTableIds, setBulkSelectedTableIds] = useState<number[]>([]);
+  const [bulkStartTime, setBulkStartTime] = useState('09:00');
+  const [bulkEndTime, setBulkEndTime] = useState('19:00');
+  const [bulkPricePerHour, setBulkPricePerHour] = useState(2000);
 
   const activeTables = settings.tables.filter(t => t.isActive);
+
+  const sortPriceRules = (rules: TablePriceRule[]) => (
+    rules.slice().sort((left, right) => parseTimeToMinutes(left.startTime) - parseTimeToMinutes(right.startTime))
+  );
 
   const updateTableSetting = (index: number, field: string, value: string | number | boolean) => {
     const newTables = [...settings.tables];
     newTables[index] = { ...newTables[index], [field]: value };
     updateSettings({ tables: newTables });
+  };
+
+  const updateTablePriceSchedule = (tableIndex: number, rules: TablePriceRule[]) => {
+    const conflictMessage = getPriceScheduleConflictMessage(rules);
+    if (conflictMessage) {
+      addToast('error', conflictMessage);
+      return false;
+    }
+
+    const newTables = [...settings.tables];
+    newTables[tableIndex] = {
+      ...newTables[tableIndex],
+      priceSchedule: sortPriceRules(rules),
+    };
+    updateSettings({ tables: newTables });
+    return true;
+  };
+
+  const addPriceRule = (tableIndex: number) => {
+    const table = settings.tables[tableIndex];
+    const rules = table.priceSchedule || [];
+    const lastRule = sortPriceRules(rules)[rules.length - 1];
+    const fallbackStart = lastRule ? parseTimeToMinutes(lastRule.endTime) : 9 * 60;
+    const nextStartMinutes = Math.max(0, Math.min(DAY_MINUTES - 60, fallbackStart));
+    const nextEndMinutes = (nextStartMinutes + 60) % DAY_MINUTES;
+
+    updateTablePriceSchedule(tableIndex, [
+      ...rules,
+      {
+        id: `${table.id}-${Date.now()}`,
+        startTime: formatMinutes(nextStartMinutes),
+        endTime: formatMinutes(nextEndMinutes),
+        pricePerHour: table.pricePerHour,
+      },
+    ]);
+  };
+
+  const updatePriceRuleField = (
+    tableIndex: number,
+    ruleId: string,
+    field: keyof Pick<TablePriceRule, 'startTime' | 'endTime' | 'pricePerHour'>,
+    value: string | number
+  ) => {
+    const table = settings.tables[tableIndex];
+    const nextRules = (table.priceSchedule || []).map((rule) => (
+      rule.id === ruleId ? { ...rule, [field]: value } : rule
+    ));
+    updateTablePriceSchedule(tableIndex, nextRules);
+  };
+
+  const removePriceRule = (tableIndex: number, ruleId: string) => {
+    const table = settings.tables[tableIndex];
+    updateTablePriceSchedule(
+      tableIndex,
+      (table.priceSchedule || []).filter((rule) => rule.id !== ruleId)
+    );
+  };
+
+  const toggleBulkTableSelection = (tableId: number) => {
+    setBulkSelectedTableIds((prev) => (
+      prev.includes(tableId)
+        ? prev.filter((id) => id !== tableId)
+        : [...prev, tableId]
+    ));
+  };
+
+  const handleApplyBulkPriceRule = () => {
+    if (bulkSelectedTableIds.length === 0) {
+      addToast('error', 'Выберите хотя бы один стол для массового применения');
+      return;
+    }
+
+    if (bulkPricePerHour <= 0) {
+      addToast('error', 'Укажите корректную цену для интервала');
+      return;
+    }
+
+    if (bulkStartTime === bulkEndTime) {
+      addToast('error', 'Начало и конец интервала не должны совпадать');
+      return;
+    }
+
+    const timestamp = Date.now();
+    const skippedTables: string[] = [];
+    let updatedCount = 0;
+
+    const nextTables = settings.tables.map((table) => {
+      if (!bulkSelectedTableIds.includes(table.id)) {
+        return table;
+      }
+
+      const nextRule: TablePriceRule = {
+        id: `${table.id}-${timestamp}-${updatedCount}`,
+        startTime: bulkStartTime,
+        endTime: bulkEndTime,
+        pricePerHour: bulkPricePerHour,
+      };
+      const nextRules = [...(table.priceSchedule || []), nextRule];
+      const conflictMessage = getPriceScheduleConflictMessage(nextRules);
+
+      if (conflictMessage) {
+        skippedTables.push(table.name);
+        return table;
+      }
+
+      updatedCount += 1;
+      return {
+        ...table,
+        priceSchedule: sortPriceRules(nextRules),
+      };
+    });
+
+    if (updatedCount === 0) {
+      addToast('error', skippedTables.length > 0 ? `Интервал не добавлен. Конфликты у: ${skippedTables.join(', ')}` : 'Не удалось применить интервал');
+      return;
+    }
+
+    updateSettings({ tables: nextTables });
+    addToast('success', `Интервал добавлен для ${updatedCount} стол${updatedCount === 1 ? 'а' : updatedCount < 5 ? 'ов' : 'ов'}`);
+
+    if (skippedTables.length > 0) {
+      addToast('warning', `Пропущены из-за пересечения: ${skippedTables.join(', ')}`);
+    }
   };
 
   const handleCreateOrUpdateTariff = () => {
@@ -185,31 +388,243 @@ const TariffsPage: React.FC = () => {
               Кол-во столов определяется автоматически ({settings.tables.length} реле)
             </span>
           </div>
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => setShowBulkPriceEditor((prev) => !prev)}
+              className="btn btn-ghost"
+              style={{ padding: '8px 12px', fontSize: 12, minHeight: 34 }}
+            >
+              <Plus size={14} />
+              {showBulkPriceEditor ? 'Скрыть массовое добавление' : 'Массовое добавление'}
+            </button>
+          </div>
+          {showBulkPriceEditor && (
+            <div style={{
+              marginBottom: 12,
+              padding: '12px',
+              borderRadius: 12,
+              border: '1px solid rgba(139, 92, 246, 0.16)',
+              background: 'rgba(139, 92, 246, 0.05)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ddd6fe' }}>Массовое добавление интервала</span>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>Выберите столы один раз и примените общий диапазон цены.</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setBulkSelectedTableIds(activeTables.map((table) => table.id))}
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}
+                  >
+                    Выбрать все
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkSelectedTableIds([])}
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}
+                  >
+                    Очистить
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {activeTables.map((table) => {
+                  const selected = bulkSelectedTableIds.includes(table.id);
+                  return (
+                    <button
+                      key={`bulk-${table.id}`}
+                      type="button"
+                      onClick={() => toggleBulkTableSelection(table.id)}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: 999,
+                        border: `1px solid ${selected ? 'rgba(139, 92, 246, 0.5)' : 'rgba(255, 255, 255, 0.08)'}`,
+                        background: selected ? 'rgba(139, 92, 246, 0.16)' : 'rgba(255, 255, 255, 0.03)',
+                        color: selected ? '#ddd6fe' : '#cbd5e1',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {table.name}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '110px 110px 140px auto',
+                gap: 8,
+                alignItems: 'center',
+              }}>
+                <input
+                  type="time"
+                  value={bulkStartTime}
+                  onChange={(e) => setBulkStartTime(e.target.value)}
+                  className="form-input"
+                />
+                <input
+                  type="time"
+                  value={bulkEndTime}
+                  onChange={(e) => setBulkEndTime(e.target.value)}
+                  className="form-input"
+                />
+                <input
+                  type="number"
+                  value={bulkPricePerHour}
+                  onChange={(e) => setBulkPricePerHour(Number(e.target.value))}
+                  className="form-input"
+                  min="0"
+                  step="100"
+                  placeholder="Цена/час"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyBulkPriceRule}
+                  className="btn btn-primary"
+                  style={{ minHeight: 36 }}
+                >
+                  <Plus size={14} />
+                  Применить к выбранным
+                </button>
+              </div>
+            </div>
+          )}
           <div className="settings-tables">
             <div className="settings-table-header">
               <span>Название</span>
               <span>Реле №</span>
-              <span>Цена/час</span>
+              <span>База/час</span>
             </div>
             {settings.tables.map((table, index) => (
-              <div key={index} className="settings-table-row">
-                <input
-                  type="text"
-                  value={table.name}
-                  onChange={(e) => updateTableSetting(index, 'name', e.target.value)}
-                  className="form-input"
-                />
-                <span className="settings-relay-badge">
-                  {table.relayNumber}
-                </span>
-                <input
-                  type="number"
-                  value={table.pricePerHour}
-                  onChange={(e) =>
-                    updateTableSetting(index, 'pricePerHour', Number(e.target.value))
-                  }
-                  className="form-input form-input-sm"
-                />
+              <div
+                key={table.id}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: 'rgba(255, 255, 255, 0.012)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) 60px 120px',
+                    gap: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={table.name}
+                    onChange={(e) => updateTableSetting(index, 'name', e.target.value)}
+                    className="form-input"
+                  />
+                  <span className="settings-relay-badge" style={{ justifySelf: 'center' }}>
+                    {table.relayNumber}
+                  </span>
+                  <input
+                    type="number"
+                    value={table.pricePerHour}
+                    onChange={(e) =>
+                      updateTableSetting(index, 'pricePerHour', Number(e.target.value))
+                    }
+                    className="form-input form-input-sm"
+                    style={{ width: '100%', maxWidth: '100%' }}
+                  />
+                </div>
+
+                <div style={{
+                  paddingTop: 8,
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 32 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1' }}>Цены по времени</span>
+                      <span style={{
+                        fontSize: 10,
+                        color: '#94a3b8',
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: 'rgba(148, 163, 184, 0.08)',
+                        border: '1px solid rgba(148, 163, 184, 0.12)',
+                      }}>
+                        Интервалов: {(table.priceSchedule || []).length}
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => addPriceRule(index)} className="btn btn-ghost" style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}>
+                      <Plus size={14} />
+                      Интервал
+                    </button>
+                  </div>
+
+                  {(table.priceSchedule || []).length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(table.priceSchedule || []).map((rule) => (
+                        <div
+                          key={rule.id}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 110px auto',
+                            gap: 8,
+                            alignItems: 'center',
+                            padding: '8px',
+                            borderRadius: 10,
+                            background: 'rgba(255, 255, 255, 0.02)',
+                          }}
+                        >
+                          <input
+                            type="time"
+                            value={rule.startTime}
+                            onChange={(e) => updatePriceRuleField(index, rule.id, 'startTime', e.target.value)}
+                            className="form-input"
+                            style={{ width: '100%' }}
+                          />
+                          <input
+                            type="time"
+                            value={rule.endTime}
+                            onChange={(e) => updatePriceRuleField(index, rule.id, 'endTime', e.target.value)}
+                            className="form-input"
+                            style={{ width: '100%' }}
+                          />
+                          <input
+                            type="number"
+                            value={rule.pricePerHour}
+                            onChange={(e) => updatePriceRuleField(index, rule.id, 'pricePerHour', Number(e.target.value))}
+                            className="form-input form-input-sm"
+                            style={{ width: '100%', maxWidth: '100%' }}
+                            min="0"
+                            step="100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePriceRule(index, rule.id)}
+                            className="btn btn-ghost"
+                            style={{ padding: '6px', color: '#ef4444' }}
+                            title="Удалить интервал"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

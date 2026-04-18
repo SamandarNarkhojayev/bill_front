@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { playOrderSound } from '../utils/sounds';
+import { calculateSessionTableCost, estimateDurationSecondsForAmount } from '../utils/pricing';
 import type {
   BilliardTable,
   BarMenuItem,
@@ -68,23 +69,6 @@ const defaultUsers: User[] = [
   },
 ];
 
-const calculateSessionTableCost = (
-  startTime: number,
-  endTime: number,
-  pricePerHour: number,
-  mode: SessionMode,
-  fixedAmount: number | null
-) => {
-  const durationMinutes = Math.ceil((endTime - startTime) / 60000);
-  const elapsedCost = Math.ceil((durationMinutes / 60) * pricePerHour);
-
-  if (mode === 'amount' && fixedAmount) {
-    return Math.min(elapsedCost, fixedAmount);
-  }
-
-  return elapsedCost;
-};
-
 // ===== КАТЕГОРИИ ПО УМОЛЧАНИЮ =====
 const defaultBarCategories: BarCategoryConfig[] = [
   { id: 'drinks',  name: 'Напитки',  icon: 'Coffee',       color: '#3b82f6', sortOrder: 0 },
@@ -135,10 +119,10 @@ const defaultSettings: AppSettings = {
   receiptFontSize: 14,
   receiptPaddingMm: 5,
   tables: [
-    { id: 1, name: 'Стол №1', relayNumber: 1, pricePerHour: 2000, isActive: true },
-    { id: 2, name: 'Стол №2', relayNumber: 2, pricePerHour: 2000, isActive: true },
-    { id: 3, name: 'Стол №3', relayNumber: 3, pricePerHour: 2500, isActive: true },
-    { id: 4, name: 'Стол №4', relayNumber: 4, pricePerHour: 2500, isActive: true },
+    { id: 1, name: 'Стол №1', relayNumber: 1, pricePerHour: 2000, priceSchedule: [], isActive: true },
+    { id: 2, name: 'Стол №2', relayNumber: 2, pricePerHour: 2000, priceSchedule: [], isActive: true },
+    { id: 3, name: 'Стол №3', relayNumber: 3, pricePerHour: 2500, priceSchedule: [], isActive: true },
+    { id: 4, name: 'Стол №4', relayNumber: 4, pricePerHour: 2500, priceSchedule: [], isActive: true },
   ],
 };
 
@@ -150,6 +134,7 @@ const defaultTables: BilliardTable[] = defaultSettings.tables.map((t) => ({
   status: 'free' as const,
   lightOn: false,
   pricePerHour: t.pricePerHour,
+  priceSchedule: t.priceSchedule,
   currentSession: null,
 }));
 
@@ -592,13 +577,14 @@ export const useStore = create<AppStore>()(
         const { hours = 0, minutes = 0, amount = 0, plannedDurationSeconds, packagePrice, tariffName } = options;
         const table = get().tables.find((t) => t.id === tableId);
         const pricePerHour = table?.pricePerHour || get().settings.defaultPricePerHour;
+        const priceSchedule = table?.priceSchedule || [];
         let plannedDuration: number | null = null;
         if (typeof plannedDurationSeconds === 'number' && plannedDurationSeconds > 0) {
           plannedDuration = Math.max(1, Math.ceil(plannedDurationSeconds));
         } else if (mode === 'time') {
           plannedDuration = (hours * 60 + minutes) * 60; // в секундах
         } else if (mode === 'amount' && amount > 0) {
-          plannedDuration = Math.max(1, Math.ceil((amount / pricePerHour) * 3600)); // в секундах
+          plannedDuration = estimateDurationSecondsForAmount(Date.now(), amount, pricePerHour, priceSchedule);
         }
         const fixedAmount = mode === 'amount' ? amount : null;
         const normalizedPackagePrice = typeof packagePrice === 'number' && packagePrice > 0 ? packagePrice : null;
@@ -662,8 +648,10 @@ export const useStore = create<AppStore>()(
               session.startTime,
               endTime,
               table.pricePerHour,
+              table.priceSchedule,
               session.mode,
-              session.fixedAmount
+              session.fixedAmount,
+              session.packagePrice
             );
 
         const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -753,6 +741,7 @@ export const useStore = create<AppStore>()(
               status: 'free' as const,
               lightOn: relay.state,
               pricePerHour: settingsTable?.pricePerHour || state.settings.defaultPricePerHour,
+              priceSchedule: settingsTable?.priceSchedule || [],
               currentSession: null,
             };
           });
@@ -764,6 +753,7 @@ export const useStore = create<AppStore>()(
               name: t.name,
               relayNumber: t.relayNumber,
               pricePerHour: existing?.pricePerHour || t.pricePerHour,
+              priceSchedule: existing?.priceSchedule || t.priceSchedule || [],
               isActive: existing?.isActive ?? true,
             };
           });
@@ -1149,6 +1139,7 @@ export const useStore = create<AppStore>()(
                   name: st.name,
                   relayNumber: st.relayNumber,
                   pricePerHour: st.pricePerHour,
+                  priceSchedule: st.priceSchedule || [],
                 };
               }
               return {
@@ -1158,6 +1149,7 @@ export const useStore = create<AppStore>()(
                 status: 'free' as const,
                 lightOn: false,
                 pricePerHour: st.pricePerHour,
+                priceSchedule: st.priceSchedule || [],
                 currentSession: null,
               };
             });
@@ -1213,6 +1205,10 @@ export const useStore = create<AppStore>()(
             ...currentState.settings,
             ...(persisted.settings || {}),
             currency: 'тг',
+            tables: (persisted.settings?.tables || currentState.settings.tables).map((table) => ({
+              ...table,
+              priceSchedule: table.priceSchedule || [],
+            })),
           };
           // Если нет пользователей — используем дефолтных
           if (!persisted.users || persisted.users.length === 0) {
@@ -1223,7 +1219,10 @@ export const useStore = create<AppStore>()(
           // - текущие сессии
           // - состояние света
           if (persisted.tables && persisted.tables.length > 0) {
-            merged.tables = persisted.tables;
+            merged.tables = persisted.tables.map((table) => ({
+              ...table,
+              priceSchedule: table.priceSchedule || [],
+            }));
           } else if (persisted.settings?.tables) {
             merged.tables = persisted.settings.tables.map((st) => ({
               id: st.id,
@@ -1232,6 +1231,7 @@ export const useStore = create<AppStore>()(
               status: 'free' as const,
               lightOn: false,
               pricePerHour: st.pricePerHour,
+              priceSchedule: st.priceSchedule || [],
               currentSession: null,
             }));
           }
