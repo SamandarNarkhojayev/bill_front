@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "5.0.0",
+  "version": "6.0.0",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -30,6 +30,7 @@
     "appId": "com.billiard.club",
     "productName": "Biliardo (automation for billiard club)",
     "copyright": "Copyright © 2026",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
