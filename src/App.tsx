@@ -15,8 +15,18 @@ import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
 import LogoutConfirmModal from './components/LogoutConfirmModal'
 import { playTimerEndSound } from './utils/sounds'
+import cloudSync from './utils/cloudSync'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo, UpdaterState } from './types/arduino'
 import './App.css'
+
+// КРИТИЧНО: регистрируем snapshot-провайдер на уровне модуля, ДО любого React-рендера.
+// Если делать это внутри useEffect — при HMR / StrictMode / гонке логина с инициализацией
+// cloudSync.syncNow() может стартовать раньше, чем effect успеет setSnapshotProvider,
+// и завалится с "snapshot provider not set".
+cloudSync.setSnapshotProvider(() => {
+  const s = useStore.getState()
+  return { tables: s.tables, sessionHistory: s.sessionHistory, reservations: s.reservations }
+})
 
 function App() {
   const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
@@ -35,6 +45,69 @@ function App() {
     document.documentElement.setAttribute('data-theme', settings.theme)
     document.body.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+
+  // Cloud Sync: если владелец залогинился в biliardo.kz — автосинк состояния каждые 30с
+  // + real-time WS канал для приёма команд от веб-кабинета владельца.
+  // (setSnapshotProvider зарегистрирован на уровне модуля выше — здесь только подписки)
+  useEffect(() => {
+    // Обработчик команд от веба: выполняем локально и возвращаем новый статус для ACK.
+    const unsubCmd = cloudSync.onCommand(async (cmd) => {
+      const store = useStore.getState()
+      const table = store.tables.find((t) => t.id === cmd.tableId)
+      if (!table) return { ok: false, error: 'TABLE_NOT_FOUND' }
+
+      if (cmd.type === 'TABLE_TOGGLE_LIGHT') {
+        store.toggleLight(cmd.tableId)
+        // toggleLight синхронный — после него можно сразу читать новое состояние.
+        const fresh = useStore.getState().tables.find((t) => t.id === cmd.tableId)
+        return { ok: true, newStatus: fresh?.status ?? 'free' }
+      }
+      if (cmd.type === 'TABLE_START_SESSION') {
+        if (table.status !== 'free') return { ok: false, error: 'TABLE_BUSY' }
+        const p = cmd.payload ?? {}
+        const mode = p.mode ?? 'unlimited'
+        // Прокидываем все опции — десктопный store сам соберёт plannedDuration.
+        // ВНИМАНИЕ: третий аргумент должен быть объектом (или undefined).
+        // Раньше передавали null — store.startSession делал const { ... } = options
+        // и падал с "Cannot destructure property 'hours' of 'null'", ACK не уходил,
+        // веб висел 10 сек в watchdog.
+        store.startSession(cmd.tableId, mode, {
+          hours: p.hours,
+          minutes: p.minutes,
+          amount: p.amount,
+          packagePrice: p.packagePrice,
+          tariffName: p.tariffName,
+          plannedDurationSeconds: p.plannedDurationSeconds,
+        })
+        return { ok: true, newStatus: 'occupied' }
+      }
+      if (cmd.type === 'TABLE_END_SESSION') {
+        if (table.status !== 'occupied') return { ok: false, error: 'NOT_OCCUPIED' }
+        store.endSession(cmd.tableId)
+        return { ok: true, newStatus: 'free' }
+      }
+      return { ok: false, error: 'UNKNOWN_COMMAND' }
+    })
+
+    // Подписка на изменения столов: при каждом обновлении броадкастим SYNC через WS,
+    // чтобы веб видел свежее состояние сразу (не дожидаясь интервала 30с).
+    let lastTablesRef = useStore.getState().tables
+    const unsubStore = useStore.subscribe((s) => {
+      if (s.tables !== lastTablesRef) {
+        lastTablesRef = s.tables
+        cloudSync.broadcastSync()
+      }
+    })
+
+    if (cloudSync.getStatus().loggedIn) {
+      cloudSync.startAutoSync()
+    }
+    return () => {
+      unsubCmd()
+      unsubStore()
+      cloudSync.stopAutoSync()
+    }
+  }, [])
 
   // Автоматическая проверка обновлений при запуске и каждые 30 минут
   useEffect(() => {
@@ -191,7 +264,9 @@ function App() {
       case 'dashboard':
         return <Dashboard />
       case 'bar':
-        return <BarPage />
+        return <BarPage key="bar" department={settings.kitchenSeparate ? 'bar' : 'combined'} />
+      case 'kitchen':
+        return <BarPage key="kitchen" department={settings.kitchenSeparate ? 'kitchen' : 'combined'} />
       case 'reports':
         return <ReportsPage />
       case 'settings':

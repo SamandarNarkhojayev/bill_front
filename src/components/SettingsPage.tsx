@@ -18,12 +18,14 @@ import {
   Shield,
   FolderArchive,
   History,
+  ChefHat,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import CloudSyncSection from './CloudSyncSection';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, sessionHistory, currentUser } = useStore();
+  const { settings, updateSettings, sessionHistory, currentUser, currentPage, setCurrentPage } = useStore();
   const [localSettings, setLocalSettings] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
   const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
@@ -48,6 +50,35 @@ const SettingsPage: React.FC = () => {
   // ===== Состояния для обновлений =====
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateStatus, setUpdateStatus] = useState('');
+
+  // ===== Принтеры =====
+  const [availablePrinters, setAvailablePrinters] = useState<{ name: string; displayName?: string }[]>([]);
+
+  const loadPrinters = useCallback(async () => {
+    try {
+      const list = await window.electronAPI?.printer?.getPrinters?.();
+      if (Array.isArray(list)) {
+        setAvailablePrinters(list.map((p) => ({ name: p.name, displayName: p.displayName })));
+      }
+    } catch (err) {
+      console.error('Не удалось получить список принтеров:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPrinters();
+  }, [loadPrinters]);
+
+  const handleTestPrint = async (deviceName: string, kind: 'receipt' | 'kitchen') => {
+    const html = kind === 'kitchen'
+      ? `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:${localSettings.receiptWidthMm}mm auto;margin:0}body{font-family:'Courier New',monospace;width:${localSettings.receiptWidthMm}mm;padding:${localSettings.receiptPaddingMm}mm;text-align:center}h2{font-size:${localSettings.receiptFontSize + 8}px;font-weight:900}</style></head><body><h2>★ КУХНЯ ★</h2><p>Тестовая печать</p><p>${deviceName || 'принтер по умолчанию'}</p></body></html>`
+      : `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:${localSettings.receiptWidthMm}mm auto;margin:0}body{font-family:'Courier New',monospace;width:${localSettings.receiptWidthMm}mm;padding:${localSettings.receiptPaddingMm}mm;text-align:center}h2{font-size:${localSettings.receiptFontSize + 4}px;font-weight:800}</style></head><body><h2>ЧЕК</h2><p>Тестовая печать</p><p>${deviceName || 'принтер по умолчанию'}</p></body></html>`;
+    try {
+      await window.electronAPI?.printer?.printReceipt(html, localSettings.receiptWidthMm, true, deviceName);
+    } catch (err) {
+      console.error('Ошибка тестовой печати:', err);
+    }
+  };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -270,6 +301,10 @@ const SettingsPage: React.FC = () => {
 
   const handleSave = () => {
     updateSettings(localSettings);
+    // Если выключили разделение, а мы на странице «Кухня» — её больше нет в меню, уводим на «Бар»
+    if (!localSettings.kitchenSeparate && currentPage === 'kitchen') {
+      setCurrentPage('bar');
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -601,6 +636,44 @@ const SettingsPage: React.FC = () => {
                 <div className="toggle-dot" />
               </button>
             </div>
+            <div className="settings-toggle-field">
+              <div>
+                <label className="settings-label">
+                  <ChefHat size={14} style={{ marginRight: 6 }} />
+                  Разделить Бар и Кухню
+                </label>
+                <p className="settings-hint">
+                  {localSettings.kitchenSeparate
+                    ? 'Кухня — отдельная страница (только блюда), Бар — напитки и снэки'
+                    : 'Бар и Кухня на одной странице «Бар»'}
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setLocalSettings((prev) => ({ ...prev, kitchenSeparate: !prev.kitchenSeparate }))
+                }
+                className={`toggle ${localSettings.kitchenSeparate ? 'on' : 'off'}`}
+              >
+                <div className="toggle-dot" />
+              </button>
+            </div>
+            <div className="settings-toggle-field">
+              <div>
+                <label className="settings-label">
+                  <ChefHat size={14} style={{ marginRight: 6 }} />
+                  Авто-печать заказа на кухню
+                </label>
+                <p className="settings-hint">Печатать заказ на кухонный принтер при пробитии блюда</p>
+              </div>
+              <button
+                onClick={() =>
+                  setLocalSettings((prev) => ({ ...prev, autoPrintKitchenTicket: !prev.autoPrintKitchenTicket }))
+                }
+                className={`toggle ${localSettings.autoPrintKitchenTicket ? 'on' : 'off'}`}
+              >
+                <div className="toggle-dot" />
+              </button>
+            </div>
           </div>
         </div>
         )}
@@ -698,6 +771,83 @@ const SettingsPage: React.FC = () => {
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>мм</span>
               </div>
             </div>
+          </div>
+        </div>
+        )}
+
+        {/* Принтеры — раздельная маршрутизация чеков и кухни */}
+        {canAccessAllSettings && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <Printer size={18} />
+            Принтеры
+          </h3>
+          <div className="settings-fields">
+            <p className="settings-hint" style={{ marginTop: -4 }}>
+              Назначьте разные принтеры для чеков и кухни — тогда заказы не будут пересекаться.
+              {availablePrinters.length === 0 && ' (Список принтеров пуст — нажмите «Обновить»)'}
+            </p>
+            <div className="settings-field">
+              <label className="settings-label">
+                <Printer size={14} style={{ marginRight: 6 }} />
+                Принтер для чеков и пречеков
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select
+                  value={localSettings.receiptPrinterName}
+                  onChange={(e) => setLocalSettings((prev) => ({ ...prev, receiptPrinterName: e.target.value }))}
+                  className="form-select"
+                  style={{ flex: 1 }}
+                >
+                  <option value="">Принтер по умолчанию</option>
+                  {availablePrinters.map((p) => (
+                    <option key={p.name} value={p.name}>{p.displayName || p.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => handleTestPrint(localSettings.receiptPrinterName, 'receipt')}
+                  className="btn btn-ghost"
+                  style={{ padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}
+                >
+                  <Printer size={14} /> Тест
+                </button>
+              </div>
+            </div>
+            <div className="settings-field">
+              <label className="settings-label">
+                <ChefHat size={14} style={{ marginRight: 6 }} />
+                Кухонный принтер (xprinter)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select
+                  value={localSettings.kitchenPrinterName}
+                  onChange={(e) => setLocalSettings((prev) => ({ ...prev, kitchenPrinterName: e.target.value }))}
+                  className="form-select"
+                  style={{ flex: 1 }}
+                >
+                  <option value="">Принтер по умолчанию</option>
+                  {availablePrinters.map((p) => (
+                    <option key={p.name} value={p.name}>{p.displayName || p.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => handleTestPrint(localSettings.kitchenPrinterName, 'kitchen')}
+                  className="btn btn-ghost"
+                  style={{ padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}
+                >
+                  <ChefHat size={14} /> Тест
+                </button>
+              </div>
+            </div>
+            {localSettings.receiptPrinterName && localSettings.kitchenPrinterName &&
+              localSettings.receiptPrinterName === localSettings.kitchenPrinterName && (
+              <p className="settings-hint" style={{ color: '#f59e0b' }}>
+                ⚠ Для чеков и кухни выбран один и тот же принтер — заказы будут пересекаться.
+              </p>
+            )}
+            <button onClick={loadPrinters} className="btn btn-ghost" style={{ alignSelf: 'flex-start', fontSize: 13 }}>
+              <RefreshCw size={15} /> Обновить список принтеров
+            </button>
           </div>
         </div>
         )}
@@ -919,6 +1069,9 @@ const SettingsPage: React.FC = () => {
             </p>
           )}
         </div>
+
+        {/* Облачная синхронизация (biliardo.kz) */}
+        <CloudSyncSection />
 
         {/* Обновления */}
         <div className="settings-section">

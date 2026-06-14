@@ -56,8 +56,8 @@ interface ElectronAPI {
     removeAllListeners: (channel: string) => void;
   };
   printer?: {
-    printReceipt: (receiptHTML: string, widthMm?: number, silent?: boolean) => Promise<any>;
-    getPrinters: () => Promise<any[]>;
+    printReceipt: (receiptHTML: string, widthMm?: number, silent?: boolean, deviceName?: string) => Promise<any>;
+    getPrinters: () => Promise<Array<{ name: string; displayName?: string; description?: string; isDefault?: boolean; status?: number }>>;
   };
   updater?: {
     getState: () => Promise<any>;

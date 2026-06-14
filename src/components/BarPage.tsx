@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Wine,
   Plus,
@@ -25,10 +25,12 @@ import {
   Archive,
   Tag,
   Printer,
+  ChefHat,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem } from '../types';
-import { generateBarSaleReceiptHTML } from '../utils/receipt';
+import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem, Department } from '../types';
+import { generateBarSaleReceiptHTML, printKitchenTicket } from '../utils/receipt';
+import { getCategoryDepartment, getItemDepartment } from '../utils/department';
 
 // Маппинг иконок
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
@@ -44,14 +46,26 @@ const colorPresets = [
 
 type BarTab = 'quick-order' | 'menu' | 'categories';
 
-const BarPage: React.FC = () => {
+// 'bar' — только напитки/снэки, 'kitchen' — только блюда, 'combined' — всё на одной странице
+interface BarPageProps {
+  department?: Department | 'combined';
+}
+
+const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
   const {
     barMenu, barCategories, addMenuItem, updateMenuItem, removeMenuItem,
     addBarCategory, updateBarCategory, removeBarCategory,
     tables, addBarOrderToTable, settings, updateStock,
     createRevision, inventoryRevisions, sellFromBar,
-    currentUser,
+    currentUser, addToast,
   } = useStore();
+
+  const isKitchen = department === 'kitchen';
+  const isCombined = department === 'combined';
+  // Отдел для новых позиций/категорий: combined по умолчанию создаёт в баре
+  const newItemDepartment: Department = isKitchen ? 'kitchen' : 'bar';
+  const pageTitle = isKitchen ? 'Кухня' : 'Бар';
+  const PageIcon = isKitchen ? ChefHat : Wine;
 
   const [activeTab, setActiveTab] = useState<BarTab>('quick-order');
   const [search, setSearch] = useState('');
@@ -76,7 +90,7 @@ const BarPage: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newItem, setNewItem] = useState({
     name: '', price: 0, costPrice: 0, categoryId: '',
-    image: '', stock: -1 as number, unit: 'шт',
+    image: '', stock: -1 as number, unit: isKitchen ? 'порц' : 'шт',
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -101,15 +115,33 @@ const BarPage: React.FC = () => {
   const [showPrintModal, setShowPrintModal] = useState(false);
 
   const occupiedTables = tables.filter((t) => t.status === 'occupied');
-  const sortedCategories = [...barCategories].sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const filteredMenu = barMenu.filter((item) => {
+  // Категории текущего отдела (combined — все)
+  const sortedCategories = [...barCategories]
+    .filter((c) => isCombined || getCategoryDepartment(c) === department)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Позиции меню текущего отдела
+  const departmentMenu = isCombined
+    ? barMenu
+    : barMenu.filter((item) => getItemDepartment(item, barCategories) === department);
+
+  const filteredMenu = departmentMenu.filter((item) => {
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
     const matchCategory = activeCategory === 'all' || item.categoryId === activeCategory;
     return matchSearch && matchCategory;
   });
 
   const getCategoryById = (id: string) => barCategories.find((c) => c.id === id);
+
+  // Если выбранная категория исчезла из текущего отдела (удалена или сменился отдел) — сброс на «Все»,
+  // иначе сетка покажет пустоту без подсвеченного чипа.
+  useEffect(() => {
+    if (activeCategory !== 'all' && !sortedCategories.some((c) => c.id === activeCategory)) {
+      setActiveCategory('all');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategory, department, barCategories]);
 
   // Быстрый заказ
   const addToQuickCart = (item: BarMenuItem) => {
@@ -140,6 +172,35 @@ const BarPage: React.FC = () => {
 
   const quickCartCount = Array.from(quickCart.values()).reduce((s, q) => s + q, 0);
 
+  // Отправить заказ блюд на кухонный принтер (xprinter). Срабатывает при пробитии,
+  // независимо от того, разделены ли бар и кухня — маршрутизация по отделу позиции.
+  const emitKitchenTicket = (cart: Map<string, number>) => {
+    if (!settings.autoPrintKitchenTicket) return;
+    const kitchenItems: { name: string; quantity: number }[] = [];
+    cart.forEach((qty, itemId) => {
+      const item = barMenu.find((i) => i.id === itemId);
+      if (item && getItemDepartment(item, barCategories) === 'kitchen') {
+        kitchenItems.push({ name: item.name, quantity: qty });
+      }
+    });
+    if (kitchenItems.length === 0) return;
+    const tableName = !shopMode && selectedTable
+      ? tables.find((t) => t.id === selectedTable)?.name
+      : undefined;
+    void printKitchenTicket({
+      clubName: settings.clubName,
+      tableName,
+      cashierName: settings.receiptCashierName,
+      items: kitchenItems,
+      receiptWidthMm: settings.receiptWidthMm,
+      receiptFontSize: settings.receiptFontSize,
+      receiptPaddingMm: settings.receiptPaddingMm,
+      deviceName: settings.kitchenPrinterName,
+    }).then((ok) => {
+      if (!ok) addToast('error', 'Не удалось распечатать заказ на кухню');
+    });
+  };
+
   const executeQuickOrder = () => {
     if (shopMode) {
       const items: { menuItem: BarMenuItem; quantity: number }[] = [];
@@ -148,9 +209,11 @@ const BarPage: React.FC = () => {
         if (item) items.push({ menuItem: item, quantity: qty });
       });
       if (items.length === 0) return;
+      emitKitchenTicket(quickCart);
       sellFromBar(items);
     } else {
       if (!selectedTable) return;
+      emitKitchenTicket(quickCart);
       quickCart.forEach((qty, itemId) => {
         const item = barMenu.find((i) => i.id === itemId);
         if (item) addBarOrderToTable(selectedTable, item, qty);
@@ -184,7 +247,7 @@ const BarPage: React.FC = () => {
         receiptFontSize: settings.receiptFontSize,
         receiptPaddingMm: settings.receiptPaddingMm,
       });
-      await window.electronAPI?.printer?.printReceipt(html, settings.receiptWidthMm, settings.silentPrint);
+      await window.electronAPI?.printer?.printReceipt(html, settings.receiptWidthMm, settings.silentPrint, settings.receiptPrinterName);
     } catch (err) {
       console.error('Bar receipt print error:', err);
     }
@@ -228,17 +291,20 @@ const BarPage: React.FC = () => {
 
   const handleAddItem = () => {
     if (!newItem.name || !newItem.price) return;
+    const targetCategoryId = newItem.categoryId || sortedCategories[0]?.id;
+    // Нельзя добавить позицию без категории — иначе не попадёт в нужный отдел
+    if (!targetCategoryId) return;
     addMenuItem({
       name: newItem.name,
       price: newItem.price,
       costPrice: newItem.costPrice,
-      categoryId: newItem.categoryId || sortedCategories[0]?.id || '',
+      categoryId: targetCategoryId,
       available: true,
       image: newItem.image,
       stock: newItem.stock,
       unit: newItem.unit,
     });
-    setNewItem({ name: '', price: 0, costPrice: 0, categoryId: '', image: '', stock: -1, unit: 'шт' });
+    setNewItem({ name: '', price: 0, costPrice: 0, categoryId: '', image: '', stock: -1, unit: isKitchen ? 'порц' : 'шт' });
     setShowAddForm(false);
   };
 
@@ -326,8 +392,8 @@ const BarPage: React.FC = () => {
       {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <Wine size={28} className="text-amber-400" />
-          <h2 className="page-title">Бар</h2>
+          <PageIcon size={28} className="text-amber-400" />
+          <h2 className="page-title">{pageTitle}</h2>
         </div>
         <div className="bar-tabs">
           {visibleTabs.map((tab) => (
@@ -747,7 +813,7 @@ const BarPage: React.FC = () => {
                 <button onClick={() => setShowAddCategory(false)} className="btn btn-ghost">Отмена</button>
                 <button onClick={() => {
                   if (!newCat.name) return;
-                  addBarCategory({ name: newCat.name, icon: newCat.icon, color: newCat.color, sortOrder: barCategories.length });
+                  addBarCategory({ name: newCat.name, icon: newCat.icon, color: newCat.color, sortOrder: barCategories.length, department: newItemDepartment });
                   setNewCat({ name: '', icon: 'Coffee', color: '#3b82f6', sortOrder: 0 });
                   setShowAddCategory(false);
                 }} className="btn btn-primary"><Check size={16} /> Создать</button>

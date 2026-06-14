@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { BarMenuItem } from '../types';
+import { printKitchenTicket } from '../utils/receipt';
+import { getItemDepartment } from '../utils/department';
 
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
   Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot,
@@ -9,7 +11,7 @@ const iconMap: Record<string, React.FC<{ size?: number; className?: string; styl
 const getIconComponent = (iconName: string) => iconMap[iconName] || Package;
 
 const TableModal: React.FC = () => {
-  const { activeModal, modalData, closeModal, barMenu, barCategories, addBarOrderToTable, tables, settings } =
+  const { activeModal, modalData, closeModal, barMenu, barCategories, addBarOrderToTable, tables, settings, addToast } =
     useStore();
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -53,6 +55,30 @@ const TableModal: React.FC = () => {
   const cartCount = Array.from(cart.values()).reduce((sum, qty) => sum + qty, 0);
 
   const handleSubmit = () => {
+    // Заказ блюд — на кухонный принтер (xprinter)
+    if (settings.autoPrintKitchenTicket) {
+      const kitchenItems: { name: string; quantity: number }[] = [];
+      cart.forEach((qty, itemId) => {
+        const item = barMenu.find((i) => i.id === itemId);
+        if (item && getItemDepartment(item, barCategories) === 'kitchen') {
+          kitchenItems.push({ name: item.name, quantity: qty });
+        }
+      });
+      if (kitchenItems.length > 0) {
+        void printKitchenTicket({
+          clubName: settings.clubName,
+          tableName: table.name,
+          cashierName: settings.receiptCashierName,
+          items: kitchenItems,
+          receiptWidthMm: settings.receiptWidthMm,
+          receiptFontSize: settings.receiptFontSize,
+          receiptPaddingMm: settings.receiptPaddingMm,
+          deviceName: settings.kitchenPrinterName,
+        }).then((ok) => {
+          if (!ok) addToast('error', 'Не удалось распечатать заказ на кухню');
+        });
+      }
+    }
     cart.forEach((qty, itemId) => {
       const item = barMenu.find((i) => i.id === itemId);
       if (item) {

@@ -1237,10 +1237,12 @@ ipcMain.handle('arduino:get-info', async () => {
 });
 
 // === Печать чека ===
-ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm, silent) => {
+ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm, silent, deviceName) => {
   try {
     const paperWidth = widthMm || 80; // мм, по умолчанию 80
     const isSilent = silent !== false; // по умолчанию true (авто)
+    // Конкретный принтер (для разделения чеков и кухни). Пусто = принтер по умолчанию.
+    const targetPrinter = (typeof deviceName === 'string' && deviceName.trim()) ? deviceName.trim() : '';
     // Создаем невидимое окно для печати
     const printWindow = new BrowserWindow({
       width: Math.max(400, Math.round(paperWidth * 4)),
@@ -1259,21 +1261,49 @@ ipcMain.handle('print:receipt', async (event, receiptHTML, widthMm, silent) => {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     // Печатаем
-    printWindow.webContents.print(
-      {
-        silent: isSilent,
-        printBackground: true,
-        margins: { marginType: 'none' },
-        pageSize: { width: paperWidth * 1000, height: 297000 }, // ширина в микронах
-        scaleFactor: 100,
-      },
-      (success, failureReason) => {
-        printWindow.close();
-        if (!success && failureReason !== 'cancelled') {
-          console.error('[Print] Failed:', failureReason);
+    const printOptions = {
+      silent: isSilent,
+      printBackground: true,
+      margins: { marginType: 'none' },
+      pageSize: { width: paperWidth * 1000, height: 297000 }, // ширина в микронах
+      scaleFactor: 100,
+    };
+    // Жёстко задаём принтер только если он указан — иначе системный по умолчанию
+    if (targetPrinter) {
+      printOptions.deviceName = targetPrinter;
+    }
+    // Ждём колбэк печати: иначе IPC резолвится success ещё до реального результата,
+    // и сбой (например, удалённый/недоступный принтер) проходит молча.
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (!printWindow.isDestroyed()) printWindow.close();
+        } catch {
+          /* окно уже закрыто */
         }
+        fn(arg);
+      };
+      // Страховка: если колбэк по какой-то причине не придёт — не вешаем рендерер навсегда
+      const guard = setTimeout(() => finish(resolve), 20000);
+      try {
+        printWindow.webContents.print(printOptions, (success, failureReason) => {
+          clearTimeout(guard);
+          if (!success && failureReason !== 'cancelled') {
+            console.error('[Print] Failed:', failureReason);
+            finish(reject, new Error(failureReason || 'Печать не выполнена'));
+          } else {
+            finish(resolve);
+          }
+        });
+      } catch (err) {
+        // Синхронный сбой print() — сразу закрываем окно, не ждём таймаут
+        clearTimeout(guard);
+        finish(reject, err);
       }
-    );
+    });
 
     return { success: true };
   } catch (error) {

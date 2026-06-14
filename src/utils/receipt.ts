@@ -23,6 +23,15 @@ interface ReceiptData {
   receiptPaddingMm?: number;
 }
 
+// Экранирование пользовательских строк перед вставкой в HTML чека/талона
+const escapeHtml = (value: string): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const formatTime = (timestamp: number): string => {
   const date = new Date(timestamp);
   return date.toLocaleTimeString('ru-RU', {
@@ -567,7 +576,7 @@ export const generateReportReceiptHTML = (data: ReportReceiptData): string => {
 </html>`.trim();
 };
 
-export const printReportReceipt = async (data: ReportReceiptData & { silentPrint?: boolean }): Promise<boolean> => {
+export const printReportReceipt = async (data: ReportReceiptData & { silentPrint?: boolean; deviceName?: string }): Promise<boolean> => {
   if (!window.electronAPI?.printer) {
     console.warn('Printer API not available');
     return false;
@@ -576,7 +585,7 @@ export const printReportReceipt = async (data: ReportReceiptData & { silentPrint
   try {
     const html = generateReportReceiptHTML(data);
     const widthMm = data.receiptWidthMm || 80;
-    await window.electronAPI.printer.printReceipt(html, widthMm, data.silentPrint);
+    await window.electronAPI.printer.printReceipt(html, widthMm, data.silentPrint, data.deviceName);
     return true;
   } catch (error) {
     console.error('Print report receipt error:', error);
@@ -584,7 +593,7 @@ export const printReportReceipt = async (data: ReportReceiptData & { silentPrint
   }
 };
 
-export const printReceipt = async (data: ReceiptData & { silentPrint?: boolean }): Promise<boolean> => {
+export const printReceipt = async (data: ReceiptData & { silentPrint?: boolean; deviceName?: string }): Promise<boolean> => {
   if (!window.electronAPI?.printer) {
     console.warn('Printer API not available');
     return false;
@@ -593,10 +602,122 @@ export const printReceipt = async (data: ReceiptData & { silentPrint?: boolean }
   try {
     const html = generateReceiptHTML(data);
     const widthMm = data.receiptWidthMm || 80;
-    await window.electronAPI.printer.printReceipt(html, widthMm, data.silentPrint);
+    await window.electronAPI.printer.printReceipt(html, widthMm, data.silentPrint, data.deviceName);
     return true;
   } catch (error) {
     console.error('Print error:', error);
+    return false;
+  }
+};
+
+// ===== ЗАКАЗ НА КУХНЮ (kitchen ticket, дизайн в стиле iiko) =====
+// Печатается на отдельном кухонном принтере (xprinter) при пробитии блюда.
+// Без цен — повару важны только позиции, количество, стол и время.
+export interface KitchenTicketData {
+  clubName: string;
+  tableName?: string;       // стол или undefined (продажа без стола)
+  orderNumber?: string;
+  cashierName?: string;
+  items: { name: string; quantity: number }[];
+  timestamp?: number;
+  receiptWidthMm?: number;
+  receiptFontSize?: number;
+  receiptPaddingMm?: number;
+}
+
+export const generateKitchenTicketHTML = (data: KitchenTicketData): string => {
+  const {
+    clubName,
+    tableName,
+    orderNumber,
+    cashierName,
+    items,
+    timestamp = Date.now(),
+    receiptWidthMm = 80,
+    receiptFontSize = 14,
+    receiptPaddingMm = 5,
+  } = data;
+
+  const itemsHTML = items
+    .map(
+      (item) => `
+      <div class="kt-item">
+        <div class="kt-qty">${item.quantity}</div>
+        <div class="kt-name">${escapeHtml(item.name)}</div>
+      </div>`
+    )
+    .join('');
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    @page { size: ${receiptWidthMm}mm auto; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      width: ${receiptWidthMm}mm;
+      padding: ${receiptPaddingMm}mm;
+      background: #fff;
+      color: #000;
+    }
+    .kt-top { text-align: center; border-bottom: 3px solid #000; padding-bottom: 8px; margin-bottom: 8px; }
+    .kt-station { font-size: ${receiptFontSize + 6}px; font-weight: 900; letter-spacing: 3px; }
+    .kt-table { font-size: ${receiptFontSize + 18}px; font-weight: 900; margin-top: 6px; line-height: 1.05; }
+    .kt-meta { display: flex; justify-content: space-between; gap: 8px; font-size: ${receiptFontSize - 1}px; font-weight: 700; margin: 3px 0; }
+    .kt-items { border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 6px 0; margin: 8px 0; }
+    .kt-item { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px dotted #777; }
+    .kt-item:last-child { border-bottom: none; }
+    .kt-qty {
+      min-width: 46px; text-align: center;
+      font-size: ${receiptFontSize + 10}px; font-weight: 900;
+      border: 2px solid #000; border-radius: 8px; padding: 2px 6px;
+    }
+    .kt-name { flex: 1; font-size: ${receiptFontSize + 8}px; font-weight: 800; line-height: 1.15; }
+    .kt-foot { text-align: center; font-size: ${receiptFontSize - 2}px; font-weight: 700; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="kt-top">
+    <div class="kt-station">★ КУХНЯ ★</div>
+    <div class="kt-table">${tableName ? escapeHtml(tableName) : 'БЕЗ СТОЛА'}</div>
+  </div>
+  <div class="kt-meta">
+    <span>Заказ №${escapeHtml(orderNumber || getFallbackOrderNumber(timestamp))}</span>
+    <span>${formatShortDateTime(timestamp)}</span>
+  </div>
+  <div class="kt-meta">
+    <span>Кассир: ${escapeHtml(cashierName || 'ИМЯ')}</span>
+    <span>${escapeHtml(clubName)}</span>
+  </div>
+  <div class="kt-items">
+    ${itemsHTML}
+  </div>
+  <div class="kt-foot">Время приготовления — с момента печати</div>
+</body>
+</html>`.trim();
+};
+
+export const printKitchenTicket = async (
+  data: KitchenTicketData & { silentPrint?: boolean; deviceName?: string }
+): Promise<boolean> => {
+  if (!window.electronAPI?.printer) {
+    console.warn('Printer API not available');
+    return false;
+  }
+  if (!data.items || data.items.length === 0) return false;
+
+  try {
+    const html = generateKitchenTicketHTML(data);
+    const widthMm = data.receiptWidthMm || 80;
+    // Кухонный талон печатается автоматически (без диалога), если явно не указано иное
+    const silent = data.silentPrint !== false;
+    await window.electronAPI.printer.printReceipt(html, widthMm, silent, data.deviceName);
+    return true;
+  } catch (error) {
+    console.error('Kitchen ticket print error:', error);
     return false;
   }
 };

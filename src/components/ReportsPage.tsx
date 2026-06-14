@@ -337,6 +337,7 @@ const ReportsPage: React.FC = () => {
         receiptFontSize: settings.receiptFontSize,
         receiptPaddingMm: settings.receiptPaddingMm,
         silentPrint: settings.silentPrint,
+        deviceName: settings.receiptPrinterName,
       });
 
       if (!ok) addToast('error', 'Не удалось распечатать пречек');
@@ -364,6 +365,7 @@ const ReportsPage: React.FC = () => {
       receiptFontSize: settings.receiptFontSize,
       receiptPaddingMm: settings.receiptPaddingMm,
       silentPrint: settings.silentPrint,
+      deviceName: settings.receiptPrinterName,
     });
 
     if (!ok) addToast('error', 'Не удалось распечатать отчётный пречек');

@@ -22,7 +22,8 @@ import { useStore } from '../store/useStore';
 import type { BilliardTable, SessionMode, Tariff } from '../types';
 import TableModal from './TableModal';
 import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
-import { printReceipt } from '../utils/receipt';
+import { printReceipt, printKitchenTicket } from '../utils/receipt';
+import { getItemDepartment } from '../utils/department';
 import {
   calculateSessionTableCost,
   estimateCostForDuration,
@@ -309,7 +310,7 @@ const TableCard: React.FC<{
 const Dashboard: React.FC = () => {
   const {
     tables, startSession, endSession, settings, getTodayRevenue, getTodaySessions, openModal,
-    reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu,
+    reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu, barCategories,
   } = useStore();
   const [showStartModal, setShowStartModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
@@ -384,13 +385,32 @@ const Dashboard: React.FC = () => {
     // Если был выбран тариф — автоматически добавляем продукты из бара
     if (selectedTariff && selectedTariff.menuProducts.length > 0) {
       const tableId = selectedTable;
+      const tariff = selectedTariff;
+      const tableName = tables.find((t) => t.id === tableId)?.name;
       setTimeout(() => {
-        selectedTariff.menuProducts.forEach((tp) => {
+        const kitchenItems: { name: string; quantity: number }[] = [];
+        tariff.menuProducts.forEach((tp) => {
           const menuItem = barMenu.find((m) => m.id === tp.productId);
           if (menuItem) {
             addBarOrderToTable(tableId, menuItem, tp.quantity, { priceOverride: 0, silent: true });
+            if (getItemDepartment(menuItem, barCategories) === 'kitchen') {
+              kitchenItems.push({ name: menuItem.name, quantity: tp.quantity });
+            }
           }
         });
+        // Блюда из пакета тарифа тоже отправляем на кухню
+        if (settings.autoPrintKitchenTicket && kitchenItems.length > 0) {
+          void printKitchenTicket({
+            clubName: settings.clubName,
+            tableName,
+            cashierName: settings.receiptCashierName,
+            items: kitchenItems,
+            receiptWidthMm: settings.receiptWidthMm,
+            receiptFontSize: settings.receiptFontSize,
+            receiptPaddingMm: settings.receiptPaddingMm,
+            deviceName: settings.kitchenPrinterName,
+          });
+        }
       }, 100);
     }
     setSelectedTariff(null);
@@ -443,6 +463,7 @@ const Dashboard: React.FC = () => {
         receiptFontSize: settings.receiptFontSize,
         receiptPaddingMm: settings.receiptPaddingMm,
         silentPrint: settings.silentPrint,
+        deviceName: settings.receiptPrinterName,
       });
     }
 
@@ -492,6 +513,7 @@ const Dashboard: React.FC = () => {
         receiptFontSize: settings.receiptFontSize,
         receiptPaddingMm: settings.receiptPaddingMm,
         silentPrint: settings.silentPrint,
+        deviceName: settings.receiptPrinterName,
       });
     } catch (error) {
       console.error('Auto print on expire failed:', error);

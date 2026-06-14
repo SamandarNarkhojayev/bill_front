@@ -66,12 +66,15 @@ export interface TableSession {
 
 export type BarCategory = string; // кастомные категории
 
+export type Department = 'bar' | 'kitchen';
+
 export interface BarCategoryConfig {
   id: string;
   name: string;
   icon: string;      // lucide icon name или URL картинки
   color: string;     // цвет категории (hex)
   sortOrder: number;
+  department?: Department; // 'bar' (напитки/снэки) или 'kitchen' (блюда). undefined = 'bar'
 }
 
 export interface BarMenuItem {
@@ -183,6 +186,12 @@ export interface AppSettings {
   receiptWidthMm: number;    // Ширина чека в мм (по умолчанию 80)
   receiptFontSize: number;   // Базовый размер шрифта в px (по умолчанию 14)
   receiptPaddingMm: number;  // Внутренний отступ в мм (по умолчанию 5)
+  // ===== Бар / Кухня =====
+  kitchenSeparate: boolean;       // true — Кухня отдельной страницей; false — кухня внутри Бара
+  autoPrintKitchenTicket: boolean; // Автоматически печатать заказ на кухню при пробитии блюда
+  // ===== Принтеры (не должны пересекаться) =====
+  receiptPrinterName: string;     // Принтер для чеков/пречеков (пусто = принтер по умолчанию)
+  kitchenPrinterName: string;     // Принтер для заказов на кухню (xprinter)
   tables: TableSettings[];
 }
 
@@ -295,7 +304,7 @@ export interface Tariff {
 
 // ===== НАВИГАЦИЯ =====
 
-export type PageType = 'dashboard' | 'bar' | 'reports' | 'settings' | 'users' | 'tournaments' | 'tariffs';
+export type PageType = 'dashboard' | 'bar' | 'kitchen' | 'reports' | 'settings' | 'users' | 'tournaments' | 'tariffs';
 
 // ===== ТОСТЫ =====
 

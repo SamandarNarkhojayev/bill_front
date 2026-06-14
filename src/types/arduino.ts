@@ -67,7 +67,7 @@ export interface PrinterInfo {
 }
 
 export interface PrinterAPI {
-  printReceipt(receiptHTML: string, widthMm?: number, silent?: boolean): Promise<{ success: boolean }>;
+  printReceipt(receiptHTML: string, widthMm?: number, silent?: boolean, deviceName?: string): Promise<{ success: boolean }>;
   getPrinters(): Promise<PrinterInfo[]>;
 }
 

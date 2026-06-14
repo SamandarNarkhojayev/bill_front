@@ -13,6 +13,7 @@ import {
   LogOut,
   Trophy,
   Tag,
+  ChefHat,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { PageType } from '../types';
@@ -38,7 +39,15 @@ const Sidebar: React.FC = () => {
   };
 
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer';
-  const visibleMenuItems = menuItems.filter((item) => item.id !== 'users' || canManageUsers);
+  // Пункт «Кухня» показываем только когда включено разделение бара и кухни
+  const navItems = settings.kitchenSeparate
+    ? menuItems.flatMap((item) =>
+        item.id === 'bar'
+          ? [item, { id: 'kitchen' as PageType, label: 'Кухня', icon: <ChefHat size={20} /> }]
+          : [item]
+      )
+    : menuItems;
+  const visibleMenuItems = navItems.filter((item) => item.id !== 'users' || canManageUsers);
 
   return (
     <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>

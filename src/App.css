@@ -3819,6 +3819,9 @@
   to { transform: rotate(360deg); }
 }
 
+/* Утилита вращения (иконки-спиннеры в настройках, облаке, модалке обновления) */
+.animate-spin { animation: spin 1s linear infinite; }
+
 .login-footer {
   text-align: center;
   margin-top: 28px;
@@ -5593,3 +5596,127 @@
 [data-theme="light"] .bracket-grid-match-player.is-tbd {
   color: #94a3b8;
 }
+
+/* ===== Облачная синхронизация ===== */
+.cloud-sync-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cloud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.cloud-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cloud-pill.on {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.cloud-pill.on .cloud-pill-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
+}
+.cloud-pill.off {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.3);
+}
+.cloud-pill.off .cloud-pill-dot { background: #94a3b8; }
+
+.cloud-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cloud-card-icon { flex-shrink: 0; margin-top: 1px; }
+.cloud-card-ok {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.04));
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.cloud-card-ok .cloud-card-icon { color: #22c55e; }
+.cloud-card-info {
+  background: rgba(251, 191, 36, 0.07);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+.cloud-card-info .cloud-card-icon { color: #fbbf24; }
+.cloud-card-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: #f1f5f9;
+  margin-bottom: 8px;
+}
+.cloud-card-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.cloud-stat-grid { display: flex; flex-direction: column; gap: 6px; }
+.cloud-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.cloud-stat strong { color: #e2e8f0; font-weight: 600; }
+
+.cloud-note {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.cloud-note-warn { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+.cloud-note-err { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+
+.cloud-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.cloud-btn-danger { color: #f87171; }
+.cloud-btn-danger:hover { color: #fca5a5; }
+
+.cloud-form { display: grid; gap: 14px; max-width: 420px; }
+.cloud-field { display: flex; flex-direction: column; gap: 6px; }
+.cloud-field-label { font-size: 12px; font-weight: 600; color: #94a3b8; }
+.cloud-field .form-input { width: 100%; }
+.cloud-submit { justify-content: center; padding: 11px 14px; }
+
+.cloud-footer {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cloud-footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+[data-theme="light"] .cloud-card-title { color: #1e293b; }
+[data-theme="light"] .cloud-card-text,
+[data-theme="light"] .cloud-stat { color: #475569; }
+[data-theme="light"] .cloud-stat strong { color: #1e293b; }
+[data-theme="light"] .cloud-pill.off { color: #475569; }

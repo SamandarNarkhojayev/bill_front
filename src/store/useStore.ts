@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { playOrderSound } from '../utils/sounds';
 import { calculateSessionTableCost, estimateDurationSecondsForAmount } from '../utils/pricing';
+import cloudSync from '../utils/cloudSync';
 import type {
   BilliardTable,
   BarMenuItem,
@@ -69,35 +70,79 @@ const defaultUsers: User[] = [
   },
 ];
 
+// Изображение товара по ключевому слову (детерминированное, с интернета).
+// Оператор может заменить на своё фото в разделе «Меню».
+const kImg = (keyword: string, lock: number): string =>
+  `https://loremflickr.com/300/300/${keyword}?lock=${lock}`;
+
 // ===== КАТЕГОРИИ ПО УМОЛЧАНИЮ =====
-const defaultBarCategories: BarCategoryConfig[] = [
-  { id: 'drinks',  name: 'Напитки',  icon: 'Coffee',       color: '#3b82f6', sortOrder: 0 },
-  { id: 'alcohol', name: 'Алкоголь', icon: 'Wine',         color: '#a855f7', sortOrder: 1 },
-  { id: 'snacks',  name: 'Закуски',  icon: 'Sandwich',     color: '#f59e0b', sortOrder: 2 },
-  { id: 'hookah',  name: 'Кальян',   icon: 'Wind',         color: '#6366f1', sortOrder: 3 },
+// Бар: напитки, алкоголь, снэки, кальян
+const defaultBarOnlyCategories: BarCategoryConfig[] = [
+  { id: 'drinks',  name: 'Напитки',  icon: 'Coffee',       color: '#3b82f6', sortOrder: 0, department: 'bar' },
+  { id: 'alcohol', name: 'Алкоголь', icon: 'Wine',         color: '#a855f7', sortOrder: 1, department: 'bar' },
+  { id: 'snacks',  name: 'Закуски',  icon: 'Sandwich',     color: '#f59e0b', sortOrder: 2, department: 'bar' },
+  { id: 'hookah',  name: 'Кальян',   icon: 'Wind',         color: '#6366f1', sortOrder: 3, department: 'bar' },
+];
+
+// Кухня: блюда (отдельный отдел, печатается на кухонном принтере)
+const defaultKitchenCategories: BarCategoryConfig[] = [
+  { id: 'kitchen-hot',     name: 'Горячее', icon: 'CircleDot', color: '#ef4444', sortOrder: 10, department: 'kitchen' },
+  { id: 'kitchen-salads',  name: 'Салаты',  icon: 'Sandwich',  color: '#10b981', sortOrder: 11, department: 'kitchen' },
+  { id: 'kitchen-desserts',name: 'Десерты', icon: 'Coffee',    color: '#ec4899', sortOrder: 12, department: 'kitchen' },
+];
+
+const defaultBarCategories: BarCategoryConfig[] = [...defaultBarOnlyCategories, ...defaultKitchenCategories];
+
+// Примеры блюд для кухни (можно удалить, добавить свои с фото и ценой)
+const defaultKitchenMenu: BarMenuItem[] = [
+  { id: 'dish-1', name: 'Цезарь с курицей', categoryId: 'kitchen-salads',  price: 1800, costPrice: 700,  available: true, image: kImg('caesar-salad', 23), stock: -1, unit: 'порц' },
+  { id: 'dish-2', name: 'Стейк рибай',      categoryId: 'kitchen-hot',     price: 4500, costPrice: 2000, available: true, image: kImg('steak', 24),        stock: -1, unit: 'порц' },
+  { id: 'dish-3', name: 'Картофель фри',    categoryId: 'kitchen-hot',     price: 1200, costPrice: 400,  available: true, image: kImg('french-fries', 17), stock: -1, unit: 'порц' },
+  { id: 'dish-4', name: 'Бургер',           categoryId: 'kitchen-hot',     price: 2200, costPrice: 900,  available: true, image: kImg('burger', 27),       stock: -1, unit: 'порц' },
+  { id: 'dish-5', name: 'Пицца Маргарита',  categoryId: 'kitchen-hot',     price: 2800, costPrice: 1000, available: true, image: kImg('pizza', 26),        stock: -1, unit: 'порц' },
+  { id: 'dish-6', name: 'Чизкейк',          categoryId: 'kitchen-desserts',price: 1500, costPrice: 500,  available: true, image: kImg('cheesecake', 25),   stock: -1, unit: 'порц' },
 ];
 
 // ===== МЕНЮ БАРА ПО УМОЛЧАНИЮ =====
 const defaultBarMenu: BarMenuItem[] = [
-  { id: 'drink-1', name: 'Чай',           categoryId: 'drinks',  price: 300,  costPrice: 50,  available: true, image: '', stock: -1, unit: 'шт' },
-  { id: 'drink-2', name: 'Кофе',          categoryId: 'drinks',  price: 500,  costPrice: 80,  available: true, image: '', stock: -1, unit: 'шт' },
-  { id: 'drink-3', name: 'Coca-Cola',     categoryId: 'drinks',  price: 600,  costPrice: 200, available: true, image: '', stock: 24, unit: 'шт' },
-  { id: 'drink-4', name: 'Вода',          categoryId: 'drinks',  price: 200,  costPrice: 50,  available: true, image: '', stock: 48, unit: 'шт' },
-  { id: 'drink-5', name: 'Сок',           categoryId: 'drinks',  price: 500,  costPrice: 150, available: true, image: '', stock: 12, unit: 'шт' },
-  { id: 'drink-6', name: 'Энергетик',     categoryId: 'drinks',  price: 800,  costPrice: 350, available: true, image: '', stock: 10, unit: 'шт' },
-  { id: 'alco-1',  name: 'Пиво 0.5',     categoryId: 'alcohol', price: 800,  costPrice: 300, available: true, image: '', stock: 20, unit: 'шт' },
-  { id: 'alco-2',  name: 'Пиво 0.33',    categoryId: 'alcohol', price: 600,  costPrice: 200, available: true, image: '', stock: 24, unit: 'шт' },
-  { id: 'alco-3',  name: 'Виски',         categoryId: 'alcohol', price: 1500, costPrice: 600, available: true, image: '', stock: -1, unit: 'мл' },
-  { id: 'alco-4',  name: 'Вино (бокал)',  categoryId: 'alcohol', price: 1200, costPrice: 400, available: true, image: '', stock: -1, unit: 'шт' },
-  { id: 'alco-5',  name: 'Водка 50мл',   categoryId: 'alcohol', price: 600,  costPrice: 150, available: true, image: '', stock: -1, unit: 'мл' },
-  { id: 'snack-1', name: 'Чипсы',        categoryId: 'snacks',  price: 400,  costPrice: 150, available: true, image: '', stock: 15, unit: 'шт' },
-  { id: 'snack-2', name: 'Орехи',        categoryId: 'snacks',  price: 500,  costPrice: 200, available: true, image: '', stock: 10, unit: 'шт' },
-  { id: 'snack-3', name: 'Сухарики',     categoryId: 'snacks',  price: 300,  costPrice: 100, available: true, image: '', stock: 20, unit: 'шт' },
-  { id: 'snack-4', name: 'Пицца',        categoryId: 'snacks',  price: 1500, costPrice: 500, available: true, image: '', stock: 5,  unit: 'шт' },
-  { id: 'snack-5', name: 'Сэндвич',      categoryId: 'snacks',  price: 900,  costPrice: 300, available: true, image: '', stock: 8,  unit: 'шт' },
-  { id: 'hookah-1', name: 'Кальян классический', categoryId: 'hookah', price: 3000, costPrice: 800, available: true, image: '', stock: -1, unit: 'шт' },
-  { id: 'hookah-2', name: 'Кальян фруктовый',   categoryId: 'hookah', price: 3500, costPrice: 1000, available: true, image: '', stock: -1, unit: 'шт' },
-  { id: 'hookah-3', name: 'Доп. угли',          categoryId: 'hookah', price: 300,  costPrice: 50,  available: true, image: '', stock: 30, unit: 'шт' },
+  // --- Напитки ---
+  { id: 'drink-1',  name: 'Эспрессо',        categoryId: 'drinks',  price: 500,  costPrice: 80,  available: true, image: kImg('coffee', 1),        stock: -1, unit: 'шт' },
+  { id: 'drink-2',  name: 'Капучино',        categoryId: 'drinks',  price: 700,  costPrice: 120, available: true, image: kImg('cappuccino', 2),    stock: -1, unit: 'шт' },
+  { id: 'drink-3',  name: 'Латте',           categoryId: 'drinks',  price: 800,  costPrice: 140, available: true, image: kImg('coffee', 30),       stock: -1, unit: 'шт' },
+  { id: 'drink-4',  name: 'Американо',       categoryId: 'drinks',  price: 600,  costPrice: 90,  available: true, image: kImg('coffee', 31),       stock: -1, unit: 'шт' },
+  { id: 'drink-5',  name: 'Чай чёрный',      categoryId: 'drinks',  price: 300,  costPrice: 50,  available: true, image: kImg('tea', 3),           stock: -1, unit: 'шт' },
+  { id: 'drink-6',  name: 'Чай зелёный',     categoryId: 'drinks',  price: 300,  costPrice: 50,  available: true, image: kImg('tea', 32),          stock: -1, unit: 'шт' },
+  { id: 'drink-7',  name: 'Coca-Cola 0.5',   categoryId: 'drinks',  price: 600,  costPrice: 200, available: true, image: kImg('cola', 21),         stock: 24, unit: 'шт' },
+  { id: 'drink-8',  name: 'Pepsi 0.5',       categoryId: 'drinks',  price: 600,  costPrice: 200, available: true, image: kImg('cola', 33),         stock: 24, unit: 'шт' },
+  { id: 'drink-9',  name: 'Sprite 0.5',      categoryId: 'drinks',  price: 600,  costPrice: 200, available: true, image: kImg('soda', 22),         stock: 24, unit: 'шт' },
+  { id: 'drink-10', name: 'Fanta 0.5',       categoryId: 'drinks',  price: 600,  costPrice: 200, available: true, image: kImg('soda', 34),         stock: 24, unit: 'шт' },
+  { id: 'drink-11', name: 'Сок апельсиновый',categoryId: 'drinks',  price: 500,  costPrice: 150, available: true, image: kImg('orange-juice', 5),  stock: 12, unit: 'шт' },
+  { id: 'drink-12', name: 'Вода 0.5',        categoryId: 'drinks',  price: 200,  costPrice: 50,  available: true, image: kImg('water-bottle', 4),   stock: 48, unit: 'шт' },
+  { id: 'drink-13', name: 'Red Bull',        categoryId: 'drinks',  price: 900,  costPrice: 400, available: true, image: kImg('energy-drink', 6),   stock: 18, unit: 'шт' },
+  { id: 'drink-14', name: 'Лимонад',         categoryId: 'drinks',  price: 700,  costPrice: 250, available: true, image: kImg('lemonade', 7),       stock: -1, unit: 'шт' },
+  { id: 'drink-15', name: 'Молочный коктейль',categoryId: 'drinks', price: 1100, costPrice: 400, available: true, image: kImg('milkshake', 8),      stock: -1, unit: 'шт' },
+  // --- Алкоголь ---
+  { id: 'alco-1',  name: 'Пиво разливное 0.5', categoryId: 'alcohol', price: 800,  costPrice: 300,  available: true, image: kImg('beer', 9),      stock: -1, unit: 'шт' },
+  { id: 'alco-2',  name: 'Heineken 0.5',       categoryId: 'alcohol', price: 1000, costPrice: 450,  available: true, image: kImg('beer', 35),     stock: 24, unit: 'шт' },
+  { id: 'alco-3',  name: 'Corona 0.33',        categoryId: 'alcohol', price: 1100, costPrice: 500,  available: true, image: kImg('beer', 36),     stock: 24, unit: 'шт' },
+  { id: 'alco-4',  name: 'Вино красное (бокал)',categoryId: 'alcohol',price: 1200, costPrice: 400,  available: true, image: kImg('wine', 10),     stock: -1, unit: 'шт' },
+  { id: 'alco-5',  name: 'Вино белое (бокал)', categoryId: 'alcohol', price: 1200, costPrice: 400,  available: true, image: kImg('wine', 37),     stock: -1, unit: 'шт' },
+  { id: 'alco-6',  name: "Виски Jack Daniel's 50мл", categoryId: 'alcohol', price: 1800, costPrice: 700, available: true, image: kImg('whiskey', 11), stock: -1, unit: 'мл' },
+  { id: 'alco-7',  name: 'Водка 50мл',         categoryId: 'alcohol', price: 600,  costPrice: 150,  available: true, image: kImg('vodka', 12),    stock: -1, unit: 'мл' },
+  { id: 'alco-8',  name: 'Мохито',             categoryId: 'alcohol', price: 1500, costPrice: 500,  available: true, image: kImg('cocktail', 13),  stock: -1, unit: 'шт' },
+  // --- Закуски ---
+  { id: 'snack-1', name: "Чипсы Lay's",      categoryId: 'snacks',  price: 500,  costPrice: 200, available: true, image: kImg('potato-chips', 14), stock: 20, unit: 'шт' },
+  { id: 'snack-2', name: 'Pringles',         categoryId: 'snacks',  price: 900,  costPrice: 450, available: true, image: kImg('potato-chips', 38), stock: 12, unit: 'шт' },
+  { id: 'snack-3', name: 'Орешки солёные',   categoryId: 'snacks',  price: 500,  costPrice: 200, available: true, image: kImg('nuts', 15),         stock: 15, unit: 'шт' },
+  { id: 'snack-4', name: 'Попкорн',          categoryId: 'snacks',  price: 600,  costPrice: 200, available: true, image: kImg('popcorn', 16),      stock: -1, unit: 'шт' },
+  { id: 'snack-5', name: 'Начос с сыром',    categoryId: 'snacks',  price: 1200, costPrice: 450, available: true, image: kImg('nachos', 18),       stock: -1, unit: 'порц' },
+  { id: 'snack-6', name: 'Сухарики',         categoryId: 'snacks',  price: 300,  costPrice: 100, available: true, image: kImg('potato-chips', 39), stock: 25, unit: 'шт' },
+  { id: 'snack-7', name: 'Snickers',         categoryId: 'snacks',  price: 400,  costPrice: 180, available: true, image: kImg('chocolate', 19),    stock: 30, unit: 'шт' },
+  // --- Кальян ---
+  { id: 'hookah-1', name: 'Кальян классический', categoryId: 'hookah', price: 3000, costPrice: 800,  available: true, image: kImg('hookah', 20),  stock: -1, unit: 'шт' },
+  { id: 'hookah-2', name: 'Кальян фруктовый',    categoryId: 'hookah', price: 3500, costPrice: 1000, available: true, image: kImg('hookah', 40),  stock: -1, unit: 'шт' },
+  { id: 'hookah-3', name: 'Доп. угли',           categoryId: 'hookah', price: 300,  costPrice: 50,   available: true, image: '', stock: 30, unit: 'шт' },
+  ...defaultKitchenMenu,
 ];
 
 // ===== НАСТРОЙКИ ПО УМОЛЧАНИЮ =====
@@ -118,6 +163,10 @@ const defaultSettings: AppSettings = {
   receiptWidthMm: 80,
   receiptFontSize: 14,
   receiptPaddingMm: 5,
+  kitchenSeparate: false,
+  autoPrintKitchenTicket: true,
+  receiptPrinterName: '',
+  kitchenPrinterName: '',
   tables: [
     { id: 1, name: 'Стол №1', relayNumber: 1, pricePerHour: 2000, priceSchedule: [], isActive: true },
     { id: 2, name: 'Стол №2', relayNumber: 2, pricePerHour: 2000, priceSchedule: [], isActive: true },
@@ -555,16 +604,46 @@ export const useStore = create<AppStore>()(
           isActive: true,
         };
         set({ currentShift: shift });
+        // Облако: пушим открытую смену сразу (endTime=null, totals=0).
+        void cloudSync.pushShift({
+          id: shift.id,
+          operatorId: shift.userId,
+          operatorName: shift.userName,
+          startTime: shift.startTime,
+          endTime: null,
+          totalRevenue: 0,
+          tableRevenue: 0,
+          barRevenue: 0,
+          sessionsCount: 0,
+        });
       },
 
       endShift: () => {
         const shift = get().currentShift;
         if (!shift) return;
         const ended = { ...shift, endTime: Date.now(), isActive: false };
+        // Считаем итоги смены из sessionHistory: все, что попали в интервал [startTime, endTime].
+        const sessions = get().sessionHistory.filter(
+          (s) => s.startTime >= shift.startTime && s.startTime <= (ended.endTime as number),
+        );
+        const tableRevenue = sessions.reduce((sum, s) => sum + (s.tableCost || 0), 0);
+        const barRevenue = sessions.reduce((sum, s) => sum + (s.barCost || 0), 0);
         set((state) => ({
           currentShift: null,
           shiftHistory: [ended, ...state.shiftHistory],
         }));
+        // Облако: пушим закрытую смену с итогами.
+        void cloudSync.pushShift({
+          id: shift.id,
+          operatorId: shift.userId,
+          operatorName: shift.userName,
+          startTime: shift.startTime,
+          endTime: ended.endTime,
+          totalRevenue: tableRevenue + barRevenue,
+          tableRevenue,
+          barRevenue,
+          sessionsCount: sessions.length,
+        });
       },
 
       // ===== НАВИГАЦИЯ =====
@@ -690,6 +769,10 @@ export const useStore = create<AppStore>()(
           window.electronAPI.arduino.setRelay(table.relayNumber, false).catch(console.error);
         }
 
+        // Облако (biliardo.kz): отправляем завершённую сессию для веб-отчётов.
+        // Если не залогинены или сеть упала — буферим внутри cloudSync, повторим при sync.
+        void cloudSync.pushSession(record, get().currentShift?.id ?? null);
+
         get().addToast('info', `${table.name} завершён — ${tableCost + barCost} ${get().settings.currency}`);
       },
 
@@ -716,6 +799,13 @@ export const useStore = create<AppStore>()(
       },
 
       updateTableFromRelay: (relayNumber, state) => {
+        // Нет такого реле или свет уже в нужном состоянии — НЕ трогаем стор вообще.
+        // Важно проверить ДО set(): persist-middleware вызывает setItem() (сериализация
+        // + запись) на каждый set, даже если состояние не изменилось. Без этого guard
+        // каждый STATUS-кадр Arduino (по реле на кадр) вызывал лавину ре-рендеров всего
+        // App (ввод «съедался») и лишние записи в хранилище.
+        const target = get().tables.find((t) => t.relayNumber === relayNumber);
+        if (!target || target.lightOn === state) return;
         set((s) => ({
           tables: s.tables.map((t) =>
             t.relayNumber === relayNumber ? { ...t, lightOn: state } : t
@@ -1193,6 +1283,7 @@ export const useStore = create<AppStore>()(
         // Если нет сохранённых данных — используем текущее состояние (дефолтное)
         if (!persistedState) {
           console.log('[Store] No persisted state found, using defaults');
+          // Свежая установка уже содержит дефолтные бар + кухню (defaultBarMenu).
           return currentState;
         }
         try {
@@ -1210,6 +1301,18 @@ export const useStore = create<AppStore>()(
               priceSchedule: table.priceSchedule || [],
             })),
           };
+          // ===== Миграция Бар/Кухня (только бэкфилл, без вмешательства в меню) =====
+          // Существующим установкам НЕ подсыпаем дефолтную кухню — их меню остаётся
+          // нетронутым. Кухню они заводят сами на странице «Кухня». Дефолтная кухня
+          // есть только на свежих установках (см. defaultBarCategories/defaultBarMenu).
+          // Здесь лишь проставляем отдел старым категориям (undefined → 'bar').
+          if (Array.isArray(merged.barCategories)) {
+            merged.barCategories = merged.barCategories.map((c) => ({
+              ...c,
+              department: c.department === 'kitchen' ? 'kitchen' : 'bar',
+            }));
+          }
+
           // Если нет пользователей — используем дефолтных
           if (!persisted.users || persisted.users.length === 0) {
             merged.users = defaultUsers;
@@ -1267,6 +1370,9 @@ export const useStore = create<AppStore>()(
           // Разрешаем запись ТОЛЬКО после завершения гидратации
           _hydrationComplete = true;
           console.log('[Store] Hydration flag set — writes enabled');
+          // Сразу сохраняем результат миграции (бэкфилл отдела категорий),
+          // чтобы он не потерялся при аварийном завершении до первого автосейва.
+          void persistStoreSnapshot(true);
           registerClosePersistHook();
           // Запускаем систему автосохранения
           startAutoSave();

@@ -102,8 +102,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Printer API
   printer: {
-    // Печать чека (receiptHTML — строка HTML, widthMm — ширина в мм)
-    printReceipt: (receiptHTML, widthMm, silent) => ipcRenderer.invoke('print:receipt', receiptHTML, widthMm, silent),
+    // Печать чека (receiptHTML — строка HTML, widthMm — ширина в мм, deviceName — конкретный принтер)
+    printReceipt: (receiptHTML, widthMm, silent, deviceName) => ipcRenderer.invoke('print:receipt', receiptHTML, widthMm, silent, deviceName),
     
     // Получить список принтеров
     getPrinters: () => ipcRenderer.invoke('print:get-printers')
