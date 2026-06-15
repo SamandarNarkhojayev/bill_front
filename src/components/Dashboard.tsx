@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Play,
+  Pause,
   Square,
   Clock,
   ShoppingBag,
@@ -19,16 +20,18 @@ import {
   FileText,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import type { BilliardTable, SessionMode, Tariff } from '../types';
 import TableModal from './TableModal';
 import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
 import { printReceipt, printKitchenTicket } from '../utils/receipt';
 import { getItemDepartment } from '../utils/department';
 import {
-  calculateSessionTableCost,
+  calculatePausedSessionCost,
   estimateCostForDuration,
   estimateDurationSecondsForAmount,
   getCurrentPricePerHour,
+  getActiveElapsedMs,
   isMinuteInRange,
   parseTimeToMinutes,
 } from '../utils/pricing';
@@ -61,20 +64,29 @@ const SessionTimer: React.FC<{
   startTime: number;
   mode: SessionMode;
   plannedDuration: number | null;
+  pausedAt: number | null;
+  totalPausedMs: number;
   onTimeExpired?: () => void;
-}> = ({ startTime, mode, plannedDuration, onTimeExpired }) => {
+}> = ({ startTime, mode, plannedDuration, pausedAt, totalPausedMs, onTimeExpired }) => {
   const [display, setDisplay] = useState('');
   const [expired, setExpired] = useState(false);
+  const isPaused = !!pausedAt;
+
+  // Сброс флага «истекло» при новой сессии (тот же стол переиспользует этот компонент)
+  useEffect(() => {
+    setExpired(false);
+  }, [startTime]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+    const tick = () => {
+      const elapsedSec = Math.floor(getActiveElapsedMs(startTime, Date.now(), pausedAt, totalPausedMs) / 1000);
 
       if ((mode === 'time' || mode === 'amount') && plannedDuration !== null) {
         const totalSec = plannedDuration;
         const remaining = totalSec - elapsedSec;
 
-        if (remaining <= 0 && !expired) {
+        // Истечение не срабатывает на паузе (там время заморожено)
+        if (remaining <= 0 && !expired && !pausedAt) {
           setExpired(true);
           onTimeExpired?.();
         }
@@ -93,15 +105,17 @@ const SessionTimer: React.FC<{
         const pad = (n: number) => String(n).padStart(2, '0');
         setDisplay(`${pad(h)}:${pad(m)}:${pad(s)}`);
       }
-    }, 1000);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [startTime, mode, plannedDuration, expired, onTimeExpired]);
+  }, [startTime, mode, plannedDuration, pausedAt, totalPausedMs, expired, onTimeExpired]);
 
   return (
-    <span className={`timer-display ${expired ? 'timer-expired' : ''}`}>
-      {mode === 'time' && !expired && <Timer size={14} className="timer-icon" />}
-      {expired && <AlertCircle size={14} className="timer-icon text-red-400" />}
-      {display}
+    <span className={`timer-display ${expired ? 'timer-expired' : ''} ${isPaused ? 'timer-paused' : ''}`}>
+      {isPaused ? <Pause size={14} className="timer-icon text-amber-400" /> : mode === 'time' && !expired ? <Timer size={14} className="timer-icon" /> : null}
+      {expired && !isPaused && <AlertCircle size={14} className="timer-icon text-red-400" />}
+      {display}{isPaused ? ' · пауза' : ''}
     </span>
   );
 };
@@ -111,16 +125,20 @@ const TableCard: React.FC<{
   table: BilliardTable;
   onStart: (tableId: number) => void;
   onStop: (tableId: number) => void;
+  onPause: (tableId: number) => void;
+  onResume: (tableId: number) => void;
   onOpenBar: (tableId: number) => void;
   onTimeExpired: (tableId: number) => void;
   onReserve: (tableId: number) => void;
   onCancelReservation: (tableId: number) => void;
   reservation?: { customerName: string; customerPhone: string; reservedFor: number; notes: string } | null;
-}> = ({ table, onStart, onStop, onOpenBar, onTimeExpired, onReserve, onCancelReservation, reservation }) => {
+}> = ({ table, onStart, onStop, onPause, onResume, onOpenBar, onTimeExpired, onReserve, onCancelReservation, reservation }) => {
   const { settings } = useStore();
+  const { t } = useT();
   const isOccupied = table.status === 'occupied';
   const isReserved = table.status === 'reserved';
   const session = table.currentSession;
+  const isPaused = !!session?.pausedAt;
 
   const [currentCost, setCurrentCost] = useState(0);
   useEffect(() => {
@@ -132,19 +150,23 @@ const TableCard: React.FC<{
       setCurrentCost(session.packagePrice);
       return;
     }
-    const interval = setInterval(() => {
+    const compute = () => {
+      // Тарифицируем активное время по реальным интервалам — на паузе стоимость «замораживается»
       setCurrentCost(
-        calculateSessionTableCost(
+        calculatePausedSessionCost(
           session.startTime,
           Date.now(),
           table.pricePerHour,
           table.priceSchedule,
           session.mode,
           session.fixedAmount,
-          session.packagePrice
+          session.packagePrice,
+          session.pauseIntervals
         )
       );
-    }, 1000);
+    };
+    compute();
+    const interval = setInterval(compute, 1000);
     return () => clearInterval(interval);
   }, [session, table.pricePerHour, table.priceSchedule]);
 
@@ -159,10 +181,10 @@ const TableCard: React.FC<{
   const modeLabel = session?.tariffName
     ? session.tariffName
     : session?.mode === 'time'
-    ? 'По времени'
+    ? t('dashboard.mode_time')
     : session?.mode === 'amount'
-    ? 'На сумму'
-    : 'Бессрочно';
+    ? t('dashboard.mode_amount')
+    : t('dashboard.mode_unlimited');
 
   const modeIcon = session?.mode === 'time'
     ? <Timer size={12} />
@@ -175,15 +197,15 @@ const TableCard: React.FC<{
   }, [table.id, onTimeExpired]);
 
   return (
-    <div className={`table-card ${isOccupied ? 'occupied' : isReserved ? 'reserved' : 'free'}`}>
-      <div className={`table-card-status-bar ${isOccupied ? 'bg-emerald-500' : isReserved ? 'bg-amber-500' : 'bg-slate-600'}`} />
+    <div className={`table-card ${isOccupied ? 'occupied' : isReserved ? 'reserved' : 'free'} ${isPaused ? 'paused' : ''}`}>
+      <div className={`table-card-status-bar ${isPaused ? 'bg-amber-500' : isOccupied ? 'bg-emerald-500' : isReserved ? 'bg-amber-500' : 'bg-slate-600'}`} />
 
       <div className="table-card-content">
         <div className="table-card-header">
           <div>
             <h3 className="table-card-name">{table.name}</h3>
-            <span className={`table-card-status ${isOccupied ? 'status-occupied' : isReserved ? 'status-reserved' : 'status-free'}`}>
-              {isOccupied ? '● Занят' : isReserved ? '◉ Бронь' : '○ Свободен'}
+            <span className={`table-card-status ${isPaused ? 'status-paused' : isOccupied ? 'status-occupied' : isReserved ? 'status-reserved' : 'status-free'}`}>
+              {isOccupied ? (isPaused ? `⏸ ${t('dashboard.status_paused')}` : `● ${t('dashboard.status_occupied')}`) : isReserved ? `◉ ${t('dashboard.status_reserved')}` : `○ ${t('dashboard.status_free')}`}
             </span>
           </div>
           {isOccupied && session && (
@@ -201,6 +223,8 @@ const TableCard: React.FC<{
                 startTime={session.startTime}
                 mode={session.mode}
                 plannedDuration={session.plannedDuration}
+                pausedAt={session.pausedAt}
+                totalPausedMs={session.totalPausedMs ?? 0}
                 onTimeExpired={handleTimeExpired}
               />
             </div>
@@ -261,7 +285,7 @@ const TableCard: React.FC<{
               {activePricePerHour.toLocaleString()} {settings.currency}/час
             </div>
             <p className="table-card-hint">
-              {table.priceSchedule.length > 0 ? 'Цена по времени суток активна' : 'Готов к игре'}
+              {table.priceSchedule.length > 0 ? t('dashboard.schedule_active') : t('dashboard.ready')}
             </p>
           </div>
         )}
@@ -271,9 +295,9 @@ const TableCard: React.FC<{
             <>
               <button onClick={() => onStart(table.id)} className="btn btn-primary" style={{ flex: 2 }}>
                 <Play size={16} />
-                Начать игру
+                {t('dashboard.start')}
               </button>
-              <button onClick={() => onReserve(table.id)} className="btn btn-ghost" style={{ flex: 1 }} title="Забронировать">
+              <button onClick={() => onReserve(table.id)} className="btn btn-ghost" style={{ flex: 1 }} title={t('dashboard.reserve')}>
                 <CalendarClock size={16} />
               </button>
             </>
@@ -281,22 +305,33 @@ const TableCard: React.FC<{
             <>
               <button onClick={() => onStart(table.id)} className="btn btn-primary btn-half">
                 <Play size={16} />
-                Начать
+                {t('dashboard.start_short')}
               </button>
               <button onClick={() => onCancelReservation(table.id)} className="btn btn-ghost btn-half">
                 <X size={16} />
-                Отменить
+                {t('dashboard.cancel_reserve')}
               </button>
             </>
           ) : (
             <>
-              <button onClick={() => onOpenBar(table.id)} className="btn btn-amber btn-half">
+              <button onClick={() => onOpenBar(table.id)} className="btn btn-amber" style={{ flex: 1 }}>
                 <ShoppingBag size={16} />
-                Бар
+                {t('nav.bar')}
               </button>
-              <button onClick={() => onStop(table.id)} className="btn btn-danger btn-half">
+              {isPaused ? (
+                <button onClick={() => onResume(table.id)} className="btn btn-primary" style={{ flex: 1 }}>
+                  <Play size={16} />
+                  {t('dashboard.resume')}
+                </button>
+              ) : (
+                <button onClick={() => onPause(table.id)} className="btn btn-ghost" style={{ flex: 1 }}>
+                  <Pause size={16} />
+                  {t('dashboard.pause')}
+                </button>
+              )}
+              <button onClick={() => onStop(table.id)} className="btn btn-danger" style={{ flex: 1 }}>
                 <Square size={16} />
-                Стоп
+                {t('dashboard.stop')}
               </button>
             </>
           )}
@@ -309,9 +344,10 @@ const TableCard: React.FC<{
 // ===== DASHBOARD =====
 const Dashboard: React.FC = () => {
   const {
-    tables, startSession, endSession, settings, getTodayRevenue, getTodaySessions, openModal,
+    tables, startSession, endSession, pauseSession, resumeSession, settings, getTodayRevenue, getTodaySessions, openModal,
     reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu, barCategories,
   } = useStore();
+  const { t } = useT();
   const [showStartModal, setShowStartModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
   const [showReserveModal, setShowReserveModal] = useState(false);
@@ -431,15 +467,17 @@ const Dashboard: React.FC = () => {
     if (shouldPrint || settings.autoPrintReceipt) {
       const session = table.currentSession;
       const endTime = Date.now();
-      const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
-      const tableCost = calculateSessionTableCost(
+      const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
+      const durationMinutes = Math.ceil(activeMs / 60000);
+      const tableCost = calculatePausedSessionCost(
         session.startTime,
         endTime,
         table.pricePerHour,
         table.priceSchedule,
         session.mode,
         session.fixedAmount,
-        session.packagePrice
+        session.packagePrice,
+        session.pauseIntervals
       );
       const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -480,15 +518,17 @@ const Dashboard: React.FC = () => {
 
     const session = table.currentSession;
     const endTime = Date.now();
-    const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
-    const tableCost = calculateSessionTableCost(
+    const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
+    const durationMinutes = Math.ceil(activeMs / 60000);
+    const tableCost = calculatePausedSessionCost(
       session.startTime,
       endTime,
       table.pricePerHour,
       table.priceSchedule,
       session.mode,
       session.fixedAmount,
-      session.packagePrice
+      session.packagePrice,
+      session.pauseIntervals
     );
     const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -582,28 +622,28 @@ const Dashboard: React.FC = () => {
         <div className="stat-card stat-revenue">
           <div className="stat-icon"><DollarSign size={24} /></div>
           <div>
-            <p className="stat-label">Выручка сегодня</p>
+            <p className="stat-label">{t('dashboard.revenue_total')}</p>
             <p className="stat-value">{revenue.total.toLocaleString()} {settings.currency}</p>
           </div>
         </div>
         <div className="stat-card stat-table-rev">
           <div className="stat-icon"><Clock size={24} /></div>
           <div>
-            <p className="stat-label">Столы</p>
+            <p className="stat-label">{t('dashboard.revenue_table')}</p>
             <p className="stat-value">{revenue.table.toLocaleString()} {settings.currency}</p>
           </div>
         </div>
         <div className="stat-card stat-bar-rev">
           <div className="stat-icon"><ShoppingBag size={24} /></div>
           <div>
-            <p className="stat-label">Бар</p>
+            <p className="stat-label">{t('dashboard.revenue_bar')}</p>
             <p className="stat-value">{revenue.bar.toLocaleString()} {settings.currency}</p>
           </div>
         </div>
         <div className="stat-card stat-sessions">
           <div className="stat-icon"><TrendingUp size={24} /></div>
           <div>
-            <p className="stat-label">Игр сегодня</p>
+            <p className="stat-label">{t('dashboard.revenue_today')}</p>
             <p className="stat-value">{todaySessions}</p>
           </div>
         </div>
@@ -617,6 +657,8 @@ const Dashboard: React.FC = () => {
             table={table}
             onStart={handleStart}
             onStop={handleStop}
+            onPause={pauseSession}
+            onResume={resumeSession}
             onOpenBar={handleOpenBar}
             onTimeExpired={handleTimeExpired}
             onReserve={handleReserve}
@@ -632,7 +674,7 @@ const Dashboard: React.FC = () => {
           <div className="modal modal-start" onClick={(e) => e.stopPropagation()}>
             <h2 className="modal-title">
               <Play size={20} className="text-emerald-400" />
-              Начать игру — {selectedTableData.name}
+              {t('dashboard.choose_mode', { name: selectedTableData.name })}
             </h2>
 
             <p className="modal-hint" style={{ marginBottom: '16px' }}>
@@ -960,17 +1002,20 @@ const EndSessionModal: React.FC<{
   autoPrintEnabled: boolean;
 }> = ({ table, onConfirm, onCancel, autoPrintEnabled }) => {
   const { settings } = useStore();
+  const { t } = useT();
   const session = table.currentSession!;
   const endTime = Date.now();
-  const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
-  const tableCost = calculateSessionTableCost(
+  const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
+  const durationMinutes = Math.ceil(activeMs / 60000);
+  const tableCost = calculatePausedSessionCost(
     session.startTime,
     endTime,
     table.pricePerHour,
     table.priceSchedule,
     session.mode,
     session.fixedAmount,
-    session.packagePrice
+    session.packagePrice,
+    session.pauseIntervals
   );
 
   const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -978,26 +1023,26 @@ const EndSessionModal: React.FC<{
   const mins = durationMinutes % 60;
 
   const modeLabel = session.mode === 'time'
-    ? 'По времени'
+    ? t('dashboard.mode_time')
     : session.mode === 'amount'
-    ? 'На сумму'
-    : 'Бессрочно';
+    ? t('dashboard.mode_amount')
+    : t('dashboard.mode_unlimited');
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal modal-lg end-session-modal" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">
           <Square size={20} className="text-red-400" />
-          Закрыть заказ — {table.name}
+          {t('dashboard.end_title', { name: table.name })}
         </h2>
         <div className="modal-body">
           <div className="end-session-grid">
             <div className="end-session-item">
-              <span className="end-session-label">Режим</span>
+              <span className="end-session-label">{t('dashboard.mode')}</span>
               <span className="end-session-value">{modeLabel}</span>
             </div>
             <div className="end-session-item">
-              <span className="end-session-label">Время игры</span>
+              <span className="end-session-label">{t('dashboard.playtime')}</span>
               <span className="end-session-value">
                 {hours > 0 ? `${hours}ч ` : ''}{mins}мин
               </span>
@@ -1039,16 +1084,16 @@ const EndSessionModal: React.FC<{
           </div>
         </div>
         <div className="modal-actions end-session-actions">
-          <button onClick={onCancel} className="btn btn-ghost">Назад</button>
+          <button onClick={onCancel} className="btn btn-ghost">{t('common.back')}</button>
           {!autoPrintEnabled && (
             <button onClick={() => onConfirm(true)} className="btn btn-primary">
               <Printer size={16} />
-              Печать пречека
+              {t('dashboard.end_print')}
             </button>
           )}
           <button onClick={() => onConfirm(false)} className="btn btn-danger">
             <Square size={16} />
-            {autoPrintEnabled ? 'Закрыть заказ' : 'Закрыть заказ'}
+            {t('dashboard.end_close')}
           </button>
         </div>
       </div>

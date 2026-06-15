@@ -28,6 +28,7 @@ import {
   ChefHat,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem, Department } from '../types';
 import { generateBarSaleReceiptHTML, printKitchenTicket } from '../utils/receipt';
 import { getCategoryDepartment, getItemDepartment } from '../utils/department';
@@ -59,12 +60,13 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     createRevision, inventoryRevisions, sellFromBar,
     currentUser, addToast,
   } = useStore();
+  const { t } = useT();
 
   const isKitchen = department === 'kitchen';
   const isCombined = department === 'combined';
   // Отдел для новых позиций/категорий: combined по умолчанию создаёт в баре
   const newItemDepartment: Department = isKitchen ? 'kitchen' : 'bar';
-  const pageTitle = isKitchen ? 'Кухня' : 'Бар';
+  const pageTitle = isKitchen ? t('bar.title_kitchen') : t('bar.title_bar');
   const PageIcon = isKitchen ? ChefHat : Wine;
 
   const [activeTab, setActiveTab] = useState<BarTab>('quick-order');
@@ -73,9 +75,9 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
 
   const isRegularUser = currentUser?.role === 'user';
   const allTabs = [
-    { id: 'quick-order' as BarTab, icon: ShoppingCart, label: 'Заказ' },
-    { id: 'menu' as BarTab, icon: Edit3, label: 'Меню' },
-    { id: 'categories' as BarTab, icon: Layers, label: 'Категории' },
+    { id: 'quick-order' as BarTab, icon: ShoppingCart, label: t('bar.tab_order') },
+    { id: 'menu' as BarTab, icon: Edit3, label: t('bar.tab_menu') },
+    { id: 'categories' as BarTab, icon: Layers, label: t('bar.tab_categories') },
   ];
   const visibleTabs = isRegularUser ? allTabs.filter(tab => tab.id === 'quick-order') : allTabs;
 
@@ -365,12 +367,12 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Printer size={22} style={{ color: '#f59e0b' }} />
-                Распечатать пречек?
+                {t('bar.print_precheck_title')}
               </div>
             </div>
             <div className="modal-body" style={{ textAlign: 'center', padding: '16px 24px' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                {shopMode ? 'Продажа бара' : 'Добавление к счёту стола'}:
+                {shopMode ? t('bar.sale_of_bar') : t('bar.add_to_table_bill')}:
               </p>
               <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
                 {quickCartTotal.toLocaleString()} {settings.currency}
@@ -378,11 +380,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
             </div>
             <div className="modal-actions">
               <button onClick={handleSellWithoutPrint} className="btn btn-ghost">
-                Закрыть заказ
+                {t('dashboard.end_close')}
               </button>
               <button onClick={handlePrintAndSell} className="btn btn-primary">
                 <Printer size={16} />
-                Печать пречека
+                {t('bar.print_precheck')}
               </button>
             </div>
           </div>
@@ -469,28 +471,28 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
 
           <div className="bar-order-sidebar">
             <div className="bar-sidebar-section">
-              <h3 className="bar-sidebar-title"><GripVertical size={16} /> Режим продажи</h3>
+              <h3 className="bar-sidebar-title"><GripVertical size={16} /> {t('bar.sell_mode')}</h3>
               <div className="bar-table-list" style={{ marginBottom: 8 }}>
                 <button
                   onClick={() => { setShopMode(false); }}
                   className={`bar-table-btn ${!shopMode ? 'selected' : ''}`}
                 >
-                  <span className="bar-table-btn-name">К столу</span>
-                  <span className="bar-table-btn-mode">Добавить к счёту</span>
+                  <span className="bar-table-btn-name">{t('bar.to_table')}</span>
+                  <span className="bar-table-btn-mode">{t('bar.to_table_hint')}</span>
                 </button>
                 <button
                   onClick={() => { setShopMode(true); setSelectedTable(null); }}
                   className={`bar-table-btn ${shopMode ? 'selected' : ''}`}
                   style={shopMode ? { borderColor: '#f59e0b40', background: '#f59e0b10' } : {}}
                 >
-                  <span className="bar-table-btn-name">🛒 Без стола</span>
-                  <span className="bar-table-btn-mode">Быстрая продажа</span>
+                  <span className="bar-table-btn-name">{t('bar.no_table')}</span>
+                  <span className="bar-table-btn-mode">{t('bar.quick_sale')}</span>
                 </button>
               </div>
               {!shopMode && (
                 <>
                   {occupiedTables.length === 0 ? (
-                    <p className="bar-sidebar-empty">Нет активных столов</p>
+                    <p className="bar-sidebar-empty">{t('bar.no_active_tables')}</p>
                   ) : (
                     <div className="bar-table-list">
                       {occupiedTables.map((table) => (
@@ -498,7 +500,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                           className={`bar-table-btn ${selectedTable === table.id ? 'selected' : ''}`}>
                           <span className="bar-table-btn-name">{table.name}</span>
                           <span className="bar-table-btn-mode">
-                            {table.currentSession?.mode === 'time' ? 'По времени' : table.currentSession?.mode === 'amount' ? 'На сумму' : 'Бессрочно'}
+                            {table.currentSession?.mode === 'time' ? t('dashboard.mode_time') : table.currentSession?.mode === 'amount' ? t('dashboard.mode_amount') : t('dashboard.mode_unlimited')}
                           </span>
                         </button>
                       ))}
@@ -510,11 +512,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
 
             <div className="bar-sidebar-section bar-cart-section">
               <h3 className="bar-sidebar-title">
-                <ShoppingCart size={16} /> Корзина
+                <ShoppingCart size={16} /> {t('bar.cart')}
                 {quickCartCount > 0 && <span className="bar-cart-badge">{quickCartCount}</span>}
               </h3>
               {quickCart.size === 0 ? (
-                <p className="bar-sidebar-empty">Корзина пуста</p>
+                <p className="bar-sidebar-empty">{t('bar.cart_empty')}</p>
               ) : (
                 <>
                   <div className="bar-cart-items">
@@ -538,12 +540,12 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                     })}
                   </div>
                   <div className="bar-cart-total-row">
-                    <span>Итого</span>
+                    <span>{t('common.total')}</span>
                     <span className="bar-cart-total-value">{quickCartTotal.toLocaleString()} {settings.currency}</span>
                   </div>
                   <button onClick={handleQuickOrder} disabled={!shopMode && !selectedTable}
                     className={`btn ${shopMode ? 'btn-amber' : 'btn-amber'} btn-full bar-cart-submit`}>
-                    <ShoppingCart size={18} /> {shopMode ? 'Создать заказ' : 'Добавить к счёту'}
+                    <ShoppingCart size={18} /> {shopMode ? t('bar.create_order') : t('bar.add_to_bill')}
                   </button>
                 </>
               )}
@@ -557,7 +559,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
         <div className="bar-menu-manage">
           <div className="bar-menu-manage-header">
             <button onClick={() => setShowAddForm(true)} className="btn btn-primary btn-lg">
-              <Plus size={18} /> Добавить позицию
+              <Plus size={18} /> {t('bar.add_item')}
             </button>
           </div>
 
@@ -789,7 +791,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       {activeTab === 'categories' && !isRegularUser && (
         <div className="bar-categories-manage">
           <div className="bar-menu-manage-header">
-            <button onClick={() => setShowAddCategory(true)} className="btn btn-primary btn-lg"><Plus size={18} /> Новая категория</button>
+            <button onClick={() => setShowAddCategory(true)} className="btn btn-primary btn-lg"><Plus size={18} /> {t('bar.add_category')}</button>
           </div>
 
           {showAddCategory && (

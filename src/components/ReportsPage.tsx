@@ -15,6 +15,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import { printReceipt, printReportReceipt } from '../utils/receipt';
 
 // Утилита: дата в строку YYYY-MM-DD (локальное время)
@@ -49,6 +50,7 @@ const formatMoney = (value: unknown, currency: string): string => {
 
 const ReportsPage: React.FC = () => {
   const { sessionHistory, settings, currentShift, shiftHistory, addToast } = useStore();
+  const { t } = useT();
   const isSafeWebViewMode = useMemo(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -215,12 +217,12 @@ const ReportsPage: React.FC = () => {
   // Экспорт отчёта в CSV
   const exportReport = () => {
     const modeLabel = (m: string, tariffName?: string | null) => {
-      if (tariffName && tariffName.trim()) return `Тариф: ${tariffName}`;
-      if (m === 'time') return 'По времени';
-      if (m === 'amount') return 'На сумму';
-      return 'Бессрочно';
+      if (tariffName && tariffName.trim()) return t('reports.modeTariff', { name: tariffName });
+      if (m === 'time') return t('reports.modeTime');
+      if (m === 'amount') return t('reports.modeAmount');
+      return t('reports.modeUnlimited');
     };
-    const header = 'Стол;Режим;Начало;Конец;Время (мин);Стол (' + settings.currency + ');Бар (' + settings.currency + ');Итого (' + settings.currency + ')';
+    const header = t('reports.csvTable') + ';' + t('reports.csvMode') + ';' + t('reports.csvStart') + ';' + t('reports.csvEnd') + ';' + t('reports.csvDurationMin') + ';' + t('reports.csvTable') + ' (' + settings.currency + ');' + t('reports.csvBar') + ' (' + settings.currency + ');' + t('reports.csvTotal') + ' (' + settings.currency + ')';
     const rows = filteredSessions
       .slice()
       .reverse()
@@ -232,10 +234,10 @@ const ReportsPage: React.FC = () => {
 
     // Итоги
     rows.push('');
-    rows.push(`Всего игр:;${stats.count}`);
-    rows.push(`Выручка столы:;${stats.tableRev}`);
-    rows.push(`Выручка бар:;${stats.barRev}`);
-    rows.push(`Общая выручка:;${stats.totalRev}`);
+    rows.push(`${t('reports.csvTotalGames')}:;${stats.count}`);
+    rows.push(`${t('reports.csvRevenueTables')}:;${stats.tableRev}`);
+    rows.push(`${t('reports.csvRevenueBar')}:;${stats.barRev}`);
+    rows.push(`${t('reports.csvRevenueTotal')}:;${stats.totalRev}`);
 
     const csv = '\uFEFF' + header + '\n' + rows.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -244,7 +246,7 @@ const ReportsPage: React.FC = () => {
     const now = new Date();
     const ts = dateToStr(now) + '_' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }).replace(':', '-');
     a.href = url;
-    a.download = `отчёт_${viewMode}_${ts}.csv`;
+    a.download = `${t('reports.fileNameReport')}_${viewMode}_${ts}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -292,14 +294,14 @@ const ReportsPage: React.FC = () => {
     if (viewMode === 'day') return formatDate(selectedDate);
     if (viewMode === 'week') return formatWeekRange();
     if (viewMode === 'range') return `${formatDate(rangeStart)} — ${formatDate(rangeEnd)}`;
-    if (viewMode === 'all') return 'Всё время';
+    if (viewMode === 'all') return t('reports.allTime');
     if (viewMode === 'shift') {
-      if (!activeShift) return 'Смена не выбрана';
+      if (!activeShift) return t('reports.shiftNotSelected');
       const start = new Date(activeShift.startTime).toLocaleString('ru-RU');
-      const end = activeShift.endTime ? new Date(activeShift.endTime).toLocaleString('ru-RU') : 'по текущее время';
-      return `Смена: ${activeShift.userName} (${start} — ${end})`;
+      const end = activeShift.endTime ? new Date(activeShift.endTime).toLocaleString('ru-RU') : t('reports.untilNow');
+      return t('reports.shiftLabel', { name: activeShift.userName, start, end });
     }
-    return 'Период';
+    return t('reports.period');
   };
 
   const handlePrintSession = async (session: (typeof filteredSessions)[number]) => {
@@ -310,7 +312,7 @@ const ReportsPage: React.FC = () => {
         ? [{
             id: `hist-${session.id}`,
             menuItemId: 'history-bar',
-            menuItemName: 'Бар',
+            menuItemName: t('reports.bar'),
             quantity: 1,
             price: session.barCost,
             timestamp: session.endTime,
@@ -340,10 +342,10 @@ const ReportsPage: React.FC = () => {
         deviceName: settings.receiptPrinterName,
       });
 
-      if (!ok) addToast('error', 'Не удалось распечатать пречек');
+      if (!ok) addToast('error', t('reports.printPrecheckFailed'));
     } catch (error) {
       console.error('Print from history failed:', error);
-      addToast('error', 'Ошибка печати пречека');
+      addToast('error', t('reports.printPrecheckError'));
     }
   };
 
@@ -368,7 +370,7 @@ const ReportsPage: React.FC = () => {
       deviceName: settings.receiptPrinterName,
     });
 
-    if (!ok) addToast('error', 'Не удалось распечатать отчётный пречек');
+    if (!ok) addToast('error', t('reports.printReportFailed'));
   };
 
   return (
@@ -376,7 +378,7 @@ const ReportsPage: React.FC = () => {
       <div className="page-header">
         <div className="page-header-left">
           <BarChart3 size={28} className="text-violet-400" />
-          <h2 className="page-title">Отчёты</h2>
+          <h2 className="page-title">{t('reports.title')}</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div className="page-tabs">
@@ -384,40 +386,40 @@ const ReportsPage: React.FC = () => {
               onClick={() => setViewMode('day')}
               className={`page-tab ${viewMode === 'day' ? 'active' : ''}`}
             >
-              День
+              {t('reports.tabDay')}
             </button>
             <button
               onClick={() => { setViewMode('shift'); setSelectedShiftId(null); }}
               className={`page-tab ${viewMode === 'shift' ? 'active' : ''}`}
             >
-              <Briefcase size={14} /> За смену
+              <Briefcase size={14} /> {t('reports.tabShift')}
             </button>
             <button
               onClick={() => setViewMode('week')}
               className={`page-tab ${viewMode === 'week' ? 'active' : ''}`}
             >
-              Неделя
+              {t('reports.tabWeek')}
             </button>
             <button
               onClick={() => setViewMode('range')}
               className={`page-tab ${viewMode === 'range' ? 'active' : ''}`}
             >
-              <Filter size={14} /> Диапазон
+              <Filter size={14} /> {t('reports.tabRange')}
             </button>
             <button
               onClick={() => setViewMode('all')}
               className={`page-tab ${viewMode === 'all' ? 'active' : ''}`}
             >
-              Всё время
+              {t('reports.tabAll')}
             </button>
           </div>
           {filteredSessions.length > 0 && !isSafeWebViewMode && (
             <>
               <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Download size={14} /> Экспорт
+                <Download size={14} /> {t('reports.export')}
               </button>
               <button onClick={() => handlePrintReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Printer size={14} /> Печать отчёта
+                <Printer size={14} /> {t('reports.printReport')}
               </button>
             </>
           )}
@@ -427,7 +429,7 @@ const ReportsPage: React.FC = () => {
       {isSafeWebViewMode && (
         <div className="date-nav" style={{ marginBottom: 12 }}>
           <span style={{ fontSize: 12, color: '#94a3b8' }}>
-            Облегчённый режим отчётов для встроенного браузера VS Code
+            {t('reports.lightModeNotice')}
           </span>
         </div>
       )}
@@ -444,11 +446,11 @@ const ReportsPage: React.FC = () => {
             </div>
             <div className="shift-item-content">
               <div className="shift-item-title">
-                {currentShift?.isActive ? 'Текущая смена' : 'Нет активной смены'}
+                {currentShift?.isActive ? t('reports.currentShift') : t('reports.noActiveShift')}
               </div>
               {currentShift?.isActive && (
                 <div className="shift-item-details">
-                  Начало: {new Date(currentShift.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                  {t('reports.start')}: {new Date(currentShift.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                 </div>
               )}
             </div>
@@ -472,8 +474,8 @@ const ReportsPage: React.FC = () => {
                   </div>
                   <div className="shift-item-details">
                     {start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                    {end ? ` — ${end.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : ' (активна)'}
-                    {duration && ` (${duration} мин)`}
+                    {end ? ` — ${end.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : ` (${t('reports.active')})`}
+                    {duration && ` (${duration} ${t('reports.min')})`}
                   </div>
                   <div className="shift-item-user">{shift.userName}</div>
                 </div>
@@ -500,7 +502,7 @@ const ReportsPage: React.FC = () => {
             onClick={() => setSelectedDate(dateToStr(new Date()))}
             className="btn btn-ghost btn-sm"
           >
-            Сегодня
+            {t('reports.today')}
           </button>
         </div>
       )}
@@ -509,7 +511,7 @@ const ReportsPage: React.FC = () => {
       {viewMode === 'range' && (
         <div className="date-nav" style={{ gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: 13, opacity: 0.7 }}>С</label>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>{t('reports.rangeFrom')}</label>
             <input
               type="date"
               value={rangeStart}
@@ -519,7 +521,7 @@ const ReportsPage: React.FC = () => {
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: 13, opacity: 0.7 }}>По</label>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>{t('reports.rangeTo')}</label>
             <input
               type="date"
               value={rangeEnd}
@@ -538,7 +540,7 @@ const ReportsPage: React.FC = () => {
             }}
             className="btn btn-ghost btn-sm"
           >
-            7 дней
+            {t('reports.last7Days')}
           </button>
           <button
             onClick={() => {
@@ -550,7 +552,7 @@ const ReportsPage: React.FC = () => {
             }}
             className="btn btn-ghost btn-sm"
           >
-            30 дней
+            {t('reports.last30Days')}
           </button>
         </div>
       )}
@@ -562,7 +564,7 @@ const ReportsPage: React.FC = () => {
             <DollarSign size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Общая выручка</p>
+            <p className="report-stat-label">{t('reports.statTotalRevenue')}</p>
             <p className="report-stat-value">
               {formatMoney(stats.totalRev, settings.currency)}
             </p>
@@ -573,7 +575,7 @@ const ReportsPage: React.FC = () => {
             <Clock size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Столы</p>
+            <p className="report-stat-label">{t('reports.statTables')}</p>
             <p className="report-stat-value">
               {formatMoney(stats.tableRev, settings.currency)}
             </p>
@@ -584,7 +586,7 @@ const ReportsPage: React.FC = () => {
             <ShoppingBag size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Бар</p>
+            <p className="report-stat-label">{t('reports.statBar')}</p>
             <p className="report-stat-value">
               {formatMoney(stats.barRev, settings.currency)}
             </p>
@@ -595,7 +597,7 @@ const ReportsPage: React.FC = () => {
             <Users size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Игр</p>
+            <p className="report-stat-label">{t('reports.statGames')}</p>
             <p className="report-stat-value">{stats.count}</p>
           </div>
         </div>
@@ -604,7 +606,7 @@ const ReportsPage: React.FC = () => {
             <TrendingUp size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Средний счёт</p>
+            <p className="report-stat-label">{t('reports.statAvgCheck')}</p>
             <p className="report-stat-value">
               {formatMoney(stats.avgCheck, settings.currency)}
             </p>
@@ -615,8 +617,8 @@ const ReportsPage: React.FC = () => {
             <Clock size={24} />
           </div>
           <div>
-            <p className="report-stat-label">Среднее время</p>
-            <p className="report-stat-value">{stats.avgSession} мин</p>
+            <p className="report-stat-label">{t('reports.statAvgTime')}</p>
+            <p className="report-stat-value">{stats.avgSession} {t('reports.min')}</p>
           </div>
         </div>
       </div>
@@ -626,7 +628,7 @@ const ReportsPage: React.FC = () => {
       <div className="report-charts">
         {/* По столам */}
         <div className="report-chart-card">
-          <h3 className="report-chart-title">Выручка по столам</h3>
+          <h3 className="report-chart-title">{t('reports.chartRevenueByTable')}</h3>
           <div className="report-bar-chart">
             {Object.entries(stats.byTable).map(([name, data]) => (
               <div key={name} className="report-bar-row">
@@ -645,14 +647,14 @@ const ReportsPage: React.FC = () => {
               </div>
             ))}
             {Object.keys(stats.byTable).length === 0 && (
-              <p className="text-slate-500 text-sm text-center py-4">Нет данных</p>
+              <p className="text-slate-500 text-sm text-center py-4">{t('reports.noData')}</p>
             )}
           </div>
         </div>
 
         {/* По часам */}
         <div className="report-chart-card">
-          <h3 className="report-chart-title">Загрузка по часам</h3>
+          <h3 className="report-chart-title">{t('reports.chartLoadByHour')}</h3>
           <div className="report-hours-chart">
             {stats.byHour.map((count, hour) => (
               <div key={hour} className="report-hour-bar">
@@ -673,19 +675,19 @@ const ReportsPage: React.FC = () => {
       {/* Таблица сессий */}
       <div className="report-table-card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <h3 className="report-chart-title" style={{ marginBottom: 0 }}>История игр</h3>
+          <h3 className="report-chart-title" style={{ marginBottom: 0 }}>{t('reports.historyTitle')}</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button
               onClick={() => setShowHistoryFilters((prev) => !prev)}
               className="btn btn-ghost btn-sm"
-              title="Фильтры истории"
+              title={t('reports.historyFiltersTitle')}
             >
               <Filter size={14} />
-              Фильтр
+              {t('reports.filter')}
             </button>
             {(historyTableFilter !== 'all' || historyModeFilter !== 'all' || historyAmountSort !== 'default' || historyTimeSort !== 'default' || historyTableTimeSort !== 'default') && (
-              <button onClick={resetHistoryFilters} className="btn btn-ghost btn-sm" title="Сбросить фильтрацию">
-                Сбросить фильтрацию
+              <button onClick={resetHistoryFilters} className="btn btn-ghost btn-sm" title={t('reports.resetFilters')}>
+                {t('reports.resetFilters')}
               </button>
             )}
           </div>
@@ -699,7 +701,7 @@ const ReportsPage: React.FC = () => {
               onChange={(e) => setHistoryTableFilter(e.target.value)}
               style={{ width: 180 }}
             >
-              <option value="all">Все столы</option>
+              <option value="all">{t('reports.allTables')}</option>
               {historyTableNames.map((name) => (
                 <option key={name} value={name}>{name}</option>
               ))}
@@ -711,9 +713,9 @@ const ReportsPage: React.FC = () => {
               onChange={(e) => setHistoryAmountSort(e.target.value as 'default' | 'max' | 'min')}
               style={{ width: 220 }}
             >
-              <option value="default">Сумма: по умолчанию</option>
-              <option value="max">Сумма: максимальная</option>
-              <option value="min">Сумма: минимальная</option>
+              <option value="default">{t('reports.amountDefault')}</option>
+              <option value="max">{t('reports.amountMax')}</option>
+              <option value="min">{t('reports.amountMin')}</option>
             </select>
 
             <select
@@ -722,9 +724,9 @@ const ReportsPage: React.FC = () => {
               onChange={(e) => setHistoryTimeSort(e.target.value as 'default' | 'max' | 'min')}
               style={{ width: 220 }}
             >
-              <option value="default">Время: по умолчанию</option>
-              <option value="max">Время: максимальное</option>
-              <option value="min">Время: минимальное</option>
+              <option value="default">{t('reports.timeDefault')}</option>
+              <option value="max">{t('reports.timeMax')}</option>
+              <option value="min">{t('reports.timeMin')}</option>
             </select>
 
             <select
@@ -733,34 +735,34 @@ const ReportsPage: React.FC = () => {
               onChange={(e) => setHistoryTableTimeSort(e.target.value as 'default' | 'max' | 'min')}
               style={{ width: 240 }}
             >
-              <option value="default">Стол по времени: по умолчанию</option>
-              <option value="max">Стол по времени: больше всего</option>
-              <option value="min">Стол по времени: меньше всего</option>
+              <option value="default">{t('reports.tableTimeDefault')}</option>
+              <option value="max">{t('reports.tableTimeMax')}</option>
+              <option value="min">{t('reports.tableTimeMin')}</option>
             </select>
 
             <button
               onClick={() => setHistoryModeFilter('tariff')}
               className={`btn btn-sm ${historyModeFilter === 'tariff' ? 'btn-primary' : 'btn-ghost'}`}
             >
-              Тариф
+              {t('reports.filterTariff')}
             </button>
             <button
               onClick={() => setHistoryModeFilter('time')}
               className={`btn btn-sm ${historyModeFilter === 'time' ? 'btn-primary' : 'btn-ghost'}`}
             >
-              Время
+              {t('reports.filterTime')}
             </button>
             <button
               onClick={() => setHistoryModeFilter('infinite')}
               className={`btn btn-sm ${historyModeFilter === 'infinite' ? 'btn-primary' : 'btn-ghost'}`}
             >
-              Бессрочно
+              {t('reports.filterInfinite')}
             </button>
             <button
               onClick={() => setHistoryModeFilter('all')}
               className={`btn btn-sm ${historyModeFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
             >
-              Все режимы
+              {t('reports.filterAllModes')}
             </button>
           </div>
         )}
@@ -768,22 +770,22 @@ const ReportsPage: React.FC = () => {
         {historySessions.length === 0 ? (
           <div className="report-empty">
             <BarChart3 size={48} className="text-slate-600" />
-            <p>Нет записей по выбранным фильтрам</p>
+            <p>{t('reports.emptyFiltered')}</p>
           </div>
         ) : (
           <div className="report-table-wrapper">
             <table className="report-table">
               <thead>
                 <tr>
-                  <th>Стол</th>
-                  <th>Режим</th>
-                  <th>Начало</th>
-                  <th>Конец</th>
-                  <th>Время</th>
-                  <th>Стол</th>
-                  <th>Бар</th>
-                  <th>Итого</th>
-                  <th>Пречек</th>
+                  <th>{t('reports.thTable')}</th>
+                  <th>{t('reports.thMode')}</th>
+                  <th>{t('reports.thStart')}</th>
+                  <th>{t('reports.thEnd')}</th>
+                  <th>{t('reports.thTime')}</th>
+                  <th>{t('reports.thTable')}</th>
+                  <th>{t('reports.thBar')}</th>
+                  <th>{t('reports.thTotal')}</th>
+                  <th>{t('reports.thPrecheck')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -795,16 +797,16 @@ const ReportsPage: React.FC = () => {
                       <td>{session.tableName}</td>
                       <td>
                         {session.tariffName && session.tariffName.trim()
-                          ? `Тариф: ${session.tariffName}`
+                          ? t('reports.modeTariff', { name: session.tariffName })
                           : session.mode === 'time'
-                            ? 'По времени'
+                            ? t('reports.modeTime')
                             : session.mode === 'amount'
-                              ? 'На сумму'
-                              : 'Бессрочно'}
+                              ? t('reports.modeAmount')
+                              : t('reports.modeUnlimited')}
                       </td>
                       <td>{formatTime(session.startTime)}</td>
                       <td>{formatTime(session.endTime)}</td>
-                      <td>{session.duration} мин</td>
+                      <td>{session.duration} {t('reports.min')}</td>
                       <td className="text-emerald-400">
                         {formatMoney(session.tableCost, settings.currency)}
                       </td>
@@ -818,10 +820,10 @@ const ReportsPage: React.FC = () => {
                         <button
                           className="btn btn-ghost btn-sm report-print-btn"
                           onClick={() => handlePrintSession(session)}
-                          title="Печать пречека"
+                          title={t('reports.printPrecheckTitle')}
                         >
                           <Printer size={14} />
-                          Пречек
+                          {t('reports.precheck')}
                         </button>
                       </td>
                     </tr>

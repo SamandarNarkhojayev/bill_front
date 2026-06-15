@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { playOrderSound } from '../utils/sounds';
-import { calculateSessionTableCost, estimateDurationSecondsForAmount } from '../utils/pricing';
+import { calculatePausedSessionCost, estimateDurationSecondsForAmount, getActiveElapsedMs } from '../utils/pricing';
+import { translate } from '../i18n/translate';
 import cloudSync from '../utils/cloudSync';
 import type {
   BilliardTable,
@@ -147,6 +148,9 @@ const defaultBarMenu: BarMenuItem[] = [
 
 // ===== НАСТРОЙКИ ПО УМОЛЧАНИЮ =====
 const defaultSettings: AppSettings = {
+  language: 'ru',
+  lastSeenVersion: '',
+  sidebarPinned: ['dashboard', 'bar', 'reports', 'settings'],
   clubName: 'Бильярдный Клуб',
   receiptCompanyName: 'ИП Coffee Time',
   receiptCity: 'г. Шымкент',
@@ -215,6 +219,8 @@ interface AppStore {
   tables: BilliardTable[];
   startSession: (tableId: number, mode: SessionMode, options?: { hours?: number; minutes?: number; amount?: number; plannedDurationSeconds?: number; packagePrice?: number; tariffName?: string }) => void;
   endSession: (tableId: number) => void;
+  pauseSession: (tableId: number) => void;
+  resumeSession: (tableId: number) => void;
   toggleLight: (tableId: number) => void;
   setLightState: (tableId: number, on: boolean) => void;
   updateTableFromRelay: (relayNumber: number, state: boolean) => void;
@@ -694,6 +700,9 @@ export const useStore = create<AppStore>()(
                     plannedDuration,
                     fixedAmount,
                     packagePrice: normalizedPackagePrice,
+                    pausedAt: null,
+                    totalPausedMs: 0,
+                    pauseIntervals: [],
                     barOrders: [],
                     totalTableCost: 0,
                     totalBarCost: 0,
@@ -710,8 +719,9 @@ export const useStore = create<AppStore>()(
         }
 
         const tableName = get().tables.find((t) => t.id === tableId)?.name || '';
-        const modeLabel = mode === 'time' ? 'по времени' : mode === 'amount' ? 'на сумму' : 'бессрочно';
-        get().addToast('success', `${tableName} запущен (${modeLabel})`);
+        const lang = get().settings.language;
+        const modeKey = mode === 'time' ? 'dashboard.mode_time' : mode === 'amount' ? 'dashboard.mode_amount' : 'dashboard.mode_unlimited';
+        get().addToast('success', translate(lang, 'dashboard.started', { name: tableName, mode: translate(lang, modeKey) }));
       },
 
       endSession: (tableId) => {
@@ -720,18 +730,20 @@ export const useStore = create<AppStore>()(
 
         const session = table.currentSession;
         const endTime = Date.now();
-        const durationMinutes = Math.ceil((endTime - session.startTime) / 60000);
-        const tableCost = (typeof session.packagePrice === 'number' && Number.isFinite(session.packagePrice))
-          ? session.packagePrice
-          : calculateSessionTableCost(
-              session.startTime,
-              endTime,
-              table.pricePerHour,
-              table.priceSchedule,
-              session.mode,
-              session.fixedAmount,
-              session.packagePrice
-            );
+        // Тарифицируем только активное время (без пауз). Длительность — активные минуты,
+        // стоимость — по реальным интервалам игры (корректно с тарифной сеткой по времени суток).
+        const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
+        const durationMinutes = Math.ceil(activeMs / 60000);
+        const tableCost = calculatePausedSessionCost(
+          session.startTime,
+          endTime,
+          table.pricePerHour,
+          table.priceSchedule,
+          session.mode,
+          session.fixedAmount,
+          session.packagePrice,
+          session.pauseIntervals
+        );
 
         const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -773,7 +785,63 @@ export const useStore = create<AppStore>()(
         // Если не залогинены или сеть упала — буферим внутри cloudSync, повторим при sync.
         void cloudSync.pushSession(record, get().currentShift?.id ?? null);
 
-        get().addToast('info', `${table.name} завершён — ${tableCost + barCost} ${get().settings.currency}`);
+        get().addToast('info', translate(get().settings.language, 'dashboard.ended_toast', { name: table.name, sum: (tableCost + barCost).toLocaleString(), currency: get().settings.currency }));
+      },
+
+      pauseSession: (tableId) => {
+        const table = get().tables.find((t) => t.id === tableId);
+        if (!table || !table.currentSession || table.currentSession.pausedAt) return;
+        // Ставим на паузу: фиксируем момент, добавляем открытый интервал, гасим свет
+        const pauseStart = Date.now();
+        set((state) => ({
+          tables: state.tables.map((t) =>
+            t.id === tableId && t.currentSession
+              ? {
+                  ...t,
+                  lightOn: false,
+                  currentSession: {
+                    ...t.currentSession,
+                    pausedAt: pauseStart,
+                    pauseIntervals: [...(t.currentSession.pauseIntervals ?? []), { start: pauseStart, end: null }],
+                  },
+                }
+              : t
+          ),
+        }));
+        if (window.electronAPI?.arduino) {
+          window.electronAPI.arduino.setRelay(table.relayNumber, false).catch(console.error);
+        }
+        get().addToast('info', translate(get().settings.language, 'dashboard.paused_toast', { name: table.name }));
+      },
+
+      resumeSession: (tableId) => {
+        const table = get().tables.find((t) => t.id === tableId);
+        if (!table || !table.currentSession || !table.currentSession.pausedAt) return;
+        const resumeAt = Date.now();
+        const pausedFor = Math.max(0, resumeAt - table.currentSession.pausedAt);
+        // Снимаем с паузы: закрываем открытый интервал, копим время паузы, включаем свет
+        set((state) => ({
+          tables: state.tables.map((t) => {
+            if (t.id !== tableId || !t.currentSession) return t;
+            const intervals = (t.currentSession.pauseIntervals ?? []).map((iv) =>
+              iv.end === null ? { ...iv, end: resumeAt } : iv
+            );
+            return {
+              ...t,
+              lightOn: true,
+              currentSession: {
+                ...t.currentSession,
+                pausedAt: null,
+                totalPausedMs: (t.currentSession.totalPausedMs ?? 0) + pausedFor,
+                pauseIntervals: intervals,
+              },
+            };
+          }),
+        }));
+        if (window.electronAPI?.arduino) {
+          window.electronAPI.arduino.setRelay(table.relayNumber, true).catch(console.error);
+        }
+        get().addToast('success', translate(get().settings.language, 'dashboard.resumed_toast', { name: table.name }));
       },
 
       toggleLight: (tableId) => {
@@ -867,10 +935,13 @@ export const useStore = create<AppStore>()(
         let restoreCandidates = 0;
         
         tables.forEach((table) => {
-          // Восстанавливаем свет если:
+          // Стол на паузе должен оставаться без света даже после переподключения Arduino —
+          // иначе свет снова загорится, хотя UI показывает «⏸ Пауза».
+          const isPaused = !!table.currentSession?.pausedAt;
+          // Восстанавливаем свет если (и стол НЕ на паузе):
           // 1) он был включён в памяти ИЛИ
           // 2) стол занят активной сессией (должен быть освещён)
-          const shouldBeOn = table.lightOn || table.status === 'occupied' || !!table.currentSession;
+          const shouldBeOn = !isPaused && (table.lightOn || table.status === 'occupied' || !!table.currentSession);
           if (shouldBeOn) {
             restoreCandidates++;
             window.electronAPI!.arduino!.setRelay(table.relayNumber, true)
@@ -886,6 +957,12 @@ export const useStore = create<AppStore>()(
               .catch((err) => {
                 console.error(`[Arduino] ❌ Failed to restore light for ${table.name}:`, err);
               });
+          } else if (isPaused && table.lightOn) {
+            // Стол на паузе, но свет почему-то горит в памяти — гасим физически и в UI
+            window.electronAPI!.arduino!.setRelay(table.relayNumber, false).catch(() => {});
+            set((state) => ({
+              tables: state.tables.map((t) => (t.id === table.id ? { ...t, lightOn: false } : t)),
+            }));
           }
         });
         
@@ -980,7 +1057,7 @@ export const useStore = create<AppStore>()(
           playOrderSound();
         }
         if (!silent) {
-          get().addToast('success', `${menuItem.name} × ${quantity} добавлено`);
+          get().addToast('success', translate(get().settings.language, 'bar.added_toast', { name: menuItem.name, qty: quantity }));
         }
       },
 
@@ -1069,7 +1146,7 @@ export const useStore = create<AppStore>()(
         if (get().settings.soundEnabled) {
           playOrderSound();
         }
-        get().addToast('success', `Продажа: ${totalCost.toLocaleString()} ${get().settings.currency}`);
+        get().addToast('success', translate(get().settings.language, 'bar.sold_toast', { sum: totalCost.toLocaleString(), currency: get().settings.currency }));
       },
 
       updateStock: (menuItemId, delta) => {

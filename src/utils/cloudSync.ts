@@ -23,7 +23,7 @@
  */
 
 import type { BilliardTable, SessionRecord, Reservation } from '../types';
-import { calculateSessionTableCost } from './pricing';
+import { calculatePausedSessionCost } from './pricing';
 
 const STORAGE_KEY_TOKEN = 'cloudSync.token';
 const STORAGE_KEY_CLUB_ID = 'cloudSync.clubId';
@@ -48,6 +48,7 @@ interface TableSessionOut {
   tariffName?: string | null;
   currentTableCost?: number;
   currentBarCost?: number;
+  paused?: boolean;
 }
 
 interface ReservationOut {
@@ -293,13 +294,16 @@ function mapTables(tables: BilliardTable[], reservations: Reservation[]): TableS
           tariffName: session.tariffName ?? null,
           currentTableCost: typeof session.packagePrice === 'number' && Number.isFinite(session.packagePrice)
             ? Math.round(session.packagePrice)
-            : Math.round(calculateSessionTableCost(
-                session.startTime, now, t.pricePerHour, t.priceSchedule,
+            : Math.round(calculatePausedSessionCost(
+                session.startTime, now,
+                t.pricePerHour, t.priceSchedule,
                 session.mode, session.fixedAmount, session.packagePrice,
+                session.pauseIntervals,
               )),
           currentBarCost: Math.round(
             session.barOrders.reduce((sum, o) => sum + (o.price * o.quantity || 0), 0),
           ),
+          paused: !!session.pausedAt,
         }
       : null;
     const reservation = t.status === 'reserved'

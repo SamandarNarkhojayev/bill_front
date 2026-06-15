@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CircleDot, Eye, EyeOff, LogIn, AlertCircle, ChevronDown, Shield, Code, UserCheck } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -13,6 +14,7 @@ const getRoleLabel = (role: string) => {
 
 const LoginPage: React.FC = () => {
   const { login, users } = useStore();
+  const { t } = useT();
   const activeUsers = users.filter((u) => u.isActive);
   const [selectedUserId, setSelectedUserId] = useState(activeUsers[0]?.id || '');
   const [password, setPassword] = useState('');
@@ -102,12 +104,12 @@ const LoginPage: React.FC = () => {
             </div>
 
             <div className="login-field">
-              <label className="login-label">Пароль</label>
+              <label className="login-label">{t('auth.password')}</label>
               <div className="login-password-wrapper">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   className="login-input"
-                  placeholder="Введите пароль"
+                  placeholder={t('auth.placeholder_pass')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -133,7 +135,7 @@ const LoginPage: React.FC = () => {
               ) : (
                 <>
                   <LogIn size={18} />
-                  <span>Войти</span>
+                  <span>{t('auth.login')}</span>
                 </>
               )}
             </button>

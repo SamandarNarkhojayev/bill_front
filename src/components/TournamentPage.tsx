@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Trophy, Plus, Users, Grid, Settings as SettingsIcon, Play, Award, Trash2, Info, Camera, Upload } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import type { Tournament, BracketType, TournamentStatus, TournamentParticipant, TournamentMatch, MatchStatus, TournamentPlacement } from '../types';
 
 type ParticipantDraft = {
@@ -566,6 +567,7 @@ const fillGroupPlayoffNextRound = (
 
 const TournamentPage: React.FC = () => {
   const { settings, addToast, tournaments, addTournament, updateTournament, removeTournament } = useStore();
+  const { t } = useT();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [participantTournament, setParticipantTournament] = useState<Tournament | null>(null);
@@ -599,23 +601,23 @@ const TournamentPage: React.FC = () => {
 
   const handleCreateTournament = () => {
     if (!tournamentName.trim()) {
-      addToast('error', 'Введите название турнира');
+      addToast('error', t('tournaments.errorNameRequired'));
       return;
     }
 
     if (selectedTableIds.length === 0) {
-      addToast('error', 'Выберите хотя бы один стол');
+      addToast('error', t('tournaments.errorTableRequired'));
       return;
     }
 
     if (!Number.isFinite(participantCount) || participantCount < 2) {
-      addToast('error', 'Укажите минимум 2 участника');
+      addToast('error', t('tournaments.errorMinParticipants'));
       return;
     }
 
     const scheduledStartTime = new Date(`${scheduledDate}T${scheduledTime}:00`).getTime();
     if (!Number.isFinite(scheduledStartTime)) {
-      addToast('error', 'Укажите корректные дату и время начала');
+      addToast('error', t('tournaments.errorInvalidDateTime'));
       return;
     }
 
@@ -640,7 +642,7 @@ const TournamentPage: React.FC = () => {
     };
 
     addTournament(newTournament);
-    addToast('success', `Турнир "${tournamentName}" создан`);
+    addToast('success', t('tournaments.toastCreated', { name: tournamentName }));
     setShowCreateModal(false);
     resetForm();
   };
@@ -738,7 +740,7 @@ const TournamentPage: React.FC = () => {
     updateTournament(selectedTournament.id, { participants: orderedParticipants, matches });
     setSelectedTournament((prev) => prev ? { ...prev, participants: orderedParticipants, matches } : prev);
     setBracketPreviewMatches(matches);
-    addToast('success', 'Сетка сохранена');
+    addToast('success', t('tournaments.toastBracketSaved'));
   };
 
   const handleOpenAddParticipant = (tournament: Tournament) => {
@@ -798,7 +800,7 @@ const TournamentPage: React.FC = () => {
 
   const handleOpenCamera = async (index: number) => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      addToast('error', 'Камера не поддерживается на этом устройстве');
+      addToast('error', t('tournaments.errorCameraUnsupported'));
       return;
     }
 
@@ -814,8 +816,8 @@ const TournamentPage: React.FC = () => {
       cameraStreamRef.current = stream;
       setCameraRowIndex(index);
     } catch {
-      setCameraError('Не удалось получить доступ к камере. Проверьте разрешения.');
-      addToast('error', 'Нет доступа к камере');
+      setCameraError(t('tournaments.errorCameraAccessDetail'));
+      addToast('error', t('tournaments.errorCameraAccess'));
     } finally {
       setCameraLoading(false);
     }
@@ -836,7 +838,7 @@ const TournamentPage: React.FC = () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     handleParticipantFieldChange(cameraRowIndex, 'photo', dataUrl);
     stopCamera();
-    addToast('success', 'Фото сделано');
+    addToast('success', t('tournaments.toastPhotoCaptured'));
   };
 
   useEffect(() => {
@@ -867,13 +869,13 @@ const TournamentPage: React.FC = () => {
       .filter((p) => p.firstName || p.lastName || p.birthDate || p.phone || p.photo);
 
     if (prepared.length === 0) {
-      addToast('error', 'Заполните хотя бы одного участника');
+      addToast('error', t('tournaments.errorFillAtLeastOne'));
       return;
     }
 
     const invalid = prepared.find((p) => !p.firstName || !p.lastName);
     if (invalid) {
-      addToast('error', 'Для каждого участника нужны имя и фамилия');
+      addToast('error', t('tournaments.errorNameLastNameRequired'));
       return;
     }
 
@@ -882,7 +884,7 @@ const TournamentPage: React.FC = () => {
       (mode === 'fixed' || mode === 'max') &&
       participantTournament.participants.length + prepared.length > participantTournament.participantCount
     ) {
-      addToast('error', 'Лимит участников уже достигнут');
+      addToast('error', t('tournaments.errorLimitReached'));
       return;
     }
 
@@ -902,7 +904,7 @@ const TournamentPage: React.FC = () => {
     ];
 
     updateTournament(participantTournament.id, { participants: updatedParticipants });
-    addToast('success', `Добавлено участников: ${prepared.length}`);
+    addToast('success', t('tournaments.toastParticipantsAdded', { count: prepared.length }));
     setParticipantDrafts([emptyParticipantDraft()]);
     setParticipantTournament((prev) => prev ? { ...prev, participants: updatedParticipants } : prev);
   };
@@ -935,19 +937,19 @@ const TournamentPage: React.FC = () => {
     const target = tournament.participantCount;
 
     if (mode === 'fixed' && current !== target) {
-      addToast('error', `Для старта нужно ровно ${target} участников (сейчас ${current})`);
+      addToast('error', t('tournaments.errorStartFixed', { target, current }));
       return;
     }
     if (mode === 'min' && current < target) {
-      addToast('error', `Для старта нужно минимум ${target} участников (сейчас ${current})`);
+      addToast('error', t('tournaments.errorStartMin', { target, current }));
       return;
     }
     if (mode === 'max' && current > target) {
-      addToast('error', `Превышен максимум ${target} участников`);
+      addToast('error', t('tournaments.errorStartMax', { target }));
       return;
     }
     if (current < 2) {
-      addToast('error', 'Для старта нужно минимум 2 участника');
+      addToast('error', t('tournaments.errorStartMinTwo'));
       return;
     }
 
@@ -1004,7 +1006,7 @@ const TournamentPage: React.FC = () => {
       matches: preparedMatches,
       currentRound: startRound,
     });
-    addToast('success', `Турнир "${tournament.name}" начался!`);
+    addToast('success', t('tournaments.toastStarted', { name: tournament.name }));
   };
 
   const handleCompleteTournament = (tournament: Tournament) => {
@@ -1020,7 +1022,9 @@ const TournamentPage: React.FC = () => {
       winnerId: placements[0]?.participantId || finalMatch?.winner?.id,
       placements,
     });
-    addToast('success', `Турнир "${freshT.name}" завершён${placements[0] ? `. 🏆 Победитель: ${placements[0].participantName}` : ''}`);
+    addToast('success', placements[0]
+      ? t('tournaments.toastCompletedWithWinner', { name: freshT.name, winner: placements[0].participantName })
+      : t('tournaments.toastCompleted', { name: freshT.name }));
   };
 
   /* ── Открытие модалки записи счёта ── */
@@ -1039,11 +1043,11 @@ const TournamentPage: React.FC = () => {
     const s2 = parseInt(score2Input, 10);
 
     if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1 < 0 || s2 < 0) {
-      addToast('error', 'Введите корректный счёт');
+      addToast('error', t('tournaments.errorInvalidScore'));
       return;
     }
     if (s1 === s2) {
-      addToast('error', 'Счёт не может быть ничейным');
+      addToast('error', t('tournaments.errorDrawNotAllowed'));
       return;
     }
 
@@ -1110,7 +1114,7 @@ const TournamentPage: React.FC = () => {
         
         updates.matches = updatedMatches;
         updates.currentRound = nextRound;
-        addToast('success', `Раунд ${curRound} завершён! Переход к раунду ${nextRound}`);
+        addToast('success', t('tournaments.toastRoundDone', { current: curRound, next: nextRound }));
       } else {
         // Проверяем — не осталось ли необработанных матчей
         const unresolved = updatedMatches.filter(
@@ -1127,7 +1131,7 @@ const TournamentPage: React.FC = () => {
           updates.endTime = Date.now();
           updates.winnerId = placements[0]?.participantId || finalMatch?.winner?.id;
           updates.placements = placements;
-          addToast('success', `🏆 Турнир завершён! Победитель: ${placements[0]?.participantName || getParticipantLabel(finalMatch?.winner)}`);
+          addToast('success', t('tournaments.toastFinished', { winner: placements[0]?.participantName || getParticipantLabel(finalMatch?.winner) }));
         }
       }
     }
@@ -1147,14 +1151,14 @@ const TournamentPage: React.FC = () => {
     const curRoundMatches = selectedTournament.matches.filter((m) => m.round === curRound);
     const allDone = curRoundMatches.every((m) => m.matchStatus === 'completed' || m.matchStatus === 'bye');
     if (!allDone) {
-      addToast('info', `Сначала завершите все матчи раунда ${curRound}`);
+      addToast('info', t('tournaments.infoFinishRoundFirst', { round: curRound }));
       return;
     }
 
     const allRounds = Array.from(new Set(selectedTournament.matches.map((m) => m.round))).sort((a, b) => a - b);
     const nextRound = allRounds.find((r) => r > curRound);
     if (nextRound == null) {
-      addToast('info', 'Следующего раунда нет');
+      addToast('info', t('tournaments.infoNoNextRound'));
       return;
     }
 
@@ -1193,30 +1197,30 @@ const TournamentPage: React.FC = () => {
     updateTournament(selectedTournament.id, updates);
     setSelectedTournament((prev) => (prev ? { ...prev, ...updates } : prev));
     setBracketPreviewMatches(updatedMatches);
-    addToast('success', `Сформирован и запущен раунд ${nextRound}`);
+    addToast('success', t('tournaments.toastRoundStarted', { round: nextRound }));
   };
 
   const handleDeleteTournament = (tournamentId: string) => {
-    if (confirm('Удалить турнир?')) {
+    if (confirm(t('tournaments.confirmDelete'))) {
       removeTournament(tournamentId);
-      addToast('success', 'Турнир удален');
+      addToast('success', t('tournaments.toastDeleted'));
     }
   };
 
   const getBracketTypeName = (type: BracketType) => {
     switch (type) {
       case 'single-elimination':
-        return 'Одиночная олимпийская';
+        return t('tournaments.bracketSingleElim');
       case 'double-elimination':
-        return 'Двойная олимпийская';
+        return t('tournaments.bracketDoubleElim');
       case 'round-robin':
-        return 'Круговая';
+        return t('tournaments.bracketRoundRobin');
       case 'swiss':
-        return 'Швейцарская система';
+        return t('tournaments.bracketSwiss');
       case 'group-playoff':
-        return 'Группы + плей-офф';
+        return t('tournaments.bracketGroupPlayoff');
       case 'page-playoff':
-        return 'Page playoff (топ-4)';
+        return t('tournaments.bracketPagePlayoff');
       default:
         return type;
     }
@@ -1240,13 +1244,13 @@ const TournamentPage: React.FC = () => {
   const getStatusName = (status: TournamentStatus) => {
     switch (status) {
       case 'draft':
-        return 'Черновик';
+        return t('tournaments.statusDraft');
       case 'active':
-        return 'Активен';
+        return t('tournaments.statusActive');
       case 'completed':
-        return 'Завершен';
+        return t('tournaments.statusCompleted');
       case 'cancelled':
-        return 'Отменен';
+        return t('tournaments.statusCancelled');
       default:
         return status;
     }
@@ -1258,13 +1262,13 @@ const TournamentPage: React.FC = () => {
         <div className="page-header-left">
           <Trophy size={28} className="text-yellow-500" />
           <div>
-            <h1 className="page-title">Турниры</h1>
-            <p className="page-subtitle">Управление турнирами и турнирными сетками</p>
+            <h1 className="page-title">{t('tournaments.pageTitle')}</h1>
+            <p className="page-subtitle">{t('tournaments.pageSubtitle')}</p>
           </div>
         </div>
         <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
           <Plus size={18} />
-          Создать турнир
+          {t('tournaments.createTournament')}
         </button>
       </div>
 
@@ -1279,8 +1283,8 @@ const TournamentPage: React.FC = () => {
           textAlign: 'center'
         }}>
           <Trophy size={64} style={{ marginBottom: 16, opacity: 0.3 }} />
-          <p style={{ fontSize: 16, marginBottom: 8 }}>Нет турниров</p>
-          <p style={{ fontSize: 14 }}>Создайте первый турнир для начала работы</p>
+          <p style={{ fontSize: 16, marginBottom: 8 }}>{t('tournaments.emptyTitle')}</p>
+          <p style={{ fontSize: 14 }}>{t('tournaments.emptyHint')}</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
@@ -1330,7 +1334,7 @@ const TournamentPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                   <Users size={14} />
                   <span>
-                    Участников: {tournament.participants.length > 0
+                    {t('tournaments.participantsLabel')}: {tournament.participants.length > 0
                       ? `${tournament.participants.length}/${tournament.participantCount}`
                       : tournament.participantCount}
                   </span>
@@ -1338,20 +1342,20 @@ const TournamentPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                   <Users size={14} />
                   <span>
-                    Режим участников: {tournament.participantCountMode === 'min'
-                      ? 'минимум'
+                    {t('tournaments.participantsModeLabel')}: {tournament.participantCountMode === 'min'
+                      ? t('tournaments.modeMin')
                       : tournament.participantCountMode === 'max'
-                        ? 'максимум'
-                        : 'фикс'}
+                        ? t('tournaments.modeMax')
+                        : t('tournaments.modeFixed')}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                   <SettingsIcon size={14} />
-                  <span>Начало: {formatDateTime(tournament.scheduledStartTime)}</span>
+                  <span>{t('tournaments.startLabel')}: {formatDateTime(tournament.scheduledStartTime)}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                   <Grid size={14} />
-                  <span>Столов: {tournament.tableIds.length}</span>
+                  <span>{t('tournaments.tablesLabel')}: {tournament.tableIds.length}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                   <SettingsIcon size={14} />
@@ -1360,13 +1364,13 @@ const TournamentPage: React.FC = () => {
                 {tournament.entryFee && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
                     <Award size={14} />
-                    <span>Взнос: {tournament.entryFee} {settings.currency}</span>
+                    <span>{t('tournaments.entryFeeLabel')}: {tournament.entryFee} {settings.currency}</span>
                   </div>
                 )}
                 {tournament.prizeFund && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fbbf24' }}>
                     <Trophy size={14} />
-                    <span>Призовой фонд: {tournament.prizeFund} {settings.currency}</span>
+                    <span>{t('tournaments.prizeFundLabel')}: {tournament.prizeFund} {settings.currency}</span>
                   </div>
                 )}
               </div>
@@ -1383,7 +1387,7 @@ const TournamentPage: React.FC = () => {
                   }
                 >
                   <Users size={14} />
-                  Участники
+                  {t('tournaments.participantsButton')}
                 </button>
                 {tournament.status === 'active' && (
                   <button
@@ -1392,7 +1396,7 @@ const TournamentPage: React.FC = () => {
                     style={{ flex: 1, fontSize: 13, padding: '8px' }}
                   >
                     <Grid size={14} />
-                    Сетка
+                    {t('tournaments.bracketButton')}
                   </button>
                 )}
                 {tournament.status === 'draft' && (
@@ -1402,7 +1406,7 @@ const TournamentPage: React.FC = () => {
                     style={{ flex: 1, fontSize: 13, padding: '8px' }}
                   >
                     <Play size={14} />
-                    Начать
+                    {t('tournaments.startButton')}
                   </button>
                 )}
                 {tournament.status === 'active' && (
@@ -1412,7 +1416,7 @@ const TournamentPage: React.FC = () => {
                     style={{ flex: 1, fontSize: 13, padding: '8px', color: '#fbbf24' }}
                   >
                     <Award size={14} />
-                    Завершить
+                    {t('tournaments.completeButton')}
                   </button>
                 )}
               </div>
@@ -1438,7 +1442,7 @@ const TournamentPage: React.FC = () => {
                     gap: 10,
                     flexWrap: 'wrap',
                   }}>
-                    <span style={{ color: '#10b981', fontWeight: 600 }}>Раунд {cr}/{totalR}</span>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>{t('tournaments.roundShort')} {cr}/{totalR}</span>
                     <span>⚡ {inProg}</span>
                     <span>✅ {crDone}/{crMatches.length}</span>
                   </div>
@@ -1458,7 +1462,7 @@ const TournamentPage: React.FC = () => {
                   flexDirection: 'column',
                   gap: 6,
                 }}>
-                  <div style={{ color: '#fbbf24', fontWeight: 700 }}>🏆 Итоги турнира</div>
+                  <div style={{ color: '#fbbf24', fontWeight: 700 }}>🏆 {t('tournaments.resultsTitle')}</div>
                   <div style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {tournament.placements.map((p) => (
                       <div key={`${tournament.id}-${p.place}-${p.participantId}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1484,24 +1488,24 @@ const TournamentPage: React.FC = () => {
             style={{ maxWidth: 600, maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}
           >
             <div className="modal-header">
-              <h3>Создать турнир</h3>
+              <h3>{t('tournaments.createTournament')}</h3>
               <button onClick={() => setShowCreateModal(false)} className="modal-close-btn">×</button>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', minHeight: 0 }}>
               <div className="settings-field">
-                <label className="settings-label">Название турнира</label>
+                <label className="settings-label">{t('tournaments.nameLabel')}</label>
                 <input
                   type="text"
                   value={tournamentName}
                   onChange={(e) => setTournamentName(e.target.value)}
                   className="form-input"
-                  placeholder="Летний кубок 2026"
+                  placeholder={t('tournaments.namePlaceholder')}
                 />
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">Количество участников</label>
+                <label className="settings-label">{t('tournaments.participantCountLabel')}</label>
                 <input
                   type="number"
                   value={participantCount}
@@ -1509,27 +1513,27 @@ const TournamentPage: React.FC = () => {
                   className="form-input"
                   min="2"
                   step="1"
-                  placeholder="Например: 12"
+                  placeholder={t('tournaments.participantCountPlaceholder')}
                 />
-                <p className="settings-hint">Минимум 2 участника.</p>
+                <p className="settings-hint">{t('tournaments.minTwoHint')}</p>
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">Режим количества участников</label>
+                <label className="settings-label">{t('tournaments.participantCountModeLabel')}</label>
                 <select
                   value={participantCountMode}
                   onChange={(e) => setParticipantCountMode(e.target.value as 'fixed' | 'min' | 'max')}
                   className="form-input"
                 >
-                  <option value="fixed">Фиксированно (ровно N)</option>
-                  <option value="min">Минимум (не менее N)</option>
-                  <option value="max">Максимум (не более N)</option>
+                  <option value="fixed">{t('tournaments.modeFixedOption')}</option>
+                  <option value="min">{t('tournaments.modeMinOption')}</option>
+                  <option value="max">{t('tournaments.modeMaxOption')}</option>
                 </select>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="settings-field">
-                  <label className="settings-label">Дата начала турнира</label>
+                  <label className="settings-label">{t('tournaments.startDateLabel')}</label>
                   <input
                     type="date"
                     value={scheduledDate}
@@ -1538,7 +1542,7 @@ const TournamentPage: React.FC = () => {
                   />
                 </div>
                 <div className="settings-field">
-                  <label className="settings-label">Время начала турнира</label>
+                  <label className="settings-label">{t('tournaments.startTimeLabel')}</label>
                   <input
                     type="time"
                     value={scheduledTime}
@@ -1550,7 +1554,7 @@ const TournamentPage: React.FC = () => {
 
               <div className="settings-field">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                  <label className="settings-label" style={{ marginBottom: 0 }}>Тип турнира</label>
+                  <label className="settings-label" style={{ marginBottom: 0 }}>{t('tournaments.bracketTypeLabel')}</label>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
@@ -1558,7 +1562,7 @@ const TournamentPage: React.FC = () => {
                     style={{ padding: '4px 8px' }}
                   >
                     <Info size={14} />
-                    Что это?
+                    {t('tournaments.whatIsThis')}
                   </button>
                 </div>
                 <select
@@ -1566,30 +1570,30 @@ const TournamentPage: React.FC = () => {
                   onChange={(e) => setBracketType(e.target.value as BracketType)}
                   className="form-input"
                 >
-                  <option value="single-elimination">Одиночная олимпийская</option>
-                  <option value="double-elimination">Двойная олимпийская</option>
-                  <option value="round-robin">Круговая</option>
-                  <option value="swiss">Швейцарская система</option>
-                  <option value="group-playoff">Группы + плей-офф</option>
-                  <option value="page-playoff">Page playoff (топ-4)</option>
+                  <option value="single-elimination">{t('tournaments.bracketSingleElim')}</option>
+                  <option value="double-elimination">{t('tournaments.bracketDoubleElim')}</option>
+                  <option value="round-robin">{t('tournaments.bracketRoundRobin')}</option>
+                  <option value="swiss">{t('tournaments.bracketSwiss')}</option>
+                  <option value="group-playoff">{t('tournaments.bracketGroupPlayoff')}</option>
+                  <option value="page-playoff">{t('tournaments.bracketPagePlayoff')}</option>
                 </select>
                 {showBracketHelp && (
                   <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
-                    <div>• <b>Одиночная олимпийская</b>: проиграл — вылетел.</div>
-                    <div>• <b>Двойная олимпийская</b>: вылет после двух поражений.</div>
-                    <div>• <b>Круговая</b>: каждый играет с каждым.</div>
-                    <div>• <b>Швейцарская</b>: фикс. число туров, пары по текущему результату, без повторных встреч.</div>
-                    <div>• <b>Группы + плей-офф</b>: сначала группы, затем лучшие выходят в олимпийку.</div>
-                    <div>• <b>Page playoff (топ-4)</b>: 1–2 играют за финал, 3–4 на вылет, у топ-2 «вторая жизнь».</div>
+                    <div>• <b>{t('tournaments.bracketSingleElim')}</b>: {t('tournaments.helpSingleElim')}</div>
+                    <div>• <b>{t('tournaments.bracketDoubleElim')}</b>: {t('tournaments.helpDoubleElim')}</div>
+                    <div>• <b>{t('tournaments.bracketRoundRobin')}</b>: {t('tournaments.helpRoundRobin')}</div>
+                    <div>• <b>{t('tournaments.bracketSwissShort')}</b>: {t('tournaments.helpSwiss')}</div>
+                    <div>• <b>{t('tournaments.bracketGroupPlayoff')}</b>: {t('tournaments.helpGroupPlayoff')}</div>
+                    <div>• <b>{t('tournaments.bracketPagePlayoff')}</b>: {t('tournaments.helpPagePlayoff')}</div>
                     <div style={{ marginTop: 6, color: '#93c5fd' }}>
-                      Участники добавляются с карточки турнира кнопкой «Добавить участника».
+                      {t('tournaments.helpAddParticipants')}
                     </div>
                   </div>
                 )}
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">Столы для турнира</label>
+                <label className="settings-label">{t('tournaments.tablesForTournamentLabel')}</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                   {activeTables.map(table => (
                     <button
@@ -1615,7 +1619,7 @@ const TournamentPage: React.FC = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="settings-field">
-                  <label className="settings-label">Вступительный взнос</label>
+                  <label className="settings-label">{t('tournaments.entryFeeFieldLabel')}</label>
                   <input
                     type="number"
                     value={entryFee}
@@ -1627,7 +1631,7 @@ const TournamentPage: React.FC = () => {
                 </div>
 
                 <div className="settings-field">
-                  <label className="settings-label">Призовой фонд</label>
+                  <label className="settings-label">{t('tournaments.prizeFundFieldLabel')}</label>
                   <input
                     type="number"
                     value={prizeFund}
@@ -1640,7 +1644,7 @@ const TournamentPage: React.FC = () => {
               </div>
 
               <div className="settings-field" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <label className="settings-label">Призовые места и призы</label>
+                <label className="settings-label">{t('tournaments.prizePlacesLabel')}</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 10 }}>
                   <input
                     type="number"
@@ -1658,13 +1662,13 @@ const TournamentPage: React.FC = () => {
                     min="1"
                     max="16"
                   />
-                  <div className="settings-hint" style={{ margin: 0, alignSelf: 'center' }}>Сколько мест награждается</div>
+                  <div className="settings-hint" style={{ margin: 0, alignSelf: 'center' }}>{t('tournaments.prizePlacesHint')}</div>
                 </div>
 
                 <div style={{ display: 'grid', gap: 8 }}>
                   {Array.from({ length: prizePlacesCount }).map((_, idx) => (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 8 }}>
-                      <div className="settings-hint" style={{ margin: 0, alignSelf: 'center' }}>{idx + 1} место</div>
+                      <div className="settings-hint" style={{ margin: 0, alignSelf: 'center' }}>{t('tournaments.placeLabel', { place: idx + 1 })}</div>
                       <input
                         type="text"
                         value={prizePlaceRewards[idx] || ''}
@@ -1677,23 +1681,23 @@ const TournamentPage: React.FC = () => {
                           });
                         }}
                         className="form-input"
-                        placeholder={idx === 0 ? `Напр. 10 000 ${settings.currency}` : `Приз за ${idx + 1} место`}
+                        placeholder={idx === 0 ? t('tournaments.prizePlaceholderFirst', { currency: settings.currency }) : t('tournaments.prizePlaceholderOther', { place: idx + 1 })}
                       />
                     </div>
                   ))}
                 </div>
               </div>
 
-              <p className="settings-hint">Участники добавляются позже из карточки турнира кнопкой «Добавить участника».</p>
+              <p className="settings-hint">{t('tournaments.addParticipantsLaterHint')}</p>
             </div>
 
             <div className="modal-footer">
               <button onClick={() => setShowCreateModal(false)} className="btn btn-ghost">
-                Отмена
+                {t('tournaments.cancel')}
               </button>
               <button onClick={handleCreateTournament} className="btn btn-primary">
                 <Plus size={16} />
-                Создать турнир
+                {t('tournaments.createTournament')}
               </button>
             </div>
           </div>
@@ -1737,7 +1741,7 @@ const TournamentPage: React.FC = () => {
                 }}>
                   <span style={{ fontSize: 28 }}>🏆</span>
                   <div>
-                    <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Победитель турнира</div>
+                    <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('tournaments.tournamentWinner')}</div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: '#fde68a', marginTop: 2 }}>
                       {getParticipantLabel(selectedTournament.participants.find(p => p.id === selectedTournament.winnerId))}
                     </div>
@@ -1756,7 +1760,7 @@ const TournamentPage: React.FC = () => {
                   gap: 8,
                 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                    Итоговые места
+                    {t('tournaments.finalPlaces')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
                     {selectedTournament.placements.map((p) => (
@@ -1806,15 +1810,15 @@ const TournamentPage: React.FC = () => {
                         boxShadow: '0 0 8px rgba(16,185,129,0.6)', animation: 'pulse 2s infinite',
                       }} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#10b981' }}>
-                        Раунд {cr} из {totalRounds}
+                        {t('tournaments.roundOf', { current: cr, total: totalRounds })}
                       </span>
                     </div>
                     <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#94a3b8' }}>
-                      <span>⚡ Идёт: <b style={{ color: '#fbbf24' }}>{inProgress}</b></span>
-                      <span>✅ Завершено: <b style={{ color: '#10b981' }}>{crDone}</b>/{crTotal}</span>
+                      <span>⚡ {t('tournaments.inProgressLabel')}: <b style={{ color: '#fbbf24' }}>{inProgress}</b></span>
+                      <span>✅ {t('tournaments.doneLabel')}: <b style={{ color: '#10b981' }}>{crDone}</b>/{crTotal}</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>
-                      Нажмите на активный матч для записи результата
+                      {t('tournaments.clickMatchHint')}
                     </div>
                     {canAdvance && (
                       <button
@@ -1822,7 +1826,7 @@ const TournamentPage: React.FC = () => {
                         className="btn btn-primary btn-sm"
                         style={{ marginLeft: 'auto', borderRadius: 8, fontSize: 11 }}
                       >
-                        ▶ Запустить раунд {cr + 1}
+                        ▶ {t('tournaments.startRoundButton', { round: cr + 1 })}
                       </button>
                     )}
                   </div>
@@ -1841,27 +1845,27 @@ const TournamentPage: React.FC = () => {
                   border: '1px solid rgba(99,102,241,0.1)',
                 }}>
                   <span style={{ color: '#93c5fd', fontWeight: 600 }}>ℹ️ </span>
-                  Сетка формируется автоматически по типу турнира и числу участников.
+                  {t('tournaments.draftAutoBracketInfo')}
                 </div>
               )}
 
               {selectedTournament.status === 'draft' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, border: '1px solid rgba(99,102,241,0.15)', borderRadius: 14, padding: 14, background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.7))' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                    <div className="bracket-section-title" style={{ marginBottom: 0 }}>Посев и пары (до старта)</div>
+                    <div className="bracket-section-title" style={{ marginBottom: 0 }}>{t('tournaments.seedingTitle')}</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-ghost btn-sm" onClick={handleShuffleSeeds} style={{ borderRadius: 8, fontSize: 11 }}>
-                        🎲 Пересеять
+                        🎲 {t('tournaments.reshuffle')}
                       </button>
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() => regenerateBracket(selectedTournament, bracketSeedSlots)}
                         style={{ borderRadius: 8, fontSize: 11 }}
                       >
-                        🔄 Обновить
+                        🔄 {t('tournaments.refresh')}
                       </button>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveBracket} style={{ borderRadius: 8, fontSize: 11 }}>
-                        💾 Сохранить
+                        💾 {t('tournaments.save')}
                       </button>
                     </div>
                   </div>
@@ -1893,7 +1897,7 @@ const TournamentPage: React.FC = () => {
                             background: 'rgba(255,255,255,0.02)',
                             borderBottom: '1px solid rgba(255,255,255,0.04)',
                           }}>
-                            Пара #{pairIndex + 1}
+                            {t('tournaments.pairLabel', { number: pairIndex + 1 })}
                           </div>
                           {[a, b].map((slot, idx) => {
                             const seedIndex = i + idx;
@@ -1942,13 +1946,13 @@ const TournamentPage: React.FC = () => {
                                     className="btn btn-ghost btn-sm"
                                     onClick={() => handleMoveSeed(seedIndex, -1)}
                                     style={{ padding: '2px 5px', fontSize: 11, borderRadius: 5, opacity: 0.6 }}
-                                    title="Переместить вверх"
+                                    title={t('tournaments.moveUp')}
                                   >↑</button>
                                   <button
                                     className="btn btn-ghost btn-sm"
                                     onClick={() => handleMoveSeed(seedIndex, 1)}
                                     style={{ padding: '2px 5px', fontSize: 11, borderRadius: 5, opacity: 0.6 }}
-                                    title="Переместить вниз"
+                                    title={t('tournaments.moveDown')}
                                   >↓</button>
                                 </div>
                               </div>
@@ -1960,7 +1964,7 @@ const TournamentPage: React.FC = () => {
                               onClick={() => handleSwapInsidePair(pairIndex)}
                               style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: '#94a3b8' }}
                             >
-                              ⇅ Обмен
+                              ⇅ {t('tournaments.swapInside')}
                             </button>
                             <div style={{ width: 1, background: 'rgba(255,255,255,0.04)' }} />
                             <button
@@ -1968,7 +1972,7 @@ const TournamentPage: React.FC = () => {
                               onClick={() => handleSwapPairs(pairIndex)}
                               style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: '#94a3b8' }}
                             >
-                              ⇄ Сменить
+                              ⇄ {t('tournaments.swapPairs')}
                             </button>
                           </div>
                         </div>
@@ -1979,11 +1983,11 @@ const TournamentPage: React.FC = () => {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="bracket-section-title">Предпросмотр сетки</div>
+                <div className="bracket-section-title">{t('tournaments.bracketPreviewTitle')}</div>
                 {bracketPreviewMatches.length === 0 ? (
                   <div className="bracket-empty">
                     <div className="bracket-empty-icon"><Trophy size={22} /></div>
-                    <div className="bracket-empty-text">Недостаточно участников для генерации сетки. Добавьте участников на карточке турнира.</div>
+                    <div className="bracket-empty-text">{t('tournaments.bracketEmptyText')}</div>
                   </div>
                 ) : (selectedTournament.bracketType === 'single-elimination' || selectedTournament.bracketType === 'double-elimination') ? (
                   /* ── Tree-style bracket for elimination types ── */
@@ -1993,12 +1997,12 @@ const TournamentPage: React.FC = () => {
 
                     const getRoundLabel = (roundIndex: number, totalR: number) => {
                       const fromEnd = totalR - roundIndex;
-                      if (fromEnd === 1) return '🏆 Финал';
-                      if (fromEnd === 2) return 'Полуфинал';
-                      if (fromEnd === 3) return '1/4 финала';
-                      if (fromEnd === 4) return '1/8 финала';
-                      if (fromEnd === 5) return '1/16 финала';
-                      return `Раунд ${roundIndex + 1}`;
+                      if (fromEnd === 1) return `🏆 ${t('tournaments.roundFinal')}`;
+                      if (fromEnd === 2) return t('tournaments.roundSemifinal');
+                      if (fromEnd === 3) return t('tournaments.roundQuarterfinal');
+                      if (fromEnd === 4) return t('tournaments.roundEighthfinal');
+                      if (fromEnd === 5) return t('tournaments.roundSixteenthfinal');
+                      return t('tournaments.roundNumber', { number: roundIndex + 1 });
                     };
 
                     return (
@@ -2028,11 +2032,11 @@ const TournamentPage: React.FC = () => {
                                         style={{ cursor: isClickable ? 'pointer' : 'default' }}
                                       >
                                         <div className="bracket-match-number" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                          <span>{isFinal ? '★ Финал' : `Матч ${match.matchNumber}`}</span>
+                                          <span>{isFinal ? `★ ${t('tournaments.roundFinal')}` : t('tournaments.matchLabel', { number: match.matchNumber })}</span>
                                           {isByeMatch && <span style={{ fontSize: 9, color: '#94a3b8', fontStyle: 'italic' }}>BYE</span>}
                                           {match.tableNumber && isActive && (
                                             <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '1px 6px', borderRadius: 4 }}>
-                                              Стол #{match.tableNumber}
+                                              {t('tournaments.tableHash', { number: match.tableNumber })}
                                             </span>
                                           )}
                                         </div>
@@ -2046,7 +2050,7 @@ const TournamentPage: React.FC = () => {
                                           )}
                                         </div>
                                         <div className="bracket-match-vs">
-                                          {isActive ? '⚡ Идёт' : isCompleted && match.score1 != null ? `${match.score1} : ${match.score2}` : 'VS'}
+                                          {isActive ? `⚡ ${t('tournaments.inProgressShort')}` : isCompleted && match.score1 != null ? `${match.score1} : ${match.score2}` : 'VS'}
                                         </div>
                                         <div className={`bracket-match-player${!match.participant2 ? ' is-tbd' : ''}${match.winner?.id === match.participant2?.id ? ' is-winner' : ''}`}>
                                           <span className="bracket-match-seed">
@@ -2096,10 +2100,10 @@ const TournamentPage: React.FC = () => {
                       const roundMatches = bracketPreviewMatches.filter((m) => m.round === round);
                       const isPagePlayoff = selectedTournament.bracketType === 'page-playoff';
                       const roundLabel = isPagePlayoff
-                        ? (round === 1 ? 'Первый раунд' : round === 2 ? 'Второй шанс' : 'Финал')
+                        ? (round === 1 ? t('tournaments.pageFirstRound') : round === 2 ? t('tournaments.pageSecondChance') : t('tournaments.roundFinal'))
                         : selectedTournament.bracketType === 'swiss'
-                          ? `Тур ${round}`
-                          : `Раунд ${round}`;
+                          ? t('tournaments.swissRound', { number: round })
+                          : t('tournaments.roundNumber', { number: round });
 
                       return (
                         <div key={round} className="bracket-round-card">
@@ -2107,7 +2111,7 @@ const TournamentPage: React.FC = () => {
                             <span className="round-icon">{round}</span>
                             {roundLabel}
                             <span style={{ marginLeft: 'auto', fontSize: 10, color: '#64748b', fontWeight: 400 }}>
-                              {roundMatches.length} {roundMatches.length === 1 ? 'матч' : roundMatches.length < 5 ? 'матча' : 'матчей'}
+                              {roundMatches.length} {roundMatches.length === 1 ? t('tournaments.matchesOne') : roundMatches.length < 5 ? t('tournaments.matchesFew') : t('tournaments.matchesMany')}
                             </span>
                           </div>
                           <div className="bracket-round-card-body">
@@ -2124,11 +2128,11 @@ const TournamentPage: React.FC = () => {
                                 style={{ cursor: isClickable ? 'pointer' : 'default' }}
                               >
                                 <div className="bracket-grid-match-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span>Матч #{match.matchNumber}</span>
+                                  <span>{t('tournaments.matchHash', { number: match.matchNumber })}</span>
                                   {isByeMatch && <span style={{ fontSize: 9, color: '#94a3b8' }}>BYE</span>}
                                   {match.tableId && isActive && (
                                     <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '1px 6px', borderRadius: 4 }}>
-                                      Стол {match.tableId}
+                                      {t('tournaments.tableLabel', { number: match.tableId })}
                                     </span>
                                   )}
                                   {isCompleted && match.score1 != null && (
@@ -2167,13 +2171,13 @@ const TournamentPage: React.FC = () => {
             <div className="modal-footer">
               {selectedTournament.status === 'draft' && (
                 <button onClick={handleSaveBracket} className="btn btn-primary">
-                  Сохранить перед стартом
+                  {t('tournaments.saveBeforeStart')}
                 </button>
               )}
               {selectedTournament.status === 'active' && (
                 <button
                   onClick={() => {
-                    if (confirm('Вы уверены? Незавершённые матчи будут проигнорированы.')) {
+                    if (confirm(t('tournaments.confirmComplete'))) {
                       handleCompleteTournament(selectedTournament);
                       setSelectedTournament(prev => prev ? { ...prev, status: 'completed' as TournamentStatus, endTime: Date.now() } : prev);
                     }
@@ -2182,11 +2186,11 @@ const TournamentPage: React.FC = () => {
                   style={{ color: '#fbbf24' }}
                 >
                   <Award size={16} />
-                  Завершить турнир
+                  {t('tournaments.completeTournament')}
                 </button>
               )}
               <button onClick={() => { setSelectedTournament(null); setActiveMatch(null); }} className="btn btn-ghost">
-                Закрыть
+                {t('tournaments.close')}
               </button>
             </div>
           </div>
@@ -2198,16 +2202,16 @@ const TournamentPage: React.FC = () => {
         <div className="modal-overlay" onClick={closeParticipantModal}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3>Добавить участника</h3>
+              <h3>{t('tournaments.addParticipantTitle')}</h3>
               <button onClick={closeParticipantModal} className="modal-close-btn">×</button>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p className="settings-hint" style={{ marginBottom: 4 }}>
-                Турнир: <b>{participantTournament.name}</b>
+                {t('tournaments.tournamentNamePrefix')}: <b>{participantTournament.name}</b>
               </p>
               <p className="settings-hint">
-                Заполнено мест: {participantTournament.participants.length}/{participantTournament.participantCount}
+                {t('tournaments.filledSlots')}: {participantTournament.participants.length}/{participantTournament.participantCount}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: '50vh', overflowY: 'auto', paddingRight: 4 }}>
                 {participantDrafts.map((row, index) => (
@@ -2224,7 +2228,7 @@ const TournamentPage: React.FC = () => {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="settings-hint">Участник #{index + 1}</span>
+                      <span className="settings-hint">{t('tournaments.participantHash', { number: index + 1 })}</span>
                       {participantDrafts.length > 1 && (
                         <button
                           type="button"
@@ -2232,7 +2236,7 @@ const TournamentPage: React.FC = () => {
                           onClick={() => handleRemoveParticipantRow(index)}
                           style={{ padding: '4px 8px', color: '#ef4444' }}
                         >
-                          Удалить
+                          {t('tournaments.remove')}
                         </button>
                       )}
                     </div>
@@ -2243,14 +2247,14 @@ const TournamentPage: React.FC = () => {
                         value={row.firstName}
                         onChange={(e) => handleParticipantFieldChange(index, 'firstName', e.target.value)}
                         className="form-input"
-                        placeholder="Имя"
+                        placeholder={t('tournaments.firstNamePlaceholder')}
                       />
                       <input
                         type="text"
                         value={row.lastName}
                         onChange={(e) => handleParticipantFieldChange(index, 'lastName', e.target.value)}
                         className="form-input"
-                        placeholder="Фамилия"
+                        placeholder={t('tournaments.lastNamePlaceholder')}
                       />
                     </div>
 
@@ -2262,7 +2266,7 @@ const TournamentPage: React.FC = () => {
                         value={row.birthDate}
                         onChange={(e) => handleParticipantFieldChange(index, 'birthDate', e.target.value)}
                         className="form-input"
-                        placeholder="Дата рождения"
+                        placeholder={t('tournaments.birthDatePlaceholder')}
                       />
                       <input
                         type="tel"
@@ -2274,7 +2278,7 @@ const TournamentPage: React.FC = () => {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <label className="settings-label" style={{ marginBottom: 0 }}>Фото</label>
+                      <label className="settings-label" style={{ marginBottom: 0 }}>{t('tournaments.photoLabel')}</label>
                       <div
                         style={{
                           border: '1px dashed rgba(255,255,255,0.24)',
@@ -2312,8 +2316,8 @@ const TournamentPage: React.FC = () => {
                             </div>
                           )}
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>Фото участника</span>
-                            <span className="settings-hint" style={{ margin: 0 }}>Камера или загрузка из файла</span>
+                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>{t('tournaments.participantPhoto')}</span>
+                            <span className="settings-hint" style={{ margin: 0 }}>{t('tournaments.cameraOrFileHint')}</span>
                           </div>
                         </div>
 
@@ -2325,11 +2329,11 @@ const TournamentPage: React.FC = () => {
                             style={{ padding: '6px 10px' }}
                           >
                             <Camera size={14} />
-                            Камера
+                            {t('tournaments.cameraButton')}
                           </button>
                           <label className="btn btn-ghost btn-sm" style={{ padding: '6px 10px', cursor: 'pointer' }}>
                             <Upload size={14} />
-                            Файл
+                            {t('tournaments.fileButton')}
                             <input
                               type="file"
                               accept="image/*"
@@ -2351,13 +2355,13 @@ const TournamentPage: React.FC = () => {
                 style={{ alignSelf: 'flex-start' }}
               >
                 <Plus size={14} />
-                Добавить ещё участника
+                {t('tournaments.addAnotherParticipant')}
               </button>
             </div>
 
             <div className="modal-footer">
               <button onClick={closeParticipantModal} className="btn btn-ghost">
-                Отмена
+                {t('tournaments.cancel')}
               </button>
               <button
                 onClick={handleAddParticipant}
@@ -2368,7 +2372,7 @@ const TournamentPage: React.FC = () => {
                 }
               >
                 <Plus size={16} />
-                Добавить
+                {t('tournaments.add')}
               </button>
             </div>
           </div>
@@ -2379,11 +2383,11 @@ const TournamentPage: React.FC = () => {
         <div className="modal-overlay" onClick={stopCamera}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
             <div className="modal-header">
-              <h3>Сделать фото</h3>
+              <h3>{t('tournaments.takePhotoTitle')}</h3>
               <button onClick={stopCamera} className="modal-close-btn">×</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {cameraLoading && <p className="settings-hint">Запуск камеры...</p>}
+              {cameraLoading && <p className="settings-hint">{t('tournaments.cameraStarting')}</p>}
               {cameraError && (
                 <div style={{ fontSize: 13, color: '#fca5a5' }}>{cameraError}</div>
               )}
@@ -2398,10 +2402,10 @@ const TournamentPage: React.FC = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button onClick={stopCamera} className="btn btn-ghost">Отмена</button>
+              <button onClick={stopCamera} className="btn btn-ghost">{t('tournaments.cancel')}</button>
               <button onClick={handleCaptureFromCamera} className="btn btn-primary" disabled={cameraLoading}>
                 <Camera size={16} />
-                Сфотографировать
+                {t('tournaments.capturePhoto')}
               </button>
             </div>
           </div>
@@ -2415,14 +2419,14 @@ const TournamentPage: React.FC = () => {
             <div className="modal-header">
               <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Award size={18} style={{ color: '#fbbf24' }} />
-                Записать результат
+                {t('tournaments.recordResultTitle')}
               </h3>
               <button onClick={() => setActiveMatch(null)} className="modal-close-btn">×</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div style={{ textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
-                Матч #{activeMatch.matchNumber}
-                {activeMatch.tableId ? ` • Стол ${activeMatch.tableId}` : ''}
+                {t('tournaments.matchHash', { number: activeMatch.matchNumber })}
+                {activeMatch.tableId ? ` • ${t('tournaments.tableLabel', { number: activeMatch.tableId })}` : ''}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}>
@@ -2495,19 +2499,19 @@ const TournamentPage: React.FC = () => {
                   background: 'rgba(16,185,129,0.08)',
                   border: '1px solid rgba(16,185,129,0.2)',
                 }}>
-                  🏆 Победитель: {parseInt(score1Input) > parseInt(score2Input)
+                  🏆 {t('tournaments.winnerLabel')}: {parseInt(score1Input) > parseInt(score2Input)
                     ? getParticipantLabel(activeMatch.participant1)
                     : getParticipantLabel(activeMatch.participant2)}
                 </div>
               )}
               {score1Input && score2Input && parseInt(score1Input) === parseInt(score2Input) && (
                 <div style={{ textAlign: 'center', fontSize: 12, color: '#fbbf24' }}>
-                  ⚠️ Ничья не допускается
+                  ⚠️ {t('tournaments.drawNotAllowedShort')}
                 </div>
               )}
             </div>
             <div className="modal-footer">
-              <button onClick={() => setActiveMatch(null)} className="btn btn-ghost">Отмена</button>
+              <button onClick={() => setActiveMatch(null)} className="btn btn-ghost">{t('tournaments.cancel')}</button>
               <button
                 onClick={handleRecordMatchResult}
                 className="btn btn-primary"
@@ -2519,7 +2523,7 @@ const TournamentPage: React.FC = () => {
                 }
               >
                 <Award size={16} />
-                Записать результат
+                {t('tournaments.recordResultTitle')}
               </button>
             </div>
           </div>

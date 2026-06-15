@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tag, Plus, Clock, Trash2, Edit, Package, ShoppingBag, Hash, Cpu } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import { parseTimeToMinutes } from '../utils/pricing';
 import type { Tariff, TariffMenuProduct, BarMenuItem, TablePriceRule } from '../types';
 
@@ -62,20 +63,33 @@ const findPriceScheduleConflict = (rules: TablePriceRule[]): { firstRule: TableP
   return null;
 };
 
-const getPriceScheduleConflictMessage = (rules: TablePriceRule[]): string | null => {
+type PriceScheduleConflict =
+  | { type: 'sameRule' }
+  | { type: 'overlap'; firstStart: string; firstEnd: string; secondStart: string; secondEnd: string };
+
+const getPriceScheduleConflict = (rules: TablePriceRule[]): PriceScheduleConflict | null => {
   const conflict = findPriceScheduleConflict(rules);
   if (!conflict) {
     return null;
   }
 
   const isSameRuleConflict = conflict.firstRule.id === conflict.secondRule.id;
-  return isSameRuleConflict
-    ? 'Начало и конец интервала не должны совпадать'
-    : `Интервалы ${conflict.firstRule.startTime}–${conflict.firstRule.endTime} и ${conflict.secondRule.startTime}–${conflict.secondRule.endTime} пересекаются`;
+  if (isSameRuleConflict) {
+    return { type: 'sameRule' };
+  }
+
+  return {
+    type: 'overlap',
+    firstStart: conflict.firstRule.startTime,
+    firstEnd: conflict.firstRule.endTime,
+    secondStart: conflict.secondRule.startTime,
+    secondEnd: conflict.secondRule.endTime,
+  };
 };
 
 const TariffsPage: React.FC = () => {
   const { settings, updateSettings, currentUser, barMenu, addToast, tariffs, addTariff, updateTariff, removeTariff } = useStore();
+  const { t } = useT();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTariff, setEditingTariff] = useState<Tariff | null>(null);
   const canAccessAllSettings = currentUser?.role !== 'user';
@@ -100,6 +114,22 @@ const TariffsPage: React.FC = () => {
   const sortPriceRules = (rules: TablePriceRule[]) => (
     rules.slice().sort((left, right) => parseTimeToMinutes(left.startTime) - parseTimeToMinutes(right.startTime))
   );
+
+  const getPriceScheduleConflictMessage = (rules: TablePriceRule[]): string | null => {
+    const conflict = getPriceScheduleConflict(rules);
+    if (!conflict) {
+      return null;
+    }
+    if (conflict.type === 'sameRule') {
+      return t('tariffs.sameIntervalError');
+    }
+    return t('tariffs.intervalsOverlap', {
+      firstStart: conflict.firstStart,
+      firstEnd: conflict.firstEnd,
+      secondStart: conflict.secondStart,
+      secondEnd: conflict.secondEnd,
+    });
+  };
 
   const updateTableSetting = (index: number, field: string, value: string | number | boolean) => {
     const newTables = [...settings.tables];
@@ -173,17 +203,17 @@ const TariffsPage: React.FC = () => {
 
   const handleApplyBulkPriceRule = () => {
     if (bulkSelectedTableIds.length === 0) {
-      addToast('error', 'Выберите хотя бы один стол для массового применения');
+      addToast('error', t('tariffs.bulkSelectTableError'));
       return;
     }
 
     if (bulkPricePerHour <= 0) {
-      addToast('error', 'Укажите корректную цену для интервала');
+      addToast('error', t('tariffs.bulkPriceError'));
       return;
     }
 
     if (bulkStartTime === bulkEndTime) {
-      addToast('error', 'Начало и конец интервала не должны совпадать');
+      addToast('error', t('tariffs.sameIntervalError'));
       return;
     }
 
@@ -218,31 +248,33 @@ const TariffsPage: React.FC = () => {
     });
 
     if (updatedCount === 0) {
-      addToast('error', skippedTables.length > 0 ? `Интервал не добавлен. Конфликты у: ${skippedTables.join(', ')}` : 'Не удалось применить интервал');
+      addToast('error', skippedTables.length > 0
+        ? t('tariffs.bulkConflictError', { tables: skippedTables.join(', ') })
+        : t('tariffs.bulkApplyFailed'));
       return;
     }
 
     updateSettings({ tables: nextTables });
-    addToast('success', `Интервал добавлен для ${updatedCount} стол${updatedCount === 1 ? 'а' : updatedCount < 5 ? 'ов' : 'ов'}`);
+    addToast('success', t('tariffs.bulkApplied', { count: updatedCount }));
 
     if (skippedTables.length > 0) {
-      addToast('warning', `Пропущены из-за пересечения: ${skippedTables.join(', ')}`);
+      addToast('warning', t('tariffs.bulkSkipped', { tables: skippedTables.join(', ') }));
     }
   };
 
   const handleCreateOrUpdateTariff = () => {
     if (!tariffName.trim()) {
-      addToast('error', 'Введите название тарифа');
+      addToast('error', t('tariffs.nameRequired'));
       return;
     }
 
     if (selectedTableIds.length === 0) {
-      addToast('error', 'Выберите хотя бы один стол');
+      addToast('error', t('tariffs.selectTableError'));
       return;
     }
 
     if (price <= 0) {
-      addToast('error', 'Укажите цену тарифа');
+      addToast('error', t('tariffs.priceRequired'));
       return;
     }
 
@@ -261,10 +293,10 @@ const TariffsPage: React.FC = () => {
 
     if (editingTariff) {
       updateTariff(editingTariff.id, tariffData);
-      addToast('success', 'Тариф обновлен');
+      addToast('success', t('tariffs.tariffUpdated'));
     } else {
       addTariff(tariffData);
-      addToast('success', `Тариф "${tariffName}" создан`);
+      addToast('success', t('tariffs.tariffCreated', { name: tariffName }));
     }
 
     setShowCreateModal(false);
@@ -340,9 +372,9 @@ const TariffsPage: React.FC = () => {
   };
 
   const handleDeleteTariff = (tariffId: string) => {
-    if (confirm('Удалить тариф?')) {
+    if (confirm(t('tariffs.deleteConfirm'))) {
       removeTariff(tariffId);
-      addToast('success', 'Тариф удален');
+      addToast('success', t('tariffs.tariffDeleted'));
     }
   };
 
@@ -366,13 +398,13 @@ const TariffsPage: React.FC = () => {
         <div className="page-header-left">
           <Tag size={28} className="text-purple-500" />
           <div>
-            <h1 className="page-title">Тарифы</h1>
-            <p className="page-subtitle">Управление тарифами и пакетами для столов</p>
+            <h1 className="page-title">{t('tariffs.pageTitle')}</h1>
+            <p className="page-subtitle">{t('tariffs.pageSubtitle')}</p>
           </div>
         </div>
         <button onClick={() => { resetForm(); setShowCreateModal(true); }} className="btn btn-primary">
           <Plus size={18} />
-          Создать тариф
+          {t('tariffs.createTariff')}
         </button>
       </div>
 
@@ -381,11 +413,11 @@ const TariffsPage: React.FC = () => {
           <div className="settings-section-header">
             <h3 className="settings-section-title">
               <Hash size={18} />
-              Столы
+              {t('tariffs.tablesTitle')}
             </h3>
             <span className="settings-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Cpu size={14} />
-              Кол-во столов определяется автоматически ({settings.tables.length} реле)
+              {t('tariffs.tablesAutoDetected', { count: settings.tables.length })}
             </span>
           </div>
           <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
@@ -396,7 +428,7 @@ const TariffsPage: React.FC = () => {
               style={{ padding: '8px 12px', fontSize: 12, minHeight: 34 }}
             >
               <Plus size={14} />
-              {showBulkPriceEditor ? 'Скрыть массовое добавление' : 'Массовое добавление'}
+              {showBulkPriceEditor ? t('tariffs.hideBulkAdd') : t('tariffs.bulkAdd')}
             </button>
           </div>
           {showBulkPriceEditor && (
@@ -412,8 +444,8 @@ const TariffsPage: React.FC = () => {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ddd6fe' }}>Массовое добавление интервала</span>
-                  <span style={{ fontSize: 11, color: '#94a3b8' }}>Выберите столы один раз и примените общий диапазон цены.</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ddd6fe' }}>{t('tariffs.bulkAddInterval')}</span>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>{t('tariffs.bulkAddHint')}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
@@ -422,7 +454,7 @@ const TariffsPage: React.FC = () => {
                     className="btn btn-ghost"
                     style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}
                   >
-                    Выбрать все
+                    {t('tariffs.selectAll')}
                   </button>
                   <button
                     type="button"
@@ -430,7 +462,7 @@ const TariffsPage: React.FC = () => {
                     className="btn btn-ghost"
                     style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}
                   >
-                    Очистить
+                    {t('tariffs.clear')}
                   </button>
                 </div>
               </div>
@@ -485,7 +517,7 @@ const TariffsPage: React.FC = () => {
                   className="form-input"
                   min="0"
                   step="100"
-                  placeholder="Цена/час"
+                  placeholder={t('tariffs.pricePerHour')}
                 />
                 <button
                   type="button"
@@ -494,16 +526,16 @@ const TariffsPage: React.FC = () => {
                   style={{ minHeight: 36 }}
                 >
                   <Plus size={14} />
-                  Применить к выбранным
+                  {t('tariffs.applyToSelected')}
                 </button>
               </div>
             </div>
           )}
           <div className="settings-tables">
             <div className="settings-table-header">
-              <span>Название</span>
-              <span>Реле №</span>
-              <span>База/час</span>
+              <span>{t('tariffs.colName')}</span>
+              <span>{t('tariffs.colRelay')}</span>
+              <span>{t('tariffs.colBasePrice')}</span>
             </div>
             {settings.tables.map((table, index) => (
               <div
@@ -555,7 +587,7 @@ const TariffsPage: React.FC = () => {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 32 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1' }}>Цены по времени</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1' }}>{t('tariffs.timeBasedPrices')}</span>
                       <span style={{
                         fontSize: 10,
                         color: '#94a3b8',
@@ -564,12 +596,12 @@ const TariffsPage: React.FC = () => {
                         background: 'rgba(148, 163, 184, 0.08)',
                         border: '1px solid rgba(148, 163, 184, 0.12)',
                       }}>
-                        Интервалов: {(table.priceSchedule || []).length}
+                        {t('tariffs.intervalsCount', { count: (table.priceSchedule || []).length })}
                       </span>
                     </div>
                     <button type="button" onClick={() => addPriceRule(index)} className="btn btn-ghost" style={{ padding: '6px 10px', fontSize: 12, minHeight: 32 }}>
                       <Plus size={14} />
-                      Интервал
+                      {t('tariffs.interval')}
                     </button>
                   </div>
 
@@ -616,7 +648,7 @@ const TariffsPage: React.FC = () => {
                             onClick={() => removePriceRule(index, rule.id)}
                             className="btn btn-ghost"
                             style={{ padding: '6px', color: '#ef4444' }}
-                            title="Удалить интервал"
+                            title={t('tariffs.deleteInterval')}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -642,8 +674,8 @@ const TariffsPage: React.FC = () => {
           textAlign: 'center'
         }}>
           <Tag size={64} style={{ marginBottom: 16, opacity: 0.3 }} />
-          <p style={{ fontSize: 16, marginBottom: 8 }}>Нет тарифов</p>
-          <p style={{ fontSize: 14 }}>Создайте первый тариф для начала работы</p>
+          <p style={{ fontSize: 16, marginBottom: 8 }}>{t('tariffs.noTariffs')}</p>
+          <p style={{ fontSize: 14 }}>{t('tariffs.noTariffsHint')}</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 16 }}>
@@ -672,7 +704,7 @@ const TariffsPage: React.FC = () => {
                       color: tariff.isActive ? '#10b981' : '#ef4444',
                       fontWeight: 500
                     }}>
-                      ● {tariff.isActive ? 'Активен' : 'Неактивен'}
+                      ● {tariff.isActive ? t('tariffs.statusActive') : t('tariffs.statusInactive')}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -696,15 +728,15 @@ const TariffsPage: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                     <Clock size={14} />
-                    <span>Время: {tariff.startTime} - {tariff.endTime}</span>
+                    <span>{t('tariffs.timeLabel')}: {tariff.startTime} - {tariff.endTime}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
                     <Package size={14} />
-                    <span>Пакет: {tariff.durationHours} {tariff.durationHours === 1 ? 'час' : 'часа/часов'}</span>
+                    <span>{t('tariffs.packageLabel')}: {tariff.durationHours} {t('tariffs.hoursShort')}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
                     <Tag size={14} />
-                    <span>Цена: {tariff.price} {settings.currency}</span>
+                    <span>{t('tariffs.priceLabel')}: {tariff.price} {settings.currency}</span>
                   </div>
                 </div>
 
@@ -717,7 +749,7 @@ const TariffsPage: React.FC = () => {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 12, color: '#a78bfa', fontWeight: 500 }}>
                       <ShoppingBag size={14} />
-                      <span>Включенные продукты:</span>
+                      <span>{t('tariffs.includedProducts')}</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {tariff.menuProducts.map(product => (
@@ -727,7 +759,7 @@ const TariffsPage: React.FC = () => {
                       ))}
                     </div>
                     <div style={{ fontSize: 11, color: '#8b5cf6', marginTop: 6 }}>
-                      Доп. ценность: +{productsCost} {settings.currency}
+                      {t('tariffs.extraValue')}: +{productsCost} {settings.currency}
                     </div>
                   </div>
                 )}
@@ -741,8 +773,8 @@ const TariffsPage: React.FC = () => {
                   alignItems: 'center'
                 }}>
                   <div style={{ fontSize: 13, color: '#64748b' }}>
-                    Столы: {tariff.tableIds.map(id => 
-                      activeTables.find(t => t.id === id)?.name || `#${id}`
+                    {t('tariffs.tablesLabel')}: {tariff.tableIds.map(id =>
+                      activeTables.find(tb => tb.id === id)?.name || `#${id}`
                     ).join(', ')}
                   </div>
                   <button
@@ -750,7 +782,7 @@ const TariffsPage: React.FC = () => {
                     className="btn btn-ghost"
                     style={{ fontSize: 12, padding: '6px 12px' }}
                   >
-                    {tariff.isActive ? 'Деактивировать' : 'Активировать'}
+                    {tariff.isActive ? t('tariffs.deactivate') : t('tariffs.activate')}
                   </button>
                 </div>
               </div>
@@ -764,25 +796,25 @@ const TariffsPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => { setShowCreateModal(false); setEditingTariff(null); }}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700 }}>
             <div className="modal-header">
-              <h3>{editingTariff ? 'Редактировать тариф' : 'Создать тариф'}</h3>
+              <h3>{editingTariff ? t('tariffs.editTariff') : t('tariffs.createTariff')}</h3>
               <button onClick={() => { setShowCreateModal(false); setEditingTariff(null); }} className="modal-close-btn">×</button>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh', overflowY: 'auto' }}>
               <div className="settings-field">
-                <label className="settings-label">Название тарифа</label>
+                <label className="settings-label">{t('tariffs.tariffName')}</label>
                 <input
                   type="text"
                   value={tariffName}
                   onChange={(e) => setTariffName(e.target.value)}
                   className="form-input"
-                  placeholder="Утренний пакет"
+                  placeholder={t('tariffs.tariffNamePlaceholder')}
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="settings-field">
-                  <label className="settings-label">Время начала</label>
+                  <label className="settings-label">{t('tariffs.startTime')}</label>
                   <input
                     type="time"
                     value={startTime}
@@ -792,7 +824,7 @@ const TariffsPage: React.FC = () => {
                 </div>
 
                 <div className="settings-field">
-                  <label className="settings-label">Время окончания</label>
+                  <label className="settings-label">{t('tariffs.endTime')}</label>
                   <input
                     type="time"
                     value={endTime}
@@ -804,7 +836,7 @@ const TariffsPage: React.FC = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="settings-field">
-                  <label className="settings-label">Продолжительность (часов)</label>
+                  <label className="settings-label">{t('tariffs.durationHours')}</label>
                   <input
                     type="number"
                     value={durationHours}
@@ -816,7 +848,7 @@ const TariffsPage: React.FC = () => {
                 </div>
 
                 <div className="settings-field">
-                  <label className="settings-label">Цена за тариф ({settings.currency})</label>
+                  <label className="settings-label">{t('tariffs.tariffPrice')} ({settings.currency})</label>
                   <input
                     type="number"
                     value={price}
@@ -828,7 +860,7 @@ const TariffsPage: React.FC = () => {
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">Столы для тарифа</label>
+                <label className="settings-label">{t('tariffs.tablesForTariff')}</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                   {activeTables.map(table => (
                     <button
@@ -853,7 +885,7 @@ const TariffsPage: React.FC = () => {
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">Добавить продукты из меню (опционально)</label>
+                <label className="settings-label">{t('tariffs.addMenuProducts')}</label>
                 <select
                   onChange={(e) => {
                     if (e.target.value) {
@@ -864,7 +896,7 @@ const TariffsPage: React.FC = () => {
                   className="form-input"
                   defaultValue=""
                 >
-                  <option value="">Выберите продукт...</option>
+                  <option value="">{t('tariffs.selectProduct')}</option>
                   {barMenu.map((item: BarMenuItem) => (
                     <option key={item.id} value={item.id}>
                       {item.name} - {item.price} {settings.currency}
@@ -954,18 +986,18 @@ const TariffsPage: React.FC = () => {
                     onChange={(e) => setIsActive(e.target.checked)}
                     style={{ width: 18, height: 18 }}
                   />
-                  <span className="settings-label" style={{ marginBottom: 0 }}>Тариф активен</span>
+                  <span className="settings-label" style={{ marginBottom: 0 }}>{t('tariffs.tariffActive')}</span>
                 </label>
               </div>
             </div>
 
             <div className="modal-footer">
               <button onClick={() => { setShowCreateModal(false); setEditingTariff(null); }} className="btn btn-ghost">
-                Отмена
+                {t('tariffs.cancel')}
               </button>
               <button onClick={handleCreateOrUpdateTariff} className="btn btn-primary">
                 <Plus size={16} />
-                {editingTariff ? 'Сохранить' : 'Создать тариф'}
+                {editingTariff ? t('tariffs.save') : t('tariffs.createTariff')}
               </button>
             </div>
           </div>

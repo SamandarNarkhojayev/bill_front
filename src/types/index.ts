@@ -46,6 +46,11 @@ export interface BilliardTable {
   currentSession: TableSession | null;
 }
 
+export interface PauseInterval {
+  start: number;       // timestamp начала паузы
+  end: number | null;  // timestamp конца паузы (null — пауза ещё идёт)
+}
+
 export interface TableSession {
   id: string;
   tableId: number;
@@ -56,6 +61,9 @@ export interface TableSession {
   plannedDuration: number | null; // в минутах (для mode='time')
   fixedAmount: number | null; // фиксированная сумма (для mode='amount')
   packagePrice: number | null; // фиксированная цена пакета/тарифа
+  pausedAt: number | null;     // timestamp начала текущей паузы (null — игра идёт)
+  totalPausedMs: number;       // суммарное время на паузе из завершённых пауз (мс)
+  pauseIntervals: PauseInterval[]; // интервалы пауз (для точного расчёта по тарифной сетке)
   barOrders: BarOrderItem[];
   totalTableCost: number;
   totalBarCost: number;
@@ -168,7 +176,12 @@ export interface SessionRecord {
 
 // ===== НАСТРОЙКИ =====
 
+export type AppLanguage = 'ru' | 'kk' | 'uz' | 'en';
+
 export interface AppSettings {
+  language: AppLanguage;        // язык интерфейса (по умолчанию 'ru')
+  lastSeenVersion: string;      // последняя версия, для которой показали «Что нового»
+  sidebarPinned: PageType[];    // закреплённые пункты бокового меню (остальные — в «Ещё»)
   clubName: string;
   receiptCompanyName: string;
   receiptCity: string;
@@ -304,7 +317,7 @@ export interface Tariff {
 
 // ===== НАВИГАЦИЯ =====
 
-export type PageType = 'dashboard' | 'bar' | 'kitchen' | 'reports' | 'settings' | 'users' | 'tournaments' | 'tariffs';
+export type PageType = 'dashboard' | 'bar' | 'kitchen' | 'reports' | 'settings' | 'users' | 'tournaments' | 'tariffs' | 'knowledge';
 
 // ===== ТОСТЫ =====
 

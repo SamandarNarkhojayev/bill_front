@@ -10,11 +10,14 @@ import SettingsPage from './components/SettingsPage'
 import UsersPage from './components/UsersPage'
 import TournamentPage from './components/TournamentPage'
 import TariffsPage from './components/TariffsPage'
+import KnowledgePage from './components/KnowledgePage'
 import ToastContainer from './components/ToastContainer'
 import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
+import WhatsNewModal, { getUnseenEntries } from './components/WhatsNewModal'
 import LogoutConfirmModal from './components/LogoutConfirmModal'
 import { playTimerEndSound } from './utils/sounds'
+import { getActiveElapsedMs } from './utils/pricing'
 import cloudSync from './utils/cloudSync'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo, UpdaterState } from './types/arduino'
 import './App.css'
@@ -29,9 +32,11 @@ cloudSync.setSnapshotProvider(() => {
 })
 
 function App() {
-  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
+  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, updateSettings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  // «Что нового»: записи новее последней показанной версии
+  const [whatsNewEntries, setWhatsNewEntries] = useState<ReturnType<typeof getUnseenEntries>>([])
   const [updater, setUpdater] = useState<UpdaterState>({
     status: 'idle',
     message: '',
@@ -45,6 +50,19 @@ function App() {
     document.documentElement.setAttribute('data-theme', settings.theme)
     document.body.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+
+  // «Что нового»: показываем один раз после входа, если версия приложения новее показанной
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const entries = getUnseenEntries(settings.lastSeenVersion || '', __APP_VERSION__)
+    if (entries.length > 0) setWhatsNewEntries(entries)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
+
+  const dismissWhatsNew = () => {
+    updateSettings({ lastSeenVersion: __APP_VERSION__ })
+    setWhatsNewEntries([])
+  }
 
   // Cloud Sync: если владелец залогинился в biliardo.kz — автосинк состояния каждые 30с
   // + real-time WS канал для приёма команд от веб-кабинета владельца.
@@ -203,7 +221,9 @@ function App() {
         if (!table.currentSession) return
 
         const session = table.currentSession
-        const elapsedSec = Math.floor((Date.now() - session.startTime) / 1000)
+        // На паузе время не идёт — стол не истекает
+        if (session.pausedAt) return
+        const elapsedSec = Math.floor(getActiveElapsedMs(session.startTime, Date.now(), session.pausedAt, session.totalPausedMs) / 1000)
 
         // Проверяем истечение по времени или сумме
         if ((session.mode === 'time' || session.mode === 'amount') && session.plannedDuration !== null) {
@@ -279,6 +299,8 @@ function App() {
         return <TournamentPage />
       case 'tariffs':
         return <TariffsPage />
+      case 'knowledge':
+        return <KnowledgePage />
     }
   }
 
@@ -317,6 +339,9 @@ function App() {
           onCancel={() => setShowUpdateModal(false)}
           onRestart={handleRestartApp}
         />
+      )}
+      {whatsNewEntries.length > 0 && (
+        <WhatsNewModal entries={whatsNewEntries} onClose={dismissWhatsNew} />
       )}
     </div>
   )

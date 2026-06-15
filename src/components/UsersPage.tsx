@@ -15,10 +15,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import type { UserRole } from '../types';
 
 const UsersPage: React.FC = () => {
   const { users, currentUser, addUser, updateUser, removeUser, changeUserPassword, shiftHistory } = useStore();
+  const { t } = useT();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<string | null>(null);
@@ -42,16 +44,16 @@ const UsersPage: React.FC = () => {
   const handleAddUser = () => {
     setAddError('');
     if (!newUsername.trim() || !newPassword.trim() || !newDisplayName.trim()) {
-      setAddError('Заполните все поля');
+      setAddError(t('users.errorFillAll'));
       return;
     }
     if (newPassword.length < 4) {
-      setAddError('Пароль минимум 4 символа');
+      setAddError(t('users.errorPasswordMin'));
       return;
     }
     const success = addUser(newUsername.trim(), newPassword, newDisplayName.trim(), newRole);
     if (!success) {
-      setAddError('Пользователь с таким логином уже существует');
+      setAddError(t('users.errorLoginExists'));
       return;
     }
     setNewUsername('');
@@ -81,7 +83,7 @@ const UsersPage: React.FC = () => {
 
   const handleRemoveUser = (id: string, name: string) => {
     if (id === currentUser?.id) return;
-    if (window.confirm(`Удалить пользователя "${name}"?`)) {
+    if (window.confirm(t('users.deleteConfirm', { name }))) {
       removeUser(id);
     }
   };
@@ -97,9 +99,9 @@ const UsersPage: React.FC = () => {
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case 'developer': return 'Разработчик';
-      case 'admin': return 'Админ';
-      case 'user': return 'Пользователь';
+      case 'developer': return t('users.roleDeveloper');
+      case 'admin': return t('users.roleAdmin');
+      case 'user': return t('users.roleUser');
       default: return role;
     }
   };
@@ -125,7 +127,7 @@ const UsersPage: React.FC = () => {
     const diff = Math.floor((end - start) / 1000);
     const h = Math.floor(diff / 3600);
     const m = Math.floor((diff % 3600) / 60);
-    return `${h}ч ${m}м`;
+    return `${h}${t('users.hourShort')} ${m}${t('users.minuteShort')}`;
   };
 
   return (
@@ -133,12 +135,12 @@ const UsersPage: React.FC = () => {
       <div className="page-header">
         <div className="page-header-left">
           <Users size={24} className="text-violet-400" />
-          <h2 className="page-title">Пользователи</h2>
+          <h2 className="page-title">{t('users.title')}</h2>
         </div>
         <div className="page-header-actions">
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
             <UserPlus size={16} />
-            <span>Добавить</span>
+            <span>{t('users.add')}</span>
           </button>
         </div>
       </div>
@@ -168,22 +170,22 @@ const UsersPage: React.FC = () => {
                 <span className="user-card-login">@{user.username}</span>
               </div>
               {user.id === currentUser?.id && (
-                <span className="user-you-badge">Вы</span>
+                <span className="user-you-badge">{t('users.youBadge')}</span>
               )}
             </div>
 
             <div className="user-card-details">
               <div className="user-card-detail">
-                <span className="user-detail-label">Роль</span>
+                <span className="user-detail-label">{t('users.fieldRole')}</span>
                 {editingUser === user.id ? (
                   <select
                     className="user-edit-select"
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value as UserRole)}
                   >
-                    <option value="admin">Админ</option>
-                    <option value="user">Пользователь</option>
-                    <option value="developer">Разработчик</option>
+                    <option value="admin">{t('users.roleAdmin')}</option>
+                    <option value="user">{t('users.roleUser')}</option>
+                    <option value="developer">{t('users.roleDeveloper')}</option>
                   </select>
                 ) : (
                   <span className={`user-role-badge role-${user.role}`}>
@@ -193,13 +195,13 @@ const UsersPage: React.FC = () => {
                 )}
               </div>
               <div className="user-card-detail">
-                <span className="user-detail-label">Создан</span>
+                <span className="user-detail-label">{t('users.fieldCreated')}</span>
                 <span className="user-detail-value">{formatDate(user.createdAt)}</span>
               </div>
               <div className="user-card-detail">
-                <span className="user-detail-label">Статус</span>
+                <span className="user-detail-label">{t('users.fieldStatus')}</span>
                 <span className={`user-status ${user.isActive ? 'active' : 'inactive'}`}>
-                  {user.isActive ? 'Активен' : 'Заблокирован'}
+                  {user.isActive ? t('users.statusActive') : t('users.statusBlocked')}
                 </span>
               </div>
             </div>
@@ -207,26 +209,26 @@ const UsersPage: React.FC = () => {
             <div className="user-card-actions">
               {editingUser === user.id ? (
                 <>
-                  <button className="btn-icon btn-success-icon" onClick={() => handleSaveEdit(user.id)} title="Сохранить">
+                  <button className="btn-icon btn-success-icon" onClick={() => handleSaveEdit(user.id)} title={t('users.tooltipSave')}>
                     <Check size={16} />
                   </button>
-                  <button className="btn-icon btn-cancel-icon" onClick={() => setEditingUser(null)} title="Отмена">
+                  <button className="btn-icon btn-cancel-icon" onClick={() => setEditingUser(null)} title={t('users.tooltipCancel')}>
                     <X size={16} />
                   </button>
                 </>
               ) : (
                 <>
-                  <button className="btn-icon" onClick={() => handleStartEdit(user)} title="Редактировать">
+                  <button className="btn-icon" onClick={() => handleStartEdit(user)} title={t('users.tooltipEdit')}>
                     <Edit3 size={16} />
                   </button>
-                  <button className="btn-icon" onClick={() => setShowPasswordModal(user.id)} title="Сменить пароль">
+                  <button className="btn-icon" onClick={() => setShowPasswordModal(user.id)} title={t('users.tooltipChangePassword')}>
                     <KeyRound size={16} />
                   </button>
                   {user.id !== currentUser?.id && (
                     <button
                       className="btn-icon btn-danger-icon"
                       onClick={() => handleRemoveUser(user.id, user.displayName)}
-                      title="Удалить"
+                      title={t('users.tooltipDelete')}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -243,7 +245,7 @@ const UsersPage: React.FC = () => {
         <div className="users-shift-history">
           <h3 className="users-section-title">
             <Clock size={18} />
-            <span>История смен</span>
+            <span>{t('users.shiftHistory')}</span>
           </h3>
           <div className="shift-history-list">
             {shiftHistory.slice(0, 20).map((shift) => (
@@ -267,7 +269,7 @@ const UsersPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Новый пользователь</h3>
+              <h3>{t('users.modalNewUser')}</h3>
               <button className="modal-close" onClick={() => setShowAddModal(false)}>
                 <X size={20} />
               </button>
@@ -276,31 +278,31 @@ const UsersPage: React.FC = () => {
               {addError && <div className="login-error"><span>{addError}</span></div>}
 
               <div className="login-field">
-                <label className="login-label">Имя</label>
+                <label className="login-label">{t('users.fieldName')}</label>
                 <input
                   className="login-input"
-                  placeholder="Отображаемое имя"
+                  placeholder={t('users.placeholderName')}
                   value={newDisplayName}
                   onChange={(e) => setNewDisplayName(e.target.value)}
                   autoFocus
                 />
               </div>
               <div className="login-field">
-                <label className="login-label">Логин</label>
+                <label className="login-label">{t('users.fieldLogin')}</label>
                 <input
                   className="login-input"
-                  placeholder="Латиница, без пробелов"
+                  placeholder={t('users.placeholderLogin')}
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
                 />
               </div>
               <div className="login-field">
-                <label className="login-label">Пароль</label>
+                <label className="login-label">{t('users.fieldPassword')}</label>
                 <div className="login-password-wrapper">
                   <input
                     type={showNewPassword ? 'text' : 'password'}
                     className="login-input"
-                    placeholder="Минимум 4 символа"
+                    placeholder={t('users.placeholderPasswordMin')}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
@@ -315,19 +317,19 @@ const UsersPage: React.FC = () => {
                 </div>
               </div>
               <div className="login-field">
-                <label className="login-label">Роль</label>
+                <label className="login-label">{t('users.fieldRole')}</label>
                 <select className="login-input" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
-                  <option value="admin">Администратор</option>
-                  <option value="user">Пользователь</option>
-                  <option value="developer">Разработчик</option>
+                  <option value="admin">{t('users.roleAdministrator')}</option>
+                  <option value="user">{t('users.roleUser')}</option>
+                  <option value="developer">{t('users.roleDeveloper')}</option>
                 </select>
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Отмена</button>
+              <button className="btn btn-secondary" onClick={() => setShowAddModal(false)}>{t('users.cancel')}</button>
               <button className="btn btn-primary" onClick={handleAddUser}>
                 <UserPlus size={16} />
-                <span>Добавить</span>
+                <span>{t('users.add')}</span>
               </button>
             </div>
           </div>
@@ -339,19 +341,19 @@ const UsersPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowPasswordModal(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Сменить пароль</h3>
+              <h3>{t('users.modalChangePassword')}</h3>
               <button className="modal-close" onClick={() => setShowPasswordModal(null)}>
                 <X size={20} />
               </button>
             </div>
             <div className="modal-body">
               <div className="login-field">
-                <label className="login-label">Новый пароль</label>
+                <label className="login-label">{t('users.fieldNewPassword')}</label>
                 <div className="login-password-wrapper">
                   <input
                     type={showNewPass ? 'text' : 'password'}
                     className="login-input"
-                    placeholder="Минимум 4 символа"
+                    placeholder={t('users.placeholderPasswordMin')}
                     value={newPass}
                     onChange={(e) => setNewPass(e.target.value)}
                     autoFocus
@@ -368,14 +370,14 @@ const UsersPage: React.FC = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowPasswordModal(null)}>Отмена</button>
+              <button className="btn btn-secondary" onClick={() => setShowPasswordModal(null)}>{t('users.cancel')}</button>
               <button
                 className="btn btn-primary"
                 onClick={() => handleChangePassword(showPasswordModal)}
                 disabled={newPass.length < 4}
               >
                 <Check size={16} />
-                <span>Сохранить</span>
+                <span>{t('users.save')}</span>
               </button>
             </div>
           </div>

@@ -60,6 +60,9 @@ TAG="v$NEW_VERSION"
 
 echo "New version: $NEW_VERSION"
 
+echo "Generating changelog entry from commits..."
+node scripts/gen-changelog.mjs || echo "Warning: changelog generation skipped"
+
 echo "Running TypeScript check..."
 npx tsc --noEmit
 

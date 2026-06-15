@@ -1,7 +1,7 @@
 {
   "name": "billiard-client",
   "private": true,
-  "version": "6.0.0",
+  "version": "7.1.0",
   "author": {
     "name": "Samandar Narkhojayev",
     "email": "samandara200603@gmail.com"
@@ -17,6 +17,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "release": "bash ./scripts/release.sh",
+    "changelog": "node scripts/gen-changelog.mjs",
     "electron": "NODE_ENV=production electron .",
     "electron:dev": "NODE_ENV=development electron .",
     "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\"",

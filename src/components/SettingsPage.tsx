@@ -19,13 +19,42 @@ import {
   FolderArchive,
   History,
   ChefHat,
+  Languages,
+  BookOpen,
+  Menu,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT, LANGUAGES } from '../i18n';
+import type { PageType } from '../types';
 import CloudSyncSection from './CloudSyncSection';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
   const { settings, updateSettings, sessionHistory, currentUser, currentPage, setCurrentPage } = useStore();
+  const { t } = useT();
+
+  // Пункты бокового меню, доступные для закрепления (зависят от прав и разделения кухни)
+  const sidebarConfigItems: { id: PageType; labelKey: string }[] = [
+    { id: 'dashboard', labelKey: 'nav.dashboard' },
+    { id: 'bar', labelKey: 'nav.bar' },
+    ...(settings.kitchenSeparate ? [{ id: 'kitchen' as PageType, labelKey: 'nav.kitchen' }] : []),
+    { id: 'tournaments', labelKey: 'nav.tournaments' },
+    { id: 'tariffs', labelKey: 'nav.tariffs' },
+    { id: 'reports', labelKey: 'nav.reports' },
+    ...((currentUser?.role === 'admin' || currentUser?.role === 'developer') ? [{ id: 'users' as PageType, labelKey: 'nav.users' }] : []),
+    { id: 'settings', labelKey: 'nav.settings' },
+  ];
+
+  const togglePin = (id: PageType) => {
+    setLocalSettings((prev) => {
+      const cur = prev.sidebarPinned || [];
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      updateSettings({ sidebarPinned: next });
+      return { ...prev, sidebarPinned: next };
+    });
+  };
   const [localSettings, setLocalSettings] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
   const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
@@ -115,7 +144,7 @@ const SettingsPage: React.FC = () => {
     try {
       const connected = await api.isConnected();
       if (!connected) {
-        setPortStatus('❌ Arduino не подключен');
+        setPortStatus('❌ Контроллер не подключен');
         return;
       }
 
@@ -264,7 +293,7 @@ const SettingsPage: React.FC = () => {
     const api = window.electronAPI?.arduino;
     if (!api) return;
     setPortLoading(true);
-    setPortStatus('Поиск ESP32 устройства...');
+    setPortStatus('Поиск контроллера...');
     try {
       // Сбрасываем ручной порт, чтобы автопоиск сработал
       await api.savePort(null);
@@ -561,6 +590,72 @@ const SettingsPage: React.FC = () => {
           </div>
         </div>
         )}
+
+        {/* Язык интерфейса — доступно всем */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <Languages size={18} />
+            {t('settings.section_language')}
+          </h3>
+          <p className="settings-hint" style={{ marginTop: -6, marginBottom: 10 }}>{t('settings.language_hint')}</p>
+          <div className="lang-grid">
+            {LANGUAGES.map((l) => (
+              <button
+                key={l.code}
+                onClick={() => {
+                  setLocalSettings((prev) => ({ ...prev, language: l.code }));
+                  updateSettings({ language: l.code });
+                }}
+                className={`lang-card ${settings.language === l.code ? 'active' : ''}`}
+              >
+                <span className="lang-flag">{l.flag}</span>
+                <span className="lang-name">{l.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Боковое меню — настройка закреплённых пунктов (стиль Bitrix24) */}
+        {canAccessAllSettings && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <Menu size={18} />
+            {t('settings.section_sidebar')}
+          </h3>
+          <p className="settings-hint" style={{ marginTop: -6, marginBottom: 10 }}>{t('settings.sidebar_hint')}</p>
+          <div className="sidebar-cfg-list">
+            {sidebarConfigItems.map((item) => {
+              const isPinned = (localSettings.sidebarPinned || []).includes(item.id);
+              return (
+                <div key={item.id} className="sidebar-cfg-row">
+                  <span className="cfg-name">{t(item.labelKey)}</span>
+                  <button
+                    className={`sidebar-cfg-pin ${isPinned ? 'on' : ''}`}
+                    onClick={() => togglePin(item.id)}
+                    title={isPinned ? t('settings.pin') : t('nav.more')}
+                  >
+                    {isPinned ? <Pin size={13} /> : <PinOff size={13} />}
+                    {isPinned ? t('settings.pin') : t('nav.more')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )}
+
+        {/* База знаний — перенесена в настройки */}
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <BookOpen size={18} />
+            {t('settings.section_kb')}
+          </h3>
+          <p className="settings-hint" style={{ marginTop: -6, marginBottom: 10 }}>{t('settings.kb_hint')}</p>
+          <button className="btn btn-primary" onClick={() => setCurrentPage('knowledge')}>
+            <BookOpen size={16} />
+            {t('settings.open_kb')}
+          </button>
+        </div>
 
         {/* Автоматизация */}
         {canAccessAllSettings && (
@@ -972,7 +1067,7 @@ const SettingsPage: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <h3 className="settings-section-title" style={{ margin: 0 }}>
               <Usb size={16} />
-              Порт ESP32
+              {t('settings.section_controller')}
               <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, color: isArduinoConnected ? '#22c55e' : '#ef4444' }}>
                 {isArduinoConnected ? '● подключено' : '● не подключено'}
               </span>
@@ -1046,7 +1141,7 @@ const SettingsPage: React.FC = () => {
                   const hint = [port.manufacturer, port.product, port.friendlyName].filter(Boolean).join(' · ');
                   const isJtag = (port.product || '').toLowerCase().includes('jtag') || (port.friendlyName || '').toLowerCase().includes('jtag');
                   const isBiliardo = (port.manufacturer || '').toLowerCase().includes('biliardo');
-                  const tag = isBiliardo ? ' ★ Biliardo' : isJtag ? ' ★ ESP32' : '';
+                  const tag = isBiliardo ? ' ★ Biliardo' : isJtag ? ' ★ Контроллер' : '';
                   return (
                     <option key={port.path} value={port.path}>
                       {port.path}{hint ? ` (${hint})` : ''}{tag}
@@ -1065,7 +1160,7 @@ const SettingsPage: React.FC = () => {
             </div>
           ) : (
             <p style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>
-              {portLoading ? 'Поиск...' : 'Нет портов. Подключите ESP32.'}
+              {portLoading ? 'Поиск...' : 'Нет портов. Подключите контроллер.'}
             </p>
           )}
         </div>
