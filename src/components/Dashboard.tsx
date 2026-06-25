@@ -23,6 +23,7 @@ import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import type { BilliardTable, SessionMode, Tariff } from '../types';
 import TableModal from './TableModal';
+import NumberInput from './NumberInput';
 import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
 import { printReceipt, printKitchenTicket } from '../utils/receipt';
 import { getItemDepartment } from '../utils/department';
@@ -825,14 +826,11 @@ const Dashboard: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <input
-                  type="number"
+                <NumberInput
                   value={fixedAmount}
-                  onChange={(e) => setFixedAmount(Number(e.target.value))}
+                  onChange={setFixedAmount}
                   className="modal-input"
                   placeholder="Или введите сумму..."
-                  min={0}
-                  step={500}
                 />
                 <div className="time-estimate">
                   ≈ {Math.max(1, Math.round(amountEstimateSeconds / 60))} минут игры

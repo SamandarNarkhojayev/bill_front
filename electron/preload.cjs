@@ -100,6 +100,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // Tournament bracket window API
+  bracket: {
+    open: (payload) => ipcRenderer.invoke('bracket:open', payload),
+    getData: () => ipcRenderer.invoke('bracket:get-data'),
+    push: (payload) => ipcRenderer.invoke('bracket:push', payload),
+    toggleFullscreen: () => ipcRenderer.invoke('bracket:toggle-fullscreen'),
+    onData: (callback) => {
+      ipcRenderer.on('bracket:data', (event, payload) => callback(payload));
+    },
+    removeDataListener: () => {
+      ipcRenderer.removeAllListeners('bracket:data');
+    },
+  },
+
   // Printer API
   printer: {
     // Печать чека (receiptHTML — строка HTML, widthMm — ширина в мм, deviceName — конкретный принтер)

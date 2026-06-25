@@ -32,7 +32,25 @@ cloudSync.setSnapshotProvider(() => {
 })
 
 function App() {
-  const { isAuthenticated, currentPage, updateTableFromRelay, syncTablesFromArduino, restoreLightsToArduino, settings, updateSettings, sidebarCollapsed, currentUser, tables, endSession, activeModal, modalData, closeModal, confirmEndShiftAndLogout } = useStore()
+  // Узкие селекторы вместо подписки на весь стор: App (и всё дерево страниц под ним)
+  // больше не ре-рендерится на каждый тост/изменение бар-меню/историю — только когда
+  // меняются реально используемые срезы. Это убирает лавину ре-рендеров, из-за которой
+  // «подвисал» ввод в полях.
+  const isAuthenticated = useStore((s) => s.isAuthenticated)
+  const currentPage = useStore((s) => s.currentPage)
+  const settings = useStore((s) => s.settings)
+  const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
+  const currentUser = useStore((s) => s.currentUser)
+  const tables = useStore((s) => s.tables)
+  const activeModal = useStore((s) => s.activeModal)
+  const modalData = useStore((s) => s.modalData)
+  const updateTableFromRelay = useStore((s) => s.updateTableFromRelay)
+  const syncTablesFromArduino = useStore((s) => s.syncTablesFromArduino)
+  const restoreLightsToArduino = useStore((s) => s.restoreLightsToArduino)
+  const endSession = useStore((s) => s.endSession)
+  const updateSettings = useStore((s) => s.updateSettings)
+  const closeModal = useStore((s) => s.closeModal)
+  const confirmEndShiftAndLogout = useStore((s) => s.confirmEndShiftAndLogout)
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer'
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   // «Что нового»: записи новее последней показанной версии

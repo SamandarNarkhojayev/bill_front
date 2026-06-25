@@ -3,6 +3,7 @@ import { Tag, Plus, Clock, Trash2, Edit, Package, ShoppingBag, Hash, Cpu } from 
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import { parseTimeToMinutes } from '../utils/pricing';
+import NumberInput from './NumberInput';
 import type { Tariff, TariffMenuProduct, BarMenuItem, TablePriceRule } from '../types';
 
 const DAY_MINUTES = 24 * 60;
@@ -510,13 +511,10 @@ const TariffsPage: React.FC = () => {
                   onChange={(e) => setBulkEndTime(e.target.value)}
                   className="form-input"
                 />
-                <input
-                  type="number"
+                <NumberInput
                   value={bulkPricePerHour}
-                  onChange={(e) => setBulkPricePerHour(Number(e.target.value))}
+                  onChange={setBulkPricePerHour}
                   className="form-input"
-                  min="0"
-                  step="100"
                   placeholder={t('tariffs.pricePerHour')}
                 />
                 <button
@@ -567,12 +565,9 @@ const TariffsPage: React.FC = () => {
                   <span className="settings-relay-badge" style={{ justifySelf: 'center' }}>
                     {table.relayNumber}
                   </span>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={table.pricePerHour}
-                    onChange={(e) =>
-                      updateTableSetting(index, 'pricePerHour', Number(e.target.value))
-                    }
+                    onChange={(n) => updateTableSetting(index, 'pricePerHour', n)}
                     className="form-input form-input-sm"
                     style={{ width: '100%', maxWidth: '100%' }}
                   />
@@ -634,14 +629,11 @@ const TariffsPage: React.FC = () => {
                             className="form-input"
                             style={{ width: '100%' }}
                           />
-                          <input
-                            type="number"
+                          <NumberInput
                             value={rule.pricePerHour}
-                            onChange={(e) => updatePriceRuleField(index, rule.id, 'pricePerHour', Number(e.target.value))}
+                            onChange={(n) => updatePriceRuleField(index, rule.id, 'pricePerHour', n)}
                             className="form-input form-input-sm"
                             style={{ width: '100%', maxWidth: '100%' }}
-                            min="0"
-                            step="100"
                           />
                           <button
                             type="button"
@@ -849,12 +841,10 @@ const TariffsPage: React.FC = () => {
 
                 <div className="settings-field">
                   <label className="settings-label">{t('tariffs.tariffPrice')} ({settings.currency})</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={price}
-                    onChange={(e) => setPrice(Number(e.target.value))}
+                    onChange={setPrice}
                     className="form-input"
-                    min="0"
                   />
                 </div>
               </div>

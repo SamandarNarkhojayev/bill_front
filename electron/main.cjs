@@ -366,6 +366,10 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Закрываем окно сетки вместе с основным окном
+    if (bracketWindow && !bracketWindow.isDestroyed()) {
+      bracketWindow.close();
+    }
   });
 
   // В режиме разработки загружаем из Vite dev server
@@ -382,6 +386,82 @@ function createWindow() {
     mainWindow.webContents.send('updater:status', updaterState);
   });
 }
+
+// ===== Окно турнирной сетки (отдельное, на весь экран) =====
+let bracketWindow = null;
+let bracketPayload = null; // { tournament, language, currency }
+
+function createBracketWindow() {
+  if (bracketWindow && !bracketWindow.isDestroyed()) {
+    if (bracketWindow.isMinimized()) bracketWindow.restore();
+    bracketWindow.focus();
+    return bracketWindow;
+  }
+
+  bracketWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#0f172a',
+    title: 'Турнирная сетка',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  });
+
+  if (process.platform !== 'darwin') {
+    bracketWindow.setMenuBarVisibility(false);
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    bracketWindow.loadURL('http://localhost:5173/#bracket');
+  } else {
+    bracketWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'bracket' });
+  }
+
+  bracketWindow.once('ready-to-show', () => {
+    bracketWindow.maximize();
+    bracketWindow.show();
+  });
+
+  bracketWindow.on('closed', () => {
+    bracketWindow = null;
+  });
+
+  return bracketWindow;
+}
+
+ipcMain.handle('bracket:open', (event, payload) => {
+  bracketPayload = payload || null;
+  const existed = bracketWindow && !bracketWindow.isDestroyed();
+  createBracketWindow();
+  // Если окно уже было открыто — форсируем переключение на выбранную сетку
+  // (новое окно само запросит данные через bracket:get-data при загрузке).
+  if (existed && bracketWindow && !bracketWindow.isDestroyed()) {
+    bracketWindow.webContents.send('bracket:data', { ...bracketPayload, _force: true });
+  }
+  return { success: true };
+});
+
+ipcMain.handle('bracket:get-data', () => bracketPayload);
+
+ipcMain.handle('bracket:push', (event, payload) => {
+  if (payload) bracketPayload = payload;
+  if (bracketWindow && !bracketWindow.isDestroyed()) {
+    bracketWindow.webContents.send('bracket:data', bracketPayload);
+  }
+  return { success: true };
+});
+
+ipcMain.handle('bracket:toggle-fullscreen', () => {
+  if (bracketWindow && !bracketWindow.isDestroyed()) {
+    bracketWindow.setFullScreen(!bracketWindow.isFullScreen());
+  }
+  return { success: true };
+});
 
 app.on('second-instance', () => {
   const [existingWindow] = BrowserWindow.getAllWindows();

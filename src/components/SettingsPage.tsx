@@ -29,6 +29,7 @@ import { useStore } from '../store/useStore';
 import { useT, LANGUAGES } from '../i18n';
 import type { PageType } from '../types';
 import CloudSyncSection from './CloudSyncSection';
+import NumberInput from './NumberInput';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
@@ -795,14 +796,11 @@ const SettingsPage: React.FC = () => {
                   }
                   style={{ flex: 1 }}
                 />
-                <input
-                  type="number"
+                <NumberInput
                   min={40}
                   max={120}
                   value={localSettings.receiptWidthMm}
-                  onChange={(e) =>
-                    setLocalSettings((prev) => ({ ...prev, receiptWidthMm: Math.max(40, Math.min(120, Number(e.target.value))) }))
-                  }
+                  onChange={(n) => setLocalSettings((prev) => ({ ...prev, receiptWidthMm: n }))}
                   className="form-input form-input-sm"
                   style={{ width: 70, textAlign: 'center' }}
                 />
@@ -824,14 +822,11 @@ const SettingsPage: React.FC = () => {
                   }
                   style={{ flex: 1 }}
                 />
-                <input
-                  type="number"
+                <NumberInput
                   min={8}
                   max={24}
                   value={localSettings.receiptFontSize}
-                  onChange={(e) =>
-                    setLocalSettings((prev) => ({ ...prev, receiptFontSize: Math.max(8, Math.min(24, Number(e.target.value))) }))
-                  }
+                  onChange={(n) => setLocalSettings((prev) => ({ ...prev, receiptFontSize: n }))}
                   className="form-input form-input-sm"
                   style={{ width: 70, textAlign: 'center' }}
                 />
@@ -852,14 +847,11 @@ const SettingsPage: React.FC = () => {
                   }
                   style={{ flex: 1 }}
                 />
-                <input
-                  type="number"
+                <NumberInput
                   min={0}
                   max={15}
                   value={localSettings.receiptPaddingMm}
-                  onChange={(e) =>
-                    setLocalSettings((prev) => ({ ...prev, receiptPaddingMm: Math.max(0, Math.min(15, Number(e.target.value))) }))
-                  }
+                  onChange={(n) => setLocalSettings((prev) => ({ ...prev, receiptPaddingMm: n }))}
                   className="form-input form-input-sm"
                   style={{ width: 70, textAlign: 'center' }}
                 />

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Trophy, Plus, Users, Grid, Settings as SettingsIcon, Play, Award, Trash2, Info, Camera, Upload } from 'lucide-react';
+import { Trophy, Plus, Users, Grid, Settings as SettingsIcon, Play, Award, Trash2, Info, Camera, Upload, Maximize2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
+import NumberInput from './NumberInput';
 import type { Tournament, BracketType, TournamentStatus, TournamentParticipant, TournamentMatch, MatchStatus, TournamentPlacement } from '../types';
 
 type ParticipantDraft = {
@@ -598,6 +599,26 @@ const TournamentPage: React.FC = () => {
   const [score2Input, setScore2Input] = useState('');
 
   const activeTables = settings.tables.filter(t => t.isActive);
+
+  // Открыть турнирную сетку в отдельном окне на весь экран
+  const openBracketWindow = () => {
+    if (!selectedTournament) return;
+    window.electronAPI?.bracket?.open({
+      tournament: selectedTournament,
+      language: settings.language,
+      currency: settings.currency,
+    });
+  };
+
+  // Живое обновление окна сетки при изменении выбранного турнира (счёт, продвижение)
+  useEffect(() => {
+    if (!selectedTournament) return;
+    window.electronAPI?.bracket?.push({
+      tournament: selectedTournament,
+      language: settings.language,
+      currency: settings.currency,
+    });
+  }, [selectedTournament, settings.language, settings.currency]);
 
   const handleCreateTournament = () => {
     if (!tournamentName.trim()) {
@@ -1506,13 +1527,11 @@ const TournamentPage: React.FC = () => {
 
               <div className="settings-field">
                 <label className="settings-label">{t('tournaments.participantCountLabel')}</label>
-                <input
-                  type="number"
+                <NumberInput
                   value={participantCount}
-                  onChange={(e) => setParticipantCount(Number(e.target.value))}
+                  onChange={setParticipantCount}
                   className="form-input"
-                  min="2"
-                  step="1"
+                  min={2}
                   placeholder={t('tournaments.participantCountPlaceholder')}
                 />
                 <p className="settings-hint">{t('tournaments.minTwoHint')}</p>
@@ -1620,25 +1639,21 @@ const TournamentPage: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="settings-field">
                   <label className="settings-label">{t('tournaments.entryFeeFieldLabel')}</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={entryFee}
-                    onChange={(e) => setEntryFee(Number(e.target.value))}
+                    onChange={setEntryFee}
                     className="form-input"
                     placeholder="0"
-                    min="0"
                   />
                 </div>
 
                 <div className="settings-field">
                   <label className="settings-label">{t('tournaments.prizeFundFieldLabel')}</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={prizeFund}
-                    onChange={(e) => setPrizeFund(Number(e.target.value))}
+                    onChange={setPrizeFund}
                     className="form-input"
                     placeholder="0"
-                    min="0"
                   />
                 </div>
               </div>
@@ -1646,11 +1661,11 @@ const TournamentPage: React.FC = () => {
               <div className="settings-field" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label className="settings-label">{t('tournaments.prizePlacesLabel')}</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 10 }}>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={prizePlacesCount}
-                    onChange={(e) => {
-                      const next = Math.max(1, Math.min(16, Number(e.target.value) || 1));
+                    min={1}
+                    max={16}
+                    onChange={(next) => {
                       setPrizePlacesCount(next);
                       setPrizePlaceRewards((prev) => {
                         const arr = [...prev];
@@ -1659,8 +1674,6 @@ const TournamentPage: React.FC = () => {
                       });
                     }}
                     className="form-input"
-                    min="1"
-                    max="16"
                   />
                   <div className="settings-hint" style={{ margin: 0, alignSelf: 'center' }}>{t('tournaments.prizePlacesHint')}</div>
                 </div>
@@ -1983,7 +1996,14 @@ const TournamentPage: React.FC = () => {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="bracket-section-title">{t('tournaments.bracketPreviewTitle')}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div className="bracket-section-title" style={{ marginBottom: 0 }}>{t('tournaments.bracketPreviewTitle')}</div>
+                  {bracketPreviewMatches.length > 0 && (
+                    <button className="btn btn-ghost btn-sm" onClick={openBracketWindow} title={t('tournaments.openBracketWindow')}>
+                      <Maximize2 size={15} /> {t('tournaments.openBracketWindow')}
+                    </button>
+                  )}
+                </div>
                 {bracketPreviewMatches.length === 0 ? (
                   <div className="bracket-empty">
                     <div className="bracket-empty-icon"><Trophy size={22} /></div>

@@ -32,6 +32,7 @@ import { useT } from '../i18n';
 import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem, Department } from '../types';
 import { generateBarSaleReceiptHTML, printKitchenTicket } from '../utils/receipt';
 import { getCategoryDepartment, getItemDepartment } from '../utils/department';
+import NumberInput from './NumberInput';
 
 // Маппинг иконок
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
@@ -575,9 +576,9 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                     onChange={(e) => setNewItem((p) => ({ ...p, name: e.target.value }))} className="form-input" />
                   <div className="bar-add-form-row-inline">
                     <div className="bar-add-field"><label>Цена</label>
-                      <input type="number" value={newItem.price || ''} onChange={(e) => setNewItem((p) => ({ ...p, price: Number(e.target.value) }))} className="form-input" /></div>
+                      <NumberInput value={newItem.price} onChange={(n) => setNewItem((p) => ({ ...p, price: n }))} className="form-input" /></div>
                     <div className="bar-add-field"><label>Себестоимость</label>
-                      <input type="number" value={newItem.costPrice || ''} onChange={(e) => setNewItem((p) => ({ ...p, costPrice: Number(e.target.value) }))} className="form-input" /></div>
+                      <NumberInput value={newItem.costPrice} onChange={(n) => setNewItem((p) => ({ ...p, costPrice: n }))} className="form-input" /></div>
                   </div>
                   <div className="bar-add-form-row-inline">
                     <div className="bar-add-field"><label>Категория</label>
@@ -619,11 +620,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                         <div className="bar-add-form-row-inline">
                           <div className="bar-add-field">
                             <label>Цена</label>
-                            <input type="number" value={editForm.price || ''} onChange={(e) => setEditForm((p) => ({ ...p, price: Number(e.target.value) }))} className="form-input" placeholder="Цена" />
+                            <NumberInput value={editForm.price || 0} onChange={(n) => setEditForm((p) => ({ ...p, price: n }))} className="form-input" placeholder="Цена" />
                           </div>
                           <div className="bar-add-field">
                             <label>Себестоимость</label>
-                            <input type="number" value={editForm.costPrice || ''} onChange={(e) => setEditForm((p) => ({ ...p, costPrice: Number(e.target.value) }))} className="form-input" placeholder="Себест." />
+                            <NumberInput value={editForm.costPrice || 0} onChange={(n) => setEditForm((p) => ({ ...p, costPrice: n }))} className="form-input" placeholder="Себест." />
                           </div>
                           <div className="bar-add-field">
                             <label>Категория</label>

@@ -1,7 +1,6 @@
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
 
 class RootErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message: string }> {
   constructor(props: { children: ReactNode }) {
@@ -37,10 +36,30 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { hasError: b
   }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RootErrorBoundary>
-      <App />
-    </RootErrorBoundary>
-  </StrictMode>,
-)
+const root = createRoot(document.getElementById('root')!)
+
+// Окно турнирной сетки (#bracket) — отдельный лёгкий вход без основного стора,
+// чтобы два окна не писали в один файл данных и не мешали друг другу.
+const isBracketWindow = window.location.hash.startsWith('#bracket')
+
+if (isBracketWindow) {
+  import('./components/BracketWindow.tsx').then(({ default: BracketWindow }) => {
+    root.render(
+      <StrictMode>
+        <RootErrorBoundary>
+          <BracketWindow />
+        </RootErrorBoundary>
+      </StrictMode>,
+    )
+  })
+} else {
+  import('./App.tsx').then(({ default: App }) => {
+    root.render(
+      <StrictMode>
+        <RootErrorBoundary>
+          <App />
+        </RootErrorBoundary>
+      </StrictMode>,
+    )
+  })
+}

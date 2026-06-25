@@ -59,6 +59,14 @@ interface ElectronAPI {
     printReceipt: (receiptHTML: string, widthMm?: number, silent?: boolean, deviceName?: string) => Promise<any>;
     getPrinters: () => Promise<Array<{ name: string; displayName?: string; description?: string; isDefault?: boolean; status?: number }>>;
   };
+  bracket?: {
+    open: (payload: unknown) => Promise<{ success: boolean }>;
+    getData: () => Promise<any>;
+    push: (payload: unknown) => Promise<{ success: boolean }>;
+    toggleFullscreen: () => Promise<{ success: boolean }>;
+    onData: (callback: (payload: any) => void) => void;
+    removeDataListener: () => void;
+  };
   updater?: {
     getState: () => Promise<any>;
     checkForUpdates: () => Promise<any>;

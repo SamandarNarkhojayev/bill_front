@@ -882,6 +882,15 @@ export const useStore = create<AppStore>()(
       },
 
       syncTablesFromArduino: (relayCount, relays) => {
+        // Если набор реле тот же, что уже сопоставлен со столами — структура не изменилась.
+        // Не пересобираем таблицы и не показываем тост (иначе повторные INFO от контроллера
+        // при нестабильном USB вызывали лавину ре-рендеров и спам тостов → «подвисал» ввод).
+        const cur = get().tables;
+        const curKey = cur.map((t) => t.relayNumber).sort((a, b) => a - b).join(',');
+        const newKey = relays.map((r) => r.number).sort((a, b) => a - b).join(',');
+        if (curKey === newKey) {
+          return;
+        }
         set((state) => {
           const newTables = relays.map((relay) => {
             const existing = state.tables.find((t) => t.relayNumber === relay.number);
@@ -947,12 +956,15 @@ export const useStore = create<AppStore>()(
             window.electronAPI!.arduino!.setRelay(table.relayNumber, true)
               .then(() => {
                 console.log(`[Arduino] ✅ Restored light for ${table.name} (relay ${table.relayNumber})`);
-                // Синхронизируем UI-флаг света обратно в true
-                set((state) => ({
-                  tables: state.tables.map((t) =>
-                    t.id === table.id ? { ...t, lightOn: true } : t
-                  ),
-                }));
+                // Синхронизируем UI-флаг только если он реально отличается — иначе лишние
+                // ре-рендеры при повторных INFO от контроллера.
+                if (!get().tables.find((t) => t.id === table.id)?.lightOn) {
+                  set((state) => ({
+                    tables: state.tables.map((t) =>
+                      t.id === table.id ? { ...t, lightOn: true } : t
+                    ),
+                  }));
+                }
               })
               .catch((err) => {
                 console.error(`[Arduino] ❌ Failed to restore light for ${table.name}:`, err);

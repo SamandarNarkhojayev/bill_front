@@ -3839,6 +3839,63 @@
 /* Утилита вращения (иконки-спиннеры в настройках, облаке, модалке обновления) */
 .animate-spin { animation: spin 1s linear infinite; }
 
+/* ===== Окно турнирной сетки (отдельное, на весь экран) ===== */
+.bracket-window {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  color: #e2e8f0;
+  overflow: hidden;
+}
+.bracket-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.2);
+}
+.bracket-window-title { display: flex; align-items: center; gap: 14px; }
+.bracket-window-title h1 { font-size: 24px; font-weight: 800; color: #f1f5f9; line-height: 1.1; }
+.bracket-window-status {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+.bracket-window-status.status-active { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+.bracket-window-status.status-completed { background: rgba(59,130,246,0.18); color: #93c5fd; }
+.bracket-window-status.status-cancelled { background: rgba(239,68,68,0.18); color: #fca5a5; }
+.bracket-window-champion { font-size: 18px; font-weight: 700; color: #fcd34d; }
+.bracket-window-body {
+  flex: 1;
+  overflow: auto;
+  padding: 28px;
+}
+.bracket-window-container { min-height: 100%; align-items: flex-start; }
+/* Крупнее для проектора/второго экрана */
+.bracket-window .bracket-match { font-size: 15px; min-width: 200px; }
+.bracket-window .bracket-match-name { font-size: 15px; }
+.bracket-window .bracket-round-title { font-size: 15px; }
+.bracket-win-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #64748b;
+  font-size: 16px;
+}
+
 /* ===== Боковое меню: переключатели темы и языка (сегментированные) ===== */
 .sidebar-prefs {
   display: flex;
@@ -3905,6 +3962,15 @@
   padding-left: 6px;
   border-left: 1px dashed rgba(255, 255, 255, 0.1);
 }
+
+/* Свёрнутое меню: «Ещё» — только центрированная иконка, без стрелки и отступа */
+.sidebar.collapsed .sidebar-more-chevron { display: none; }
+.sidebar.collapsed .sidebar-more-list {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+.sidebar.collapsed .sidebar-more-toggle { gap: 0; }
 
 /* ===== Настройки: список пунктов бокового меню (закрепление) ===== */
 .sidebar-cfg-list { display: flex; flex-direction: column; gap: 6px; }
