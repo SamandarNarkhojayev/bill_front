@@ -18,6 +18,9 @@ import {
   User,
   Phone,
   FileText,
+  LayoutGrid,
+  Grid2x2,
+  List,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
@@ -296,9 +299,9 @@ const TableCard: React.FC<{
             <>
               <button onClick={() => onStart(table.id)} className="btn btn-primary" style={{ flex: 2 }}>
                 <Play size={16} />
-                {t('dashboard.start')}
+                <span>{t('dashboard.start')}</span>
               </button>
-              <button onClick={() => onReserve(table.id)} className="btn btn-ghost" style={{ flex: 1 }} title={t('dashboard.reserve')}>
+              <button onClick={() => onReserve(table.id)} className="btn btn-ghost btn-icon-only" style={{ flex: '0 0 auto' }} title={t('dashboard.reserve')}>
                 <CalendarClock size={16} />
               </button>
             </>
@@ -306,33 +309,33 @@ const TableCard: React.FC<{
             <>
               <button onClick={() => onStart(table.id)} className="btn btn-primary btn-half">
                 <Play size={16} />
-                {t('dashboard.start_short')}
+                <span>{t('dashboard.start_short')}</span>
               </button>
               <button onClick={() => onCancelReservation(table.id)} className="btn btn-ghost btn-half">
                 <X size={16} />
-                {t('dashboard.cancel_reserve')}
+                <span>{t('dashboard.cancel_reserve')}</span>
               </button>
             </>
           ) : (
             <>
               <button onClick={() => onOpenBar(table.id)} className="btn btn-amber" style={{ flex: 1 }}>
                 <ShoppingBag size={16} />
-                {t('nav.bar')}
+                <span>{t('nav.bar')}</span>
               </button>
               {isPaused ? (
                 <button onClick={() => onResume(table.id)} className="btn btn-primary" style={{ flex: 1 }}>
                   <Play size={16} />
-                  {t('dashboard.resume')}
+                  <span>{t('dashboard.resume')}</span>
                 </button>
               ) : (
                 <button onClick={() => onPause(table.id)} className="btn btn-ghost" style={{ flex: 1 }}>
                   <Pause size={16} />
-                  {t('dashboard.pause')}
+                  <span>{t('dashboard.pause')}</span>
                 </button>
               )}
               <button onClick={() => onStop(table.id)} className="btn btn-danger" style={{ flex: 1 }}>
                 <Square size={16} />
-                {t('dashboard.stop')}
+                <span>{t('dashboard.stop')}</span>
               </button>
             </>
           )}
@@ -346,7 +349,7 @@ const TableCard: React.FC<{
 const Dashboard: React.FC = () => {
   const {
     tables, startSession, endSession, pauseSession, resumeSession, settings, getTodayRevenue, getTodaySessions, openModal,
-    reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu, barCategories,
+    reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu, barCategories, updateSettings,
   } = useStore();
   const { t } = useT();
   const [showStartModal, setShowStartModal] = useState(false);
@@ -481,6 +484,9 @@ const Dashboard: React.FC = () => {
         session.pauseIntervals
       );
       const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const serviceCharge = settings.serviceChargeEnabled
+        ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
+        : 0;
 
       await printReceipt({
         clubName: settings.clubName,
@@ -496,7 +502,9 @@ const Dashboard: React.FC = () => {
         tableCost,
         barOrders: session.barOrders,
         barCost,
-        totalCost: tableCost + barCost,
+        serviceCharge,
+        serviceChargePercent: settings.serviceChargePercent,
+        totalCost: tableCost + barCost + serviceCharge,
         currency: settings.currency,
         receiptWidthMm: settings.receiptWidthMm,
         receiptFontSize: settings.receiptFontSize,
@@ -532,6 +540,9 @@ const Dashboard: React.FC = () => {
       session.pauseIntervals
     );
     const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const serviceCharge = settings.serviceChargeEnabled
+      ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
+      : 0;
 
     try {
       await printReceipt({
@@ -548,7 +559,9 @@ const Dashboard: React.FC = () => {
         tableCost,
         barOrders: session.barOrders,
         barCost,
-        totalCost: tableCost + barCost,
+        serviceCharge,
+        serviceChargePercent: settings.serviceChargePercent,
+        totalCost: tableCost + barCost + serviceCharge,
         currency: settings.currency,
         receiptWidthMm: settings.receiptWidthMm,
         receiptFontSize: settings.receiptFontSize,
@@ -574,6 +587,8 @@ const Dashboard: React.FC = () => {
     settings.receiptFontSize,
     settings.receiptPaddingMm,
     settings.silentPrint,
+    settings.serviceChargeEnabled,
+    settings.serviceChargePercent,
     endSession,
   ]);
 
@@ -650,8 +665,42 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Панель столов: заголовок + переключатель вида */}
+      <div className="tables-toolbar">
+        <h2 className="tables-toolbar-title">{t('dashboard.tables_title')}</h2>
+        <div className="seg-toggle tables-view-seg" role="tablist">
+          <button
+            type="button"
+            className={`seg-option ${settings.tablesViewMode === 'grid' ? 'active' : ''}`}
+            onClick={() => updateSettings({ tablesViewMode: 'grid' })}
+            title={t('dashboard.view_grid')}
+          >
+            <LayoutGrid size={15} />
+            <span className="seg-label">{t('dashboard.view_grid')}</span>
+          </button>
+          <button
+            type="button"
+            className={`seg-option ${settings.tablesViewMode === 'compact' ? 'active' : ''}`}
+            onClick={() => updateSettings({ tablesViewMode: 'compact' })}
+            title={t('dashboard.view_compact')}
+          >
+            <Grid2x2 size={15} />
+            <span className="seg-label">{t('dashboard.view_compact')}</span>
+          </button>
+          <button
+            type="button"
+            className={`seg-option ${settings.tablesViewMode === 'list' ? 'active' : ''}`}
+            onClick={() => updateSettings({ tablesViewMode: 'list' })}
+            title={t('dashboard.view_list')}
+          >
+            <List size={15} />
+            <span className="seg-label">{t('dashboard.view_list')}</span>
+          </button>
+        </div>
+      </div>
+
       {/* Сетка столов */}
-      <div className="tables-grid">
+      <div className={`tables-grid view-${settings.tablesViewMode}`}>
         {tables.map((table) => (
           <TableCard
             key={table.id}
@@ -1017,6 +1066,10 @@ const EndSessionModal: React.FC<{
   );
 
   const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const serviceCharge = settings.serviceChargeEnabled
+    ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
+    : 0;
+  const grandTotal = tableCost + barCost + serviceCharge;
   const hours = Math.floor(durationMinutes / 60);
   const mins = durationMinutes % 60;
 
@@ -1071,9 +1124,22 @@ const EndSessionModal: React.FC<{
             </div>
           )}
 
+          {serviceCharge > 0 && (
+            <div className="end-session-grid" style={{ marginTop: 4 }}>
+              <div className="end-session-item">
+                <span className="end-session-label">Сумма</span>
+                <span className="end-session-value">{(tableCost + barCost).toLocaleString()} {settings.currency}</span>
+              </div>
+              <div className="end-session-item">
+                <span className="end-session-label">Обслуживание ({settings.serviceChargePercent}%)</span>
+                <span className="end-session-value text-amber-400">+{serviceCharge.toLocaleString()} {settings.currency}</span>
+              </div>
+            </div>
+          )}
+
           <div className="end-session-total">
             <span>ИТОГО К ОПЛАТЕ</span>
-            <span>{(tableCost + barCost).toLocaleString()} {settings.currency}</span>
+            <span>{grandTotal.toLocaleString()} {settings.currency}</span>
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 12, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>

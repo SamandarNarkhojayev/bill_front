@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot, Search, LayoutGrid, UtensilsCrossed } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useT } from '../i18n';
 import type { BarMenuItem } from '../types';
 import { printKitchenTicket } from '../utils/receipt';
 import { getItemDepartment } from '../utils/department';
@@ -13,21 +14,35 @@ const getIconComponent = (iconName: string) => iconMap[iconName] || Package;
 const TableModal: React.FC = () => {
   const { activeModal, modalData, closeModal, barMenu, barCategories, addBarOrderToTable, tables, settings, addToast } =
     useStore();
+  const { t } = useT();
   const [cart, setCart] = useState<Map<string, number>>(new Map());
+  // 'all' | 'dept:bar' | 'dept:kitchen' | <categoryId>
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [query, setQuery] = useState('');
+
+  const sortedCategories = useMemo(
+    () => [...barCategories].sort((a, b) => a.sortOrder - b.sortOrder),
+    [barCategories]
+  );
+
+  const filteredMenu = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return barMenu.filter((i) => {
+      if (!i.available) return false;
+      if (activeCategory === 'dept:bar' && getItemDepartment(i, barCategories) !== 'bar') return false;
+      else if (activeCategory === 'dept:kitchen' && getItemDepartment(i, barCategories) !== 'kitchen') return false;
+      else if (activeCategory !== 'all' && !activeCategory.startsWith('dept:') && i.categoryId !== activeCategory)
+        return false;
+      if (q && !i.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [barMenu, barCategories, activeCategory, query]);
 
   if (activeModal !== 'bar-order' || !modalData) return null;
 
   const tableId = modalData.tableId as number;
   const table = tables.find((t) => t.id === tableId);
   if (!table) return null;
-
-  const sortedCategories = [...barCategories].sort((a, b) => a.sortOrder - b.sortOrder);
-
-  const filteredMenu =
-    activeCategory === 'all'
-      ? barMenu.filter((i) => i.available)
-      : barMenu.filter((i) => i.available && i.categoryId === activeCategory);
 
   const addToCart = (item: BarMenuItem) => {
     setCart((prev) => {
@@ -75,7 +90,7 @@ const TableModal: React.FC = () => {
           receiptPaddingMm: settings.receiptPaddingMm,
           deviceName: settings.kitchenPrinterName,
         }).then((ok) => {
-          if (!ok) addToast('error', 'Не удалось распечатать заказ на кухню');
+          if (!ok) addToast('error', t('bar.kitchen_print_failed'));
         });
       }
     }
@@ -95,21 +110,59 @@ const TableModal: React.FC = () => {
         <div className="modal-header-bar">
           <h2 className="modal-title">
             <ShoppingCart size={20} className="text-amber-400" />
-            Бар — {table.name}
+            {t('bar.title_bar')} — {table.name}
           </h2>
           <button onClick={closeModal} className="modal-close">
             <X size={20} />
           </button>
         </div>
 
-        {/* Категории */}
+        {/* Поиск по меню */}
+        <div className="bar-search">
+          <Search size={16} className="bar-search-icon" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('bar.search_placeholder')}
+            className="bar-search-input"
+            autoFocus
+          />
+          {query && (
+            <button onClick={() => setQuery('')} className="bar-search-clear" type="button">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Категории: первые быстрые фильтры (Все / Бар / Кухня) выделены */}
         <div className="bar-categories">
           <button
             onClick={() => setActiveCategory('all')}
-            className={`bar-category-btn ${activeCategory === 'all' ? 'active' : ''}`}
+            className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'all' ? 'active' : ''}`}
           >
-            <span>Все</span>
+            <LayoutGrid size={14} />
+            <span>{t('bar.filter_all')}</span>
           </button>
+          {settings.kitchenSeparate && (
+            <>
+              <button
+                onClick={() => setActiveCategory('dept:bar')}
+                className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'dept:bar' ? 'active' : ''}`}
+              >
+                <Beer size={14} />
+                <span>{t('bar.filter_bar')}</span>
+              </button>
+              <button
+                onClick={() => setActiveCategory('dept:kitchen')}
+                className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'dept:kitchen' ? 'active' : ''}`}
+              >
+                <UtensilsCrossed size={14} />
+                <span>{t('bar.filter_kitchen')}</span>
+              </button>
+            </>
+          )}
+          <span className="bar-cat-divider" aria-hidden="true" />
           {sortedCategories.map((cat) => {
             const IconComp = getIconComponent(cat.icon);
             return (
@@ -127,6 +180,12 @@ const TableModal: React.FC = () => {
         </div>
 
         {/* Меню */}
+        {filteredMenu.length === 0 ? (
+          <div className="bar-menu-empty">
+            <Search size={28} />
+            <span>{t('bar.nothing_found')}</span>
+          </div>
+        ) : (
         <div className="bar-menu-grid">
           {filteredMenu.map((item) => {
             const inCart = cart.get(item.id) || 0;
@@ -174,19 +233,20 @@ const TableModal: React.FC = () => {
             );
           })}
         </div>
+        )}
 
         {/* Корзина и подтверждение */}
         {cartCount > 0 && (
           <div className="bar-cart-footer">
             <div className="bar-cart-info">
-              <span className="bar-cart-count">{cartCount} позиций</span>
+              <span className="bar-cart-count">{t('bar.positions_count', { count: cartCount })}</span>
               <span className="bar-cart-total">
                 {cartTotal} {settings.currency}
               </span>
             </div>
             <button onClick={handleSubmit} className="btn btn-amber">
               <ShoppingCart size={16} />
-              Добавить к счёту
+              {t('bar.add_to_bill')}
             </button>
           </div>
         )}

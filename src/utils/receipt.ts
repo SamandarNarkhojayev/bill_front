@@ -17,6 +17,9 @@ interface ReceiptData {
   barCost: number;
   totalCost: number;
   currency: string;
+  // Процент за обслуживание (необязательно). Если задан и > 0 — печатается строкой в чеке.
+  serviceChargePercent?: number;
+  serviceCharge?: number;
   // Настройки размера (опциональные, есть дефолты)
   receiptWidthMm?: number;
   receiptFontSize?: number;
@@ -87,6 +90,8 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     barCost,
     totalCost,
     currency,
+    serviceChargePercent = 0,
+    serviceCharge = 0,
     receiptWidthMm = 80,
     receiptFontSize = 14,
     receiptPaddingMm = 5,
@@ -287,6 +292,15 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     ` : ''}
 
     <div class="total-section">
+      ${serviceCharge > 0 ? `
+      <div class="row">
+        <span class="row-label">Сумма:</span>
+        <span class="row-value">${(tableCost + barCost).toLocaleString()} ${currency}</span>
+      </div>
+      <div class="row">
+        <span class="row-label">Обслуживание (${serviceChargePercent}%):</span>
+        <span class="row-value">${serviceCharge.toLocaleString()} ${currency}</span>
+      </div>` : ''}
       <div class="total-row">
         <span>ИТОГО:</span>
         <span>${totalCost.toLocaleString()} ${currency}</span>

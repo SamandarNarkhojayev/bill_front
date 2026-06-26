@@ -435,10 +435,102 @@
 }
 
 /* ===== TABLES GRID ===== */
+/* ===== Панель столов + переключатель вида ===== */
+.tables-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.tables-toolbar-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+}
+.tables-view-seg {
+  flex: 0 0 auto;
+  width: auto;
+}
+.tables-view-seg .seg-option {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+}
+[data-theme="light"] .tables-toolbar-title { color: #0f172a; }
+
 .tables-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* min(...,100%) — чтобы колонка не выходила за контейнер на узких экранах (иначе сетка «съезжает») */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 20px;
+}
+
+/* Плитка — компактнее карточки, больше столов в ряд */
+.tables-grid.view-compact {
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 14px;
+}
+.tables-grid.view-compact .table-card-actions .btn {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.tables-grid.view-compact .table-card-content { padding: 16px; }
+.tables-grid.view-compact .table-card-header { margin-bottom: 12px; }
+.tables-grid.view-compact .table-card-name { font-size: 16px; }
+.tables-grid.view-compact .table-card-session { gap: 6px; margin-bottom: 12px; }
+.tables-grid.view-compact .session-total { padding: 8px 10px; }
+.tables-grid.view-compact .table-card-empty { padding: 14px 0; margin-bottom: 12px; }
+
+/* Список — горизонтальные строки */
+.tables-grid.view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tables-grid.view-list .table-card-status-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  height: auto;
+  width: 4px;
+}
+.tables-grid.view-list .table-card-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 18px 12px 22px;
+  flex-wrap: wrap;
+}
+.tables-grid.view-list .table-card-header {
+  margin-bottom: 0;
+  flex: 0 0 auto;
+  min-width: 150px;
+  gap: 10px;
+}
+.tables-grid.view-list .table-card-name { font-size: 16px; margin-bottom: 2px; }
+.tables-grid.view-list .table-card-session {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+  flex: 1 1 auto;
+  gap: 18px;
+}
+.tables-grid.view-list .session-total { margin-top: 0; padding: 6px 12px; }
+.tables-grid.view-list .table-card-empty {
+  flex-direction: row;
+  align-items: center;
+  padding: 0;
+  margin-bottom: 0;
+  flex: 1 1 auto;
+  gap: 16px;
+}
+.tables-grid.view-list .table-card-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .table-card {
@@ -609,6 +701,28 @@
 .table-card-actions {
   display: flex;
   gap: 8px;
+}
+
+/* Кнопки в карточке стола: ужимаются по ширине карточки, иконка не сжимается,
+   длинная подпись (напр. «Продолжить») обрезается многоточием — строка не «съезжает». */
+.table-card-actions .btn {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+  overflow: hidden;
+}
+.table-card-actions .btn svg {
+  flex-shrink: 0;
+}
+.table-card-actions .btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-card-actions .btn.btn-icon-only {
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* ===== BUTTONS ===== */
@@ -952,12 +1066,102 @@
 }
 
 /* ===== BAR ORDER MODAL ===== */
+/* ===== Поиск по меню в модалке бара ===== */
+.bar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 16px 24px 0;
+}
+.bar-search-icon {
+  position: absolute;
+  left: 14px;
+  color: #64748b;
+  pointer-events: none;
+}
+.bar-search-input {
+  width: 100%;
+  padding: 11px 40px 11px 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.bar-search-input:focus {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+.bar-search-input::placeholder { color: #64748b; }
+.bar-search-clear {
+  position: absolute;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  cursor: pointer;
+}
+.bar-search-clear:hover { background: rgba(255, 255, 255, 0.12); color: #e2e8f0; }
+[data-theme="light"] .bar-search-input {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+[data-theme="light"] .bar-search-input::placeholder { color: #94a3b8; }
+
 .bar-categories {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 16px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   overflow-x: auto;
+}
+
+/* Быстрые фильтры (Все / Бар / Кухня) — выделены, чтобы бросались в глаза */
+.bar-category-btn--primary {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  font-weight: 700;
+}
+.bar-category-btn--primary:hover {
+  background: rgba(245, 158, 11, 0.14);
+}
+.bar-category-btn--primary.active {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fcd34d;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25), 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+.bar-cat-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-theme="light"] .bar-cat-divider { background: #e2e8f0; }
+
+/* Пустой результат поиска */
+.bar-menu-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 56px 24px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .bar-category-btn {
@@ -2451,15 +2655,16 @@
     justify-content: center;
     padding: 10px;
   }
-  /* Узкий сайдбар (≤900px) без класса .collapsed — прячем подписи темы и ряд языков */
-  .seg-label { display: none; }
-  .lang-seg { display: none; }
+  /* Узкий сайдбар (≤900px) без класса .collapsed — прячем подписи темы и ряд языков.
+     Скоупим под .sidebar, чтобы не задеть переключатель вида столов на главной. */
+  .sidebar .seg-label { display: none; }
+  .sidebar .lang-seg { display: none; }
   .sidebar-collapse-label,
   .sidebar-version,
   .sidebar-more-chevron { display: none; }
   /* «Ещё» остаётся доступным, но без отступа в узком режиме */
   .sidebar-more-list { margin-left: 0; padding-left: 0; border-left: none; }
-  .seg-option { padding: 8px 2px; }
+  .sidebar .seg-option { padding: 8px 2px; }
   .dashboard-stats,
   .report-stats {
     grid-template-columns: 1fr;
@@ -5046,6 +5251,40 @@
 /* Компенсация отступа для контента, чтобы баннер не перекрывал */
 .main-content-body {
   padding-bottom: 50px;
+}
+
+/* ===== Адаптация сетки столов ===== */
+@media (max-width: 1024px) {
+  .tables-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+    gap: 16px;
+  }
+  .tables-grid.view-compact {
+    grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .tables-grid,
+  .tables-grid.view-compact {
+    grid-template-columns: 1fr;
+  }
+  /* Список на узких экранах: вертикальная компоновка, действия во всю ширину */
+  .tables-grid.view-list .table-card-content {
+    gap: 12px;
+  }
+  .tables-grid.view-list .table-card-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .tables-grid.view-list .table-card-actions .btn {
+    flex: 1 1 0;
+  }
+  .tables-toolbar-title { font-size: 15px; }
+}
+@media (max-width: 480px) {
+  /* Совсем узкие экраны: переключатель вида — только иконки */
+  .tables-view-seg .seg-label { display: none; }
+  .tables-view-seg .seg-option { padding: 8px 12px; }
 }
 
 @media (max-width: 768px) {

@@ -182,6 +182,7 @@ export interface AppSettings {
   language: AppLanguage;        // язык интерфейса (по умолчанию 'ru')
   lastSeenVersion: string;      // последняя версия, для которой показали «Что нового»
   sidebarPinned: PageType[];    // закреплённые пункты бокового меню (остальные — в «Ещё»)
+  tablesViewMode: 'grid' | 'compact' | 'list'; // вид сетки столов на главной
   clubName: string;
   receiptCompanyName: string;
   receiptCity: string;
@@ -199,6 +200,9 @@ export interface AppSettings {
   receiptWidthMm: number;    // Ширина чека в мм (по умолчанию 80)
   receiptFontSize: number;   // Базовый размер шрифта в px (по умолчанию 14)
   receiptPaddingMm: number;  // Внутренний отступ в мм (по умолчанию 5)
+  // ===== Процент за обслуживание (сервисный сбор) =====
+  serviceChargeEnabled: boolean;  // добавлять процент за обслуживание к чеку (по умолчанию выключено)
+  serviceChargePercent: number;   // процент за обслуживание, %
   // ===== Бар / Кухня =====
   kitchenSeparate: boolean;       // true — Кухня отдельной страницей; false — кухня внутри Бара
   autoPrintKitchenTicket: boolean; // Автоматически печатать заказ на кухню при пробитии блюда

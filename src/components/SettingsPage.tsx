@@ -24,6 +24,7 @@ import {
   Menu,
   Pin,
   PinOff,
+  Percent,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT, LANGUAGES } from '../i18n';
@@ -782,6 +783,51 @@ const SettingsPage: React.FC = () => {
             Настройки печати
           </h3>
           <div className="settings-fields">
+            {/* Процент за обслуживание */}
+            <div className="settings-toggle-field">
+              <div>
+                <label className="settings-label">
+                  <Percent size={14} style={{ marginRight: 6 }} />
+                  {t('settings.service_charge')}
+                </label>
+                <p className="settings-hint">{t('settings.service_charge_hint')}</p>
+              </div>
+              <button
+                onClick={() =>
+                  setLocalSettings((prev) => ({ ...prev, serviceChargeEnabled: !prev.serviceChargeEnabled }))
+                }
+                className={`toggle ${localSettings.serviceChargeEnabled ? 'on' : 'off'}`}
+              >
+                <div className="toggle-dot" />
+              </button>
+            </div>
+            {localSettings.serviceChargeEnabled && (
+              <div className="settings-field">
+                <label className="settings-label">{t('settings.service_charge_percent')}</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={30}
+                    step={1}
+                    value={localSettings.serviceChargePercent}
+                    onChange={(e) =>
+                      setLocalSettings((prev) => ({ ...prev, serviceChargePercent: Number(e.target.value) }))
+                    }
+                    style={{ flex: 1 }}
+                  />
+                  <NumberInput
+                    min={0}
+                    max={100}
+                    value={localSettings.serviceChargePercent}
+                    onChange={(n) => setLocalSettings((prev) => ({ ...prev, serviceChargePercent: n }))}
+                    className="form-input form-input-sm"
+                    style={{ width: 70, textAlign: 'center' }}
+                  />
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>%</span>
+                </div>
+              </div>
+            )}
             <div className="settings-field">
               <label className="settings-label">Ширина бумаги (мм)</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
