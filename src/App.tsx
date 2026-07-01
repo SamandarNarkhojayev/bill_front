@@ -90,10 +90,28 @@ telegram.setDataProvider(() => {
     }
   }
 
-  const stock = s.barMenu
-    .filter((m) => m.stock >= 0)
-    .map((m) => ({ name: m.name, stock: m.stock, unit: m.unit }))
-    .sort((a, b) => a.stock - b.stock)
+  // Товары бара с остатками для бота: ВСЕ позиции (включая без учёта остатка),
+  // с категорией/ценой/доступностью. Сортировка по порядку категорий → название
+  // категории → название товара, чтобы бот мог группировать список по категориям.
+  const catById = new Map(s.barCategories.map((c) => [c.id, c]))
+  const stock = [...s.barMenu]
+    .sort((a, b) => {
+      const ca = catById.get(a.categoryId)
+      const cb = catById.get(b.categoryId)
+      return (
+        (ca?.sortOrder ?? 999) - (cb?.sortOrder ?? 999) ||
+        (ca?.name || '').localeCompare(cb?.name || '', 'ru') ||
+        a.name.localeCompare(b.name, 'ru')
+      )
+    })
+    .map((m) => ({
+      name: m.name,
+      stock: m.stock,
+      unit: m.unit,
+      price: m.price,
+      category: catById.get(m.categoryId)?.name || 'Без категории',
+      available: m.available,
+    }))
 
   const recent = [...s.sessionHistory]
     .sort((a, b) => b.endTime - a.endTime)

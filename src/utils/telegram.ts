@@ -5,14 +5,17 @@
  * (https://api.telegram.org/bot<token>/...). Поскольку приложение в клубе всегда
  * запущено, оно держит long-polling (getUpdates) и отвечает на нажатия кнопок —
  * владелец в любой момент открывает бота и смотрит «Сегодня / Столы / Смена /
- * Остатки / Последние сессии». Дополнительно бот push-ит события (смена, столы,
+ * Товары бара / Последние сессии». Дополнительно бот push-ит события (смена, столы,
  * сессии, ежедневный итог, низкий остаток). Сервер biliardo.kz (cloudSync) при
  * этом продолжает работать — Telegram это отдельный канал.
  *
  * Модель: у КАЖДОЙ бильярдной свой бот.
  *  1. Владелец создаёт бота через @BotFather, копирует токен.
- *  2. Вписывает токен в Настройки → «Telegram-бот», включает канал.
- *  3. Открывает бота, жмёт «Старт» (/start) — чат привязывается автоматически.
+ *  2. Разработчик вписывает токен + задаёт КОД ДОСТУПА в Настройки → «Telegram-бот».
+ *  3. Сотрудник открывает бота и вводит «/start <код>» — только с верным кодом чат
+ *     авторизуется (добавляется в config.authorizedChats). Можно подключить несколько
+ *     чатов; все авторизованные видят кнопки и получают push. Уже подключённые ранее
+ *     чаты мигрируют из legacy chatId и сохраняются без повторного ввода кода.
  *
  * Конфиг хранится в localStorage (НЕ в store — чтобы не было цикла импортов).
  * Данные для бота отдаёт reportProvider/dataProvider, зарегистрированные из App.tsx.
@@ -38,12 +41,20 @@ export interface TelegramEventToggles {
   lowStock: boolean;
 }
 
+export interface AuthorizedChat {
+  id: string;
+  title: string;
+  linkedAt: number;
+}
+
 export interface TelegramConfig {
   enabled: boolean;
   botToken: string;
   botUsername: string;       // @username бота (для deep-link); заполняется через getMe
-  chatId: string;
+  chatId: string;            // legacy «основной» чат (первый привязанный) — для обратной совместимости
   chatTitle: string;
+  accessCode: string;        // код доступа: чат авторизуется только через «/start <код>» (задаёт разработчик)
+  authorizedChats: AuthorizedChat[]; // все авторизованные чаты — им доступны кнопки и push
   events: TelegramEventToggles;
   dailySummaryTime: string;
   lowStockThreshold: number;
@@ -55,6 +66,8 @@ const DEFAULT_CONFIG: TelegramConfig = {
   botUsername: '',
   chatId: '',
   chatTitle: '',
+  accessCode: '',
+  authorizedChats: [],
   events: {
     shiftClose: true,
     tableLoad: false,
@@ -68,10 +81,12 @@ const DEFAULT_CONFIG: TelegramConfig = {
 
 export interface TelegramStatus {
   enabled: boolean;
-  configured: boolean;       // токен И chatId
+  configured: boolean;       // токен И хотя бы один авторизованный чат
   hasToken: boolean;
+  hasAccessCode: boolean;    // задан ли код доступа
   botUsername: string;
   chatTitle: string;
+  authorizedChats: AuthorizedChat[];
   polling: boolean;          // бот слушает кнопки
   lastSentAt: number | null;
   lastError: string | null;
@@ -103,11 +118,19 @@ function loadConfig(): TelegramConfig {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (!raw) return { ...DEFAULT_CONFIG };
     const parsed = JSON.parse(raw) as Partial<TelegramConfig>;
-    return {
+    const merged: TelegramConfig = {
       ...DEFAULT_CONFIG,
       ...parsed,
       events: { ...DEFAULT_CONFIG.events, ...(parsed.events ?? {}) },
+      authorizedChats: Array.isArray(parsed.authorizedChats) ? parsed.authorizedChats : [],
     };
+    // Миграция: у существующих установок был один привязанный chatId. Переносим его
+    // в список авторизованных чатов — уже подключённые аккаунты сохраняются и
+    // продолжают работать без ввода кода.
+    if (merged.authorizedChats.length === 0 && merged.chatId) {
+      merged.authorizedChats = [{ id: merged.chatId, title: merged.chatTitle || merged.chatId, linkedAt: Date.now() }];
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_CONFIG };
   }
@@ -128,7 +151,7 @@ function sleep(ms: number): Promise<void> {
 
 // ===== Публичный конфиг API =====
 export function getConfig(): TelegramConfig {
-  return { ...config, events: { ...config.events } };
+  return { ...config, events: { ...config.events }, authorizedChats: config.authorizedChats.map((c) => ({ ...c })) };
 }
 
 export function setConfig(patch: Partial<TelegramConfig>): TelegramConfig {
@@ -144,7 +167,7 @@ export function setConfig(patch: Partial<TelegramConfig>): TelegramConfig {
 }
 
 export function isConfigured(): boolean {
-  return !!config.botToken && !!config.chatId;
+  return !!config.botToken && config.authorizedChats.length > 0;
 }
 
 export function getStatus(): TelegramStatus {
@@ -152,8 +175,10 @@ export function getStatus(): TelegramStatus {
     enabled: config.enabled,
     configured: isConfigured(),
     hasToken: !!config.botToken,
+    hasAccessCode: !!config.accessCode,
     botUsername: config.botUsername,
     chatTitle: config.chatTitle,
+    authorizedChats: config.authorizedChats.map((c) => ({ ...c })),
     polling,
     lastSentAt,
     lastError,
@@ -193,11 +218,16 @@ async function tgApi<T>(token: string, method: string, params?: Record<string, u
   }
 }
 
-// ===== Inline-клавиатуры =====
-interface InlineButton { text: string; callback_data?: string; url?: string; }
-interface InlineKeyboard { inline_keyboard: InlineButton[][]; }
+// ===== Клавиатура (reply keyboard — кнопки в самой клавиатуре Telegram) =====
+interface KeyboardButton { text: string; }
+interface ReplyKeyboard {
+  keyboard: KeyboardButton[][];
+  resize_keyboard?: boolean;
+  is_persistent?: boolean;
+  input_field_placeholder?: string;
+}
 
-async function rawSend(chatId: string | number, text: string, replyMarkup?: InlineKeyboard): Promise<TgApiResult<{ message_id: number }>> {
+async function rawSend(chatId: string | number, text: string, replyMarkup?: ReplyKeyboard): Promise<TgApiResult<{ message_id: number }>> {
   return tgApi(config.botToken, 'sendMessage', {
     chat_id: chatId,
     text,
@@ -205,18 +235,6 @@ async function rawSend(chatId: string | number, text: string, replyMarkup?: Inli
     disable_web_page_preview: true,
     reply_markup: replyMarkup,
   });
-}
-
-async function rawEdit(chatId: string | number, messageId: number, text: string, replyMarkup?: InlineKeyboard): Promise<void> {
-  await tgApi(config.botToken, 'editMessageText', {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    parse_mode: 'HTML',
-    disable_web_page_preview: true,
-    reply_markup: replyMarkup,
-  });
-  // Ошибка «message is not modified» безвредна — игнорируем.
 }
 
 async function answerCallback(id: string, text?: string): Promise<void> {
@@ -255,15 +273,22 @@ async function sendMessage(text: string): Promise<{ ok: boolean; error?: string 
   if (!isConfigured()) return { ok: false, error: 'not configured' };
   sending = true;
   emit();
-  const res = await rawSend(config.chatId, text);
+  // Рассылаем во ВСЕ авторизованные чаты. Успех, если доставлено хотя бы в один.
+  let anyOk = false;
+  let lastErr: string | null = null;
+  for (const chat of config.authorizedChats) {
+    const res = await rawSend(chat.id, text);
+    if (res.ok) anyOk = true;
+    else lastErr = res.description || 'send failed';
+  }
   sending = false;
-  if (res.ok) {
+  if (anyOk) {
     lastSentAt = Date.now();
     lastError = null;
     emit();
     return { ok: true };
   }
-  lastError = res.description || 'send failed';
+  lastError = lastErr || 'send failed';
   console.warn('[telegram] sendMessage failed:', lastError);
   emit();
   return { ok: false, error: lastError };
@@ -278,6 +303,18 @@ async function refreshBotInfo(): Promise<void> {
     saveConfig();
     emit();
   }
+}
+
+// Регистрирует список команд бота (меню «/» в Telegram).
+async function registerBotCommands(): Promise<void> {
+  if (!config.botToken) return;
+  await tgApi(config.botToken, 'setMyCommands', {
+    commands: [
+      { command: 'keyboard', description: 'Показать клавиатуру с кнопками' },
+      { command: 'menu', description: 'Главное меню' },
+      { command: 'start', description: 'Запуск / ввод кода доступа' },
+    ],
+  });
 }
 
 export async function checkToken(token: string): Promise<{ ok: true; username: string } | { ok: false; error: string }> {
@@ -423,7 +460,14 @@ export interface BotShiftInfo {
   operatorName: string; startTime: number;
   tableRevenue: number; barRevenue: number; total: number; sessionsCount: number;
 }
-export interface BotStockInfo { name: string; stock: number; unit: string; }
+export interface BotStockInfo {
+  name: string;
+  stock: number;        // остаток; -1 = без учёта
+  unit: string;
+  price: number;
+  category: string;     // название категории (для группировки в боте)
+  available: boolean;
+}
 export interface BotSessionInfo { tableName: string; durationMin: number; total: number; endTime: number; }
 export interface BotRevenueAgg { tableRevenue: number; barRevenue: number; totalRevenue: number; sessionsCount: number; }
 export interface BotTableAgg { name: string; sessions: number; revenue: number; }
@@ -509,15 +553,32 @@ function buildShiftText(d: BotData): string {
 
 function buildStockText(d: BotData): string {
   if (d.stock.length === 0) {
-    return header(d.clubName) + `🍹 <b>Остатки</b>\n${SEP}\nНет товаров с учётом остатка.`;
+    return header(d.clubName) + `🍹 <b>Товары бара</b>\n${SEP}\nМеню пустое.`;
   }
   const threshold = config.lowStockThreshold;
-  const lines = d.stock.slice(0, 30).map((i) => {
-    const icon = i.stock <= threshold ? '⚠️' : '✅';
-    return `${icon} ${escapeHtml(i.name)}: <b>${i.stock}</b> ${escapeHtml(i.unit || 'шт')}`;
-  });
-  const more = d.stock.length > 30 ? `\n…ещё ${d.stock.length - 30}` : '';
-  return header(d.clubName) + `🍹 <b>Остатки</b> (порог ${threshold})\n${SEP}\n` + lines.join('\n') + more;
+  const MAX = 50; // держим сообщение в пределах лимита Telegram (4096 символов)
+  const shown = d.stock.slice(0, MAX);
+  const lines: string[] = [];
+  let lastCat = '';
+  for (const i of shown) {
+    if (i.category !== lastCat) {
+      lastCat = i.category;
+      if (lines.length) lines.push(''); // пустая строка между группами категорий
+      lines.push(`📁 <b>${escapeHtml(i.category)}</b>`);
+    }
+    const tracked = typeof i.stock === 'number' && i.stock >= 0;
+    // 🚫 недоступен · ▫️ без учёта остатка · ⚠️ низкий остаток · ✅ в наличии
+    const mark = !i.available ? '🚫' : !tracked ? '▫️' : i.stock <= threshold ? '⚠️' : '✅';
+    const left = tracked ? `${i.stock} ${escapeHtml(i.unit || 'шт')}` : '∞';
+    lines.push(`  ${mark} ${escapeHtml(i.name)} — ${fmtMoney(i.price, d.currency)} · ост. ${left}`);
+  }
+  const more = d.stock.length > MAX ? `\n\n…ещё ${d.stock.length - MAX} поз.` : '';
+  return (
+    header(d.clubName) +
+    `🍹 <b>Товары бара</b> · ${d.stock.length} поз. (порог ⚠️ ${threshold})\n${SEP}\n` +
+    lines.join('\n') +
+    more
+  );
 }
 
 function buildRecentText(d: BotData): string {
@@ -558,41 +619,50 @@ function mainMenuText(d: BotData | null): string {
   return club + `🤖 <b>Главное меню</b>${occ}${rev}\n\nВыберите раздел кнопкой ниже:`;
 }
 
-function mainMenuMarkup(): InlineKeyboard {
-  return {
-    inline_keyboard: [
-      [{ text: '📊 Сегодня', callback_data: 'today' }, { text: '🎱 Столы', callback_data: 'tables' }],
-      [{ text: '📅 Неделя', callback_data: 'week' }, { text: '🗓 Месяц', callback_data: 'month' }],
-      [{ text: '🏓 По столам', callback_data: 'pertable' }, { text: '🧾 Смена', callback_data: 'shift' }],
-      [{ text: '🍹 Остатки', callback_data: 'stock' }, { text: '📒 Сессии', callback_data: 'recent' }],
-      [{ text: '📄 Экспорт CSV', callback_data: 'csv' }, { text: '🔄 Обновить', callback_data: 'menu' }],
-    ],
-  };
-}
+// Кнопки меню в порядке отображения. Из этого списка строится и reply-клавиатура,
+// и обратный маппинг «текст кнопки → раздел» (reply-кнопка присылает свой текст сообщением).
+const MENU_BUTTONS: { label: string; section: string }[] = [
+  { label: '📊 Сегодня', section: 'today' },
+  { label: '🎱 Столы', section: 'tables' },
+  { label: '📅 Неделя', section: 'week' },
+  { label: '🗓 Месяц', section: 'month' },
+  { label: '🏓 По столам', section: 'pertable' },
+  { label: '🧾 Смена', section: 'shift' },
+  { label: '🍹 Товары бара', section: 'stock' },
+  { label: '📒 Сессии', section: 'recent' },
+  { label: '📄 Экспорт CSV', section: 'csv' },
+  { label: '🏠 Меню', section: 'menu' },
+];
 
-function sectionMarkup(section: string): InlineKeyboard {
-  return {
-    inline_keyboard: [
-      [{ text: '🔄 Обновить', callback_data: section }, { text: '⬅️ Меню', callback_data: 'menu' }],
-    ],
-  };
-}
-
-function renderSection(section: string): { text: string; markup: InlineKeyboard } {
-  const d = dataProvider ? dataProvider() : null;
-  if (section === 'menu' || !d) {
-    return { text: mainMenuText(d), markup: mainMenuMarkup() };
+// Постоянная клавиатура снизу (кнопки «в самой клавиатуре» Telegram) — по 2 в ряд.
+function mainReplyKeyboard(): ReplyKeyboard {
+  const rows: KeyboardButton[][] = [];
+  for (let i = 0; i < MENU_BUTTONS.length; i += 2) {
+    rows.push(MENU_BUTTONS.slice(i, i + 2).map((b) => ({ text: b.label })));
   }
+  return { keyboard: rows, resize_keyboard: true, is_persistent: true, input_field_placeholder: 'Выберите раздел…' };
+}
+
+// Текст reply-кнопки → id раздела (null, если это не кнопка меню).
+function sectionForText(text: string): string | null {
+  const t = (text || '').trim();
+  return MENU_BUTTONS.find((b) => b.label === t)?.section ?? null;
+}
+
+function renderSection(section: string): { text: string; markup: ReplyKeyboard } {
+  const d = dataProvider ? dataProvider() : null;
+  const markup = mainReplyKeyboard();
+  if (section === 'menu' || !d) return { text: mainMenuText(d), markup };
   switch (section) {
-    case 'today': return { text: buildTodayText(d), markup: sectionMarkup('today') };
-    case 'week': return { text: buildAggText(d, '📅 <b>За неделю</b>', d.week), markup: sectionMarkup('week') };
-    case 'month': return { text: buildAggText(d, '🗓 <b>За месяц</b>', d.month), markup: sectionMarkup('month') };
-    case 'pertable': return { text: buildPerTableText(d), markup: sectionMarkup('pertable') };
-    case 'tables': return { text: buildTablesText(d), markup: sectionMarkup('tables') };
-    case 'shift': return { text: buildShiftText(d), markup: sectionMarkup('shift') };
-    case 'stock': return { text: buildStockText(d), markup: sectionMarkup('stock') };
-    case 'recent': return { text: buildRecentText(d), markup: sectionMarkup('recent') };
-    default: return { text: mainMenuText(d), markup: mainMenuMarkup() };
+    case 'today': return { text: buildTodayText(d), markup };
+    case 'week': return { text: buildAggText(d, '📅 <b>За неделю</b>', d.week), markup };
+    case 'month': return { text: buildAggText(d, '🗓 <b>За месяц</b>', d.month), markup };
+    case 'pertable': return { text: buildPerTableText(d), markup };
+    case 'tables': return { text: buildTablesText(d), markup };
+    case 'shift': return { text: buildShiftText(d), markup };
+    case 'stock': return { text: buildStockText(d), markup };
+    case 'recent': return { text: buildRecentText(d), markup };
+    default: return { text: mainMenuText(d), markup };
   }
 }
 
@@ -612,57 +682,99 @@ function chatDisplayName(chat: TgChat): string {
 }
 
 function isAuthorized(chat: TgChat): boolean {
-  return !!config.chatId && config.chatId === String(chat.id);
+  const id = String(chat.id);
+  return config.authorizedChats.some((c) => c.id === id);
 }
 
-// Привязывает чат к боту (первый написавший на этапе настройки).
-function linkChat(chat: TgChat): void {
-  config.chatId = String(chat.id);
-  config.chatTitle = chatDisplayName(chat);
+// Извлекает код из сообщения: «/start 1234», «/start@Bot 1234» или просто «1234».
+function extractAccessCode(text: string): string {
+  const t = (text || '').trim();
+  const m = t.match(/^\/start(?:@[\w_]+)?\s*(.*)$/i);
+  return (m ? m[1] : t).trim();
+}
+
+// Авторизует чат (добавляет в список). Первый привязанный остаётся «основным» (chatId).
+function authorizeChat(chat: TgChat): void {
+  const id = String(chat.id);
+  if (config.authorizedChats.some((c) => c.id === id)) return;
+  config.authorizedChats = [...config.authorizedChats, { id, title: chatDisplayName(chat), linkedAt: Date.now() }];
+  if (!config.chatId) { config.chatId = id; config.chatTitle = chatDisplayName(chat); }
   saveConfig();
   emit();
 }
 
-/** Снять привязку чата — после этого следующий написавший /start привяжется заново. */
+/** Убрать один авторизованный чат по id. */
+export function removeAuthorizedChat(id: string): void {
+  const authorizedChats = config.authorizedChats.filter((c) => c.id !== id);
+  // Если удалили «основной» — назначаем основным первый из оставшихся.
+  const chatId = config.chatId === id ? (authorizedChats[0]?.id ?? '') : config.chatId;
+  const chatTitle = config.chatId === id ? (authorizedChats[0]?.title ?? '') : config.chatTitle;
+  setConfig({ authorizedChats, chatId, chatTitle });
+}
+
+/** Отвязать ВСЕ чаты — доступ придётся получать заново через «/start <код>». */
 export function unlinkChat(): void {
-  setConfig({ chatId: '', chatTitle: '' });
+  setConfig({ authorizedChats: [], chatId: '', chatTitle: '' });
+}
+
+// Экспорт CSV: шлём файл документом. reply-клавиатура остаётся видимой сама по себе.
+async function handleCsv(chatId: string | number): Promise<void> {
+  const exp = exportProvider ? exportProvider() : null;
+  if (!exp) { await rawSend(chatId, 'Нет данных для экспорта.', mainReplyKeyboard()); return; }
+  const ok = await sendDocument(chatId, exp.filename, exp.csv);
+  if (!ok) await rawSend(chatId, 'Не удалось отправить файл.', mainReplyKeyboard());
 }
 
 async function handleUpdate(upd: TgUpdate): Promise<void> {
   if (upd.message?.chat) {
     const chat = upd.message.chat;
-    if (!config.chatId) {
-      // Первый написавший = владелец (этап привязки).
-      linkChat(chat);
-    } else if (!isAuthorized(chat)) {
-      // Бот уже привязан к другому чату — не раскрываем данные посторонним.
-      await rawSend(chat.id, '🔒 Этот бот привязан к другому чату.');
+    // Уже авторизован — обрабатываем нажатие reply-кнопки (её текст приходит сообщением).
+    if (isAuthorized(chat)) {
+      const raw = (upd.message.text || '').trim();
+      // Команда /keyboard — заново показать клавиатуру с кнопками (если её скрыли).
+      const command = raw.split(/\s+/)[0].replace(/@[\w_]+$/, '').toLowerCase();
+      if (command === '/keyboard') {
+        await rawSend(chat.id, '⌨️ Клавиатура открыта. Выберите раздел кнопкой ниже.', mainReplyKeyboard());
+        return;
+      }
+      const section = sectionForText(raw);
+      if (section === 'csv') { await handleCsv(chat.id); return; }
+      // кнопка меню → раздел; /start, /menu или любой другой текст → главное меню
+      const { text, markup } = renderSection(section ?? 'menu');
+      await rawSend(chat.id, text, markup);
       return;
     }
-    const { text, markup } = renderSection('menu');
-    await rawSend(chat.id, text, markup);
+    // Не авторизован — доступ только по коду «/start <код>».
+    if (!config.accessCode) {
+      await rawSend(chat.id, '🔒 Доступ по коду. Код ещё не задан — обратитесь к разработчику приложения.');
+      return;
+    }
+    const code = extractAccessCode(upd.message.text || '');
+    if (code && code === config.accessCode) {
+      authorizeChat(chat);
+      const { text, markup } = renderSection('menu');
+      await rawSend(chat.id, '✅ <b>Доступ открыт.</b>\n' + text, markup);
+      return;
+    }
+    // Кода нет или он неверный.
+    await rawSend(
+      chat.id,
+      '🔒 <b>Доступ только по коду.</b>\nОтправьте: <code>/start КОД</code>\nКод выдаёт администратор клуба.',
+    );
     return;
   }
   if (upd.callback_query) {
+    // Совместимость: старые inline-кнопки, оставшиеся в истории чата. Основной способ
+    // теперь reply-клавиатура, поэтому просто отвечаем на callback и присылаем раздел
+    // новым сообщением с reply-клавиатурой (reply-клавиатуру нельзя прикрепить к editMessageText).
     const cq = upd.callback_query;
     const chat = cq.message?.chat;
     if (!chat || !cq.message) { await answerCallback(cq.id); return; }
     if (!isAuthorized(chat)) { await answerCallback(cq.id, 'Нет доступа'); return; }
-    // Экспорт CSV — отдельная ветка: шлём файл документом, меню не трогаем.
-    if (cq.data === 'csv') {
-      await answerCallback(cq.id, 'Готовлю файл…');
-      const exp = exportProvider ? exportProvider() : null;
-      if (!exp) {
-        await rawSend(chat.id, 'Нет данных для экспорта.');
-      } else {
-        const ok = await sendDocument(chat.id, exp.filename, exp.csv);
-        if (!ok) await rawSend(chat.id, 'Не удалось отправить файл.');
-      }
-      return;
-    }
     await answerCallback(cq.id);
+    if (cq.data === 'csv') { await handleCsv(chat.id); return; }
     const { text, markup } = renderSection(cq.data || 'menu');
-    await rawEdit(chat.id, cq.message.message_id, text, markup);
+    await rawSend(chat.id, text, markup);
     return;
   }
 }
@@ -723,6 +835,7 @@ function startPolling(): void {
   const gen = ++pollGen;
   emit();
   void refreshBotInfo();
+  void registerBotCommands();
   void pollLoop(gen);
 }
 
@@ -785,6 +898,7 @@ export const telegram = {
   subscribe,
   checkToken,
   unlinkChat,
+  removeAuthorizedChat,
   sendTestMessage,
   notifyShiftClosed,
   notifyTableLoad,

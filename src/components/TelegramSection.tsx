@@ -7,13 +7,14 @@
  *
  * Настройка в 3 шага:
  *  1. Токен бота от @BotFather.
- *  2. Включить бота и нажать «Старт» в Telegram — чат привяжется сам.
+ *  2. Задать КОД доступа. Сотрудник отправляет боту «/start <код>» — только с верным
+ *     кодом чат получает доступ. Можно подключить несколько чатов.
  *  3. Проверить связь.
  */
 import React, { useEffect, useState } from 'react';
 import {
   Send, Bot, CheckCircle2, AlertCircle, Loader2, Power, Activity,
-  ShieldCheck, Save, KeyRound, ExternalLink, MessageCircle,
+  ShieldCheck, Save, KeyRound, ExternalLink,
 } from 'lucide-react';
 import telegram, { type TelegramStatus, type TelegramConfig, type TelegramEvent } from '../utils/telegram';
 
@@ -99,7 +100,7 @@ const TelegramSection: React.FC = () => {
   const pill = enabled && configured && status.polling
     ? { cls: 'on', text: 'Бот активен' }
     : enabled && hasToken
-      ? { cls: 'wait', text: 'Ожидание /start' }
+      ? { cls: 'wait', text: 'Ожидание входа по коду' }
       : configured
         ? { cls: 'off', text: 'Выключен' }
         : { cls: 'off', text: 'Не настроен' };
@@ -181,38 +182,70 @@ const TelegramSection: React.FC = () => {
         </div>
       </div>
 
-      {/* ШАГ 2 — Привязка чата */}
+      {/* ШАГ 2 — Код доступа и подключение чатов */}
       <div className="tg-step">
         <div className={`tg-step-badge ${configured ? 'done' : ''}`}>{configured ? '✓' : '2'}</div>
         <div className="tg-step-body">
-          <div className="tg-step-title"><MessageCircle size={15} /> Привязать чат</div>
+          <div className="tg-step-title"><KeyRound size={15} /> Код доступа и подключение</div>
           <p className="tg-step-text">
-            Включите бота выше, откройте его в Telegram и нажмите <b>«Старт»</b> (/start) —
-            чат привяжется автоматически. Можно добавить бота в группу сотрудников.
+            Задайте <b>код доступа</b>. Сотрудник открывает бота и отправляет
+            <code> /start КОД</code> — только с верным кодом чат получит доступ.
+            Можно подключить несколько человек; все они видят кнопки и получают уведомления.
           </p>
+
+          <label className="tg-param" style={{ display: 'block', marginBottom: 10 }}>
+            <span className="tg-param-label">Код доступа</span>
+            <input
+              type="text"
+              value={config.accessCode}
+              onChange={(e) => patch({ accessCode: e.target.value.trim() })}
+              placeholder="например, 4821"
+              className="form-input"
+              autoComplete="off"
+            />
+          </label>
+          {!config.accessCode && (
+            <div className="cloud-note cloud-note-err" style={{ marginBottom: 10 }}>
+              <AlertCircle size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              Код не задан — новые чаты не смогут подключиться.
+            </div>
+          )}
+
           <div className="tg-btn-row">
             {botLink && (
               <a href={botLink} target="_blank" rel="noreferrer" className="btn btn-primary">
                 <ExternalLink size={15} />Открыть бота
               </a>
             )}
-            {configured ? (
-              <>
-                <span className="tg-chip-ok"><CheckCircle2 size={13} /> Чат: {status.chatTitle || 'привязан'}</span>
-                <button
-                  onClick={() => { if (confirm('Отвязать текущий чат? Привязать заново можно нажав «Старт» в боте.')) telegram.unlinkChat(); }}
-                  className="btn btn-ghost"
-                >
-                  Отвязать
-                </button>
-              </>
-            ) : (
-              <span className="tg-chip-wait">
-                {enabled && hasToken ? <Activity size={13} className="animate-pulse" /> : <AlertCircle size={13} />}
-                {enabled && hasToken ? 'Жду нажатия «Старт»…' : 'Сначала включите бота и сохраните токен'}
-              </span>
-            )}
           </div>
+
+          {status.authorizedChats.length > 0 ? (
+            <div className="tg-btn-row" style={{ flexWrap: 'wrap', marginTop: 8 }}>
+              {status.authorizedChats.map((c) => (
+                <span key={c.id} className="tg-chip-ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={13} /> {c.title || c.id}
+                  <button
+                    onClick={() => { if (confirm(`Убрать доступ у «${c.title || c.id}»?`)) telegram.removeAuthorizedChat(c.id); }}
+                    title="Убрать доступ"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 15, lineHeight: 1, padding: 0 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button
+                onClick={() => { if (confirm('Отвязать ВСЕ чаты? Доступ придётся получать заново по коду.')) telegram.unlinkChat(); }}
+                className="btn btn-ghost"
+              >
+                Отвязать все
+              </button>
+            </div>
+          ) : (
+            <span className="tg-chip-wait" style={{ marginTop: 8 }}>
+              {enabled && hasToken ? <Activity size={13} className="animate-pulse" /> : <AlertCircle size={13} />}
+              {enabled && hasToken ? 'Жду «/start КОД» от сотрудника…' : 'Сначала включите бота и сохраните токен'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -221,7 +254,7 @@ const TelegramSection: React.FC = () => {
         <div className="tg-step-badge">3</div>
         <div className="tg-step-body">
           <div className="tg-step-title"><Send size={15} /> Проверить связь</div>
-          <p className="tg-step-text">Отправим тестовое сообщение в привязанный чат.</p>
+          <p className="tg-step-text">Отправим тестовое сообщение во все подключённые чаты.</p>
           <div className="tg-btn-row">
             <button onClick={handleTest} disabled={testing || !configured} className="btn btn-ghost">
               {testing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Отправить тест
