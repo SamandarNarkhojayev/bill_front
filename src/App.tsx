@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore'
 import LoginPage from './components/LoginPage'
 import AppHeader from './components/AppHeader'
@@ -17,9 +17,12 @@ import UpdateModal from './components/UpdateModal'
 import WhatsNewModal, { getUnseenEntries } from './components/WhatsNewModal'
 import LogoutConfirmModal from './components/LogoutConfirmModal'
 import { playTimerEndSound } from './utils/sounds'
-import { getActiveElapsedMs } from './utils/pricing'
+import { getActiveElapsedMs, calculatePausedSessionCost } from './utils/pricing'
+import { printSessionReceipt } from './utils/receipt'
 import cloudSync from './utils/cloudSync'
+import telegram, { type BotShiftInfo } from './utils/telegram'
 import type { RelayChangeEvent, ButtonPressEvent, RelayInfo, UpdaterState } from './types/arduino'
+import type { Shift } from './types'
 import './App.css'
 
 // КРИТИЧНО: регистрируем snapshot-провайдер на уровне модуля, ДО любого React-рендера.
@@ -29,6 +32,131 @@ import './App.css'
 cloudSync.setSnapshotProvider(() => {
   const s = useStore.getState()
   return { tables: s.tables, sessionHistory: s.sessionHistory, reservations: s.reservations }
+})
+
+// Провайдер данных ежедневного итога для Telegram-планировщика.
+// Регистрируем на уровне модуля, чтобы scheduler всегда имел доступ к свежему store.
+telegram.setReportProvider(() => {
+  const s = useStore.getState()
+  const rev = s.getTodayRevenue()
+  const d = new Date()
+  const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+  return {
+    date,
+    tableRevenue: rev.table,
+    barRevenue: rev.bar,
+    totalRevenue: rev.total,
+    sessionsCount: s.getTodaySessions(),
+    currency: s.settings.currency,
+    clubName: s.settings.clubName,
+  }
+})
+
+// Провайдер данных для интерактивного бота (кнопки «Сегодня / Столы / Смена / …»).
+telegram.setDataProvider(() => {
+  const s = useStore.getState()
+  const now = Date.now()
+  const rev = s.getTodayRevenue()
+  const d = new Date()
+  const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+
+  const tables = s.tables.map((t) => {
+    if (t.status === 'occupied' && t.currentSession) {
+      const ses = t.currentSession
+      const elapsedMin = Math.round(getActiveElapsedMs(ses.startTime, now, ses.pausedAt, ses.totalPausedMs) / 60000)
+      const tableCost = calculatePausedSessionCost(
+        ses.startTime, now, t.pricePerHour, t.priceSchedule,
+        ses.mode, ses.fixedAmount, ses.packagePrice, ses.pauseIntervals,
+      )
+      const barCost = ses.barOrders.reduce((sum, o) => sum + (o.price * o.quantity || 0), 0)
+      return { name: t.name, status: t.status, elapsedMin, currentCost: Math.round(tableCost + barCost), paused: !!ses.pausedAt }
+    }
+    return { name: t.name, status: t.status }
+  })
+
+  let shift: BotShiftInfo | null = null
+  if (s.currentShift) {
+    const sh = s.currentShift
+    const sessions = s.sessionHistory.filter((x) => x.startTime >= sh.startTime)
+    const tableRevenue = sessions.reduce((sum, x) => sum + (x.tableCost || 0), 0)
+    const barRevenue = sessions.reduce((sum, x) => sum + (x.barCost || 0), 0)
+    shift = {
+      operatorName: sh.userName,
+      startTime: sh.startTime,
+      tableRevenue,
+      barRevenue,
+      total: tableRevenue + barRevenue,
+      sessionsCount: sessions.length,
+    }
+  }
+
+  const stock = s.barMenu
+    .filter((m) => m.stock >= 0)
+    .map((m) => ({ name: m.name, stock: m.stock, unit: m.unit }))
+    .sort((a, b) => a.stock - b.stock)
+
+  const recent = [...s.sessionHistory]
+    .sort((a, b) => b.endTime - a.endTime)
+    .slice(0, 8)
+    .map((r) => ({ tableName: r.tableName, durationMin: r.duration, total: r.totalCost, endTime: r.endTime }))
+
+  // Агрегаты выручки за период
+  const aggregate = (list: typeof s.sessionHistory) => {
+    const tableRevenue = list.reduce((sum, x) => sum + (x.tableCost || 0), 0)
+    const barRevenue = list.reduce((sum, x) => sum + (x.barCost || 0), 0)
+    return { tableRevenue, barRevenue, totalRevenue: tableRevenue + barRevenue, sessionsCount: list.length }
+  }
+  const weekStart = now - 7 * 24 * 60 * 60 * 1000
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  const week = aggregate(s.sessionHistory.filter((x) => x.startTime >= weekStart))
+  const month = aggregate(s.sessionHistory.filter((x) => x.startTime >= monthStart))
+
+  // Разбивка по столам за сегодня
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const perTableMap = new Map<string, { sessions: number; revenue: number }>()
+  s.sessionHistory.filter((x) => x.date === todayStr).forEach((x) => {
+    const cur = perTableMap.get(x.tableName) ?? { sessions: 0, revenue: 0 }
+    cur.sessions += 1
+    cur.revenue += x.totalCost || 0
+    perTableMap.set(x.tableName, cur)
+  })
+  const perTable = Array.from(perTableMap.entries()).map(([name, v]) => ({ name, ...v }))
+
+  return {
+    clubName: s.settings.clubName,
+    currency: s.settings.currency,
+    today: { date, tableRevenue: rev.table, barRevenue: rev.bar, totalRevenue: rev.total, sessionsCount: s.getTodaySessions() },
+    week,
+    month,
+    perTable,
+    tables,
+    occupied: s.tables.filter((t) => t.status === 'occupied').length,
+    total: s.tables.length,
+    shift,
+    stock,
+    recent,
+  }
+})
+
+// CSV-экспорт сессий за текущий месяц для Telegram-бота.
+telegram.setExportProvider(() => {
+  const s = useStore.getState()
+  const d = new Date()
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  const rows = s.sessionHistory
+    .filter((x) => x.startTime >= monthStart)
+    .sort((a, b) => a.startTime - b.startTime)
+  if (rows.length === 0) return null
+  const cur = s.settings.currency
+  const pay = (m?: string) => (m === 'card' ? 'Карта' : m === 'transfer' ? 'Перевод' : 'Наличные')
+  const header = `Стол;Начало;Конец;Минут;Стол (${cur});Бар (${cur});Итого (${cur});Оплата`
+  const body = rows.map((x) => {
+    const start = new Date(x.startTime).toLocaleString('ru-RU')
+    const end = new Date(x.endTime).toLocaleString('ru-RU')
+    return `${x.tableName};${start};${end};${x.duration};${x.tableCost};${x.barCost};${x.totalCost};${pay(x.paymentMethod)}`
+  })
+  const filename = `biliardo_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}.csv`
+  return { filename, csv: [header, ...body].join('\n') }
 })
 
 function App() {
@@ -41,13 +169,11 @@ function App() {
   const settings = useStore((s) => s.settings)
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed)
   const currentUser = useStore((s) => s.currentUser)
-  const tables = useStore((s) => s.tables)
   const activeModal = useStore((s) => s.activeModal)
   const modalData = useStore((s) => s.modalData)
   const updateTableFromRelay = useStore((s) => s.updateTableFromRelay)
   const syncTablesFromArduino = useStore((s) => s.syncTablesFromArduino)
   const restoreLightsToArduino = useStore((s) => s.restoreLightsToArduino)
-  const endSession = useStore((s) => s.endSession)
   const updateSettings = useStore((s) => s.updateSettings)
   const closeModal = useStore((s) => s.closeModal)
   const confirmEndShiftAndLogout = useStore((s) => s.confirmEndShiftAndLogout)
@@ -138,10 +264,14 @@ function App() {
     if (cloudSync.getStatus().loggedIn) {
       cloudSync.startAutoSync()
     }
+    // Telegram: планировщик ежедневного итога + long-polling интерактивного бота.
+    // start() сам решает, нужно ли поднимать polling (по config.enabled + токену).
+    telegram.start()
     return () => {
       unsubCmd()
       unsubStore()
       cloudSync.stopAutoSync()
+      telegram.stop()
     }
   }, [])
 
@@ -232,33 +362,42 @@ function App() {
     }
   };
 
-  // Глобальная проверка истечения времени/суммы для всех столов
+  // ЕДИНЫЙ путь авто-истечения времени/суммы для всех столов (на любой странице).
+  // Раньше истечение обрабатывалось в двух местах (этот watchdog + таймер на Дашборде),
+  // что приводило к гонке/двойному срабатыванию. Теперь Дашборд только показывает таймер,
+  // а реально завершает сессию (с печатью чека и звуком) только этот watchdog.
+  // expiredTablesRef защищает от повторной печати/завершения между тиками (печать async).
+  const expiredTablesRef = useRef<Set<number>>(new Set())
   useEffect(() => {
     const interval = setInterval(() => {
-      tables.forEach((table) => {
-        if (!table.currentSession) return
-
+      const store = useStore.getState()
+      const handled = expiredTablesRef.current
+      store.tables.forEach((table) => {
+        if (!table.currentSession) {
+          handled.delete(table.id) // стол свободен — снимаем пометку для будущей сессии
+          return
+        }
         const session = table.currentSession
         // На паузе время не идёт — стол не истекает
         if (session.pausedAt) return
-        const elapsedSec = Math.floor(getActiveElapsedMs(session.startTime, Date.now(), session.pausedAt, session.totalPausedMs) / 1000)
-
-        // Проверяем истечение по времени или сумме
         if ((session.mode === 'time' || session.mode === 'amount') && session.plannedDuration !== null) {
-          const totalSec = session.plannedDuration
-          const remaining = totalSec - elapsedSec
-
-          // Если время истекло, проигрываем звук и завершаем сессию
-          if (remaining <= 0) {
-            if (settings.soundEnabled) playTimerEndSound()
-            endSession(table.id)
+          const elapsedSec = Math.floor(getActiveElapsedMs(session.startTime, Date.now(), session.pausedAt, session.totalPausedMs) / 1000)
+          if (session.plannedDuration - elapsedSec <= 0 && !handled.has(table.id)) {
+            handled.add(table.id)
+            const endTime = Date.now()
+            const s = useStore.getState().settings
+            if (s.soundEnabled) playTimerEndSound()
+            // Печатаем чек по тому же endTime, затем завершаем сессию (суммы совпадут).
+            void printSessionReceipt({ table, session, settings: s, endTime })
+              .catch((err) => console.error('Auto-expire print failed:', err))
+              .finally(() => useStore.getState().endSession(table.id, endTime))
           }
         }
       })
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [tables, endSession, settings.soundEnabled])
+  }, [])
 
   // Подписка на события Arduino для синхронизации столов
   useEffect(() => {
@@ -343,9 +482,9 @@ function App() {
       </main>
       <AdBanner />
       <ToastContainer />
-      {activeModal === 'logout-confirm' && modalData?.shift && (
+      {activeModal === 'logout-confirm' && Boolean(modalData?.shift) && (
         <LogoutConfirmModal
-          shift={modalData.shift as Shift}
+          shift={modalData?.shift as Shift}
           onConfirm={confirmEndShiftAndLogout}
           onCancel={closeModal}
         />

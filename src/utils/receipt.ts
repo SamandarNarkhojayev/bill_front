@@ -1,4 +1,5 @@
-import type { BarOrderItem, SessionMode, SessionRecord } from '../types';
+import type { BarOrderItem, SessionMode, SessionRecord, BilliardTable, TableSession, AppSettings } from '../types';
+import { computeSessionCharges } from './sessionCharges';
 
 interface ReceiptData {
   clubName: string;
@@ -605,6 +606,45 @@ export const printReportReceipt = async (data: ReportReceiptData & { silentPrint
     console.error('Print report receipt error:', error);
     return false;
   }
+};
+
+/**
+ * Печать чека по столу: единая точка (используется ручным закрытием и авто-истечением).
+ * Считает суммы через computeSessionCharges на фиксированном endTime.
+ */
+export const printSessionReceipt = async (opts: {
+  table: BilliardTable;
+  session: TableSession;
+  settings: AppSettings;
+  endTime: number;
+}): Promise<boolean> => {
+  const { table, session, settings, endTime } = opts;
+  const { durationMinutes, tableCost, barCost, serviceCharge, grandTotal } =
+    computeSessionCharges(table, session, settings, endTime);
+  return printReceipt({
+    clubName: settings.clubName,
+    receiptCompanyName: settings.receiptCompanyName,
+    receiptCity: settings.receiptCity,
+    receiptPhone: settings.receiptPhone,
+    receiptCashierName: settings.receiptCashierName,
+    tableName: table.name,
+    mode: session.mode,
+    startTime: session.startTime,
+    endTime,
+    duration: durationMinutes,
+    tableCost,
+    barOrders: session.barOrders,
+    barCost,
+    serviceCharge,
+    serviceChargePercent: settings.serviceChargePercent,
+    totalCost: grandTotal,
+    currency: settings.currency,
+    receiptWidthMm: settings.receiptWidthMm,
+    receiptFontSize: settings.receiptFontSize,
+    receiptPaddingMm: settings.receiptPaddingMm,
+    silentPrint: settings.silentPrint,
+    deviceName: settings.receiptPrinterName,
+  });
 };
 
 export const printReceipt = async (data: ReceiptData & { silentPrint?: boolean; deviceName?: string }): Promise<boolean> => {

@@ -25,11 +25,15 @@ import {
   Pin,
   PinOff,
   Percent,
+  Eye,
+  EyeOff,
+  Users,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT, LANGUAGES } from '../i18n';
 import type { PageType } from '../types';
 import CloudSyncSection from './CloudSyncSection';
+import TelegramSection from './TelegramSection';
 import NumberInput from './NumberInput';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
@@ -62,6 +66,31 @@ const SettingsPage: React.FC = () => {
   const canDeleteData = currentUser?.role === 'admin' || currentUser?.role === 'developer';
   const isRegularUser = currentUser?.role === 'user';
   const canAccessAllSettings = !isRegularUser;
+  // Технические разделы и интеграции — только у разработчика (скрыты от админа и юзера).
+  const isDeveloper = currentUser?.role === 'developer';
+  // Управление пользователями/доступом — админ и разработчик.
+  const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer';
+
+  // Страницы, видимость которых для роли «user» настраивает админ (dashboard всегда виден).
+  const userMenuConfigItems: { id: PageType; labelKey: string }[] = [
+    { id: 'dashboard', labelKey: 'nav.dashboard' },
+    { id: 'bar', labelKey: 'nav.bar' },
+    ...(settings.kitchenSeparate ? [{ id: 'kitchen' as PageType, labelKey: 'nav.kitchen' }] : []),
+    { id: 'tournaments', labelKey: 'nav.tournaments' },
+    { id: 'tariffs', labelKey: 'nav.tariffs' },
+    { id: 'reports', labelKey: 'nav.reports' },
+    { id: 'settings', labelKey: 'nav.settings' },
+  ];
+
+  const toggleUserPage = (id: PageType) => {
+    if (id === 'dashboard') return; // dashboard виден всегда
+    setLocalSettings((prev) => {
+      const cur = prev.userVisiblePages || [];
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      updateSettings({ userVisiblePages: next });
+      return { ...prev, userVisiblePages: next };
+    });
+  };
 
   // ===== Состояния для Serial-порта =====
   const [allPorts, setAllPorts] = useState<SerialPortInfo[]>([]);
@@ -340,9 +369,6 @@ const SettingsPage: React.FC = () => {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  // const handleReset = () => {
-  //   setLocalSettings({ ...settings });
-  // };
 
   const handleFactoryReset = () => {
     if (!canDeleteData) {
@@ -510,10 +536,6 @@ const SettingsPage: React.FC = () => {
               ✓ Сохранено
             </span>
           )}
-          {/* <button onClick={handleReset} className="btn btn-ghost">
-            <RotateCcw size={16} />
-            Сбросить
-          </button> */}
           <button onClick={handleSave} className="btn btn-primary">
             <Save size={16} />
             Сохранить
@@ -646,6 +668,39 @@ const SettingsPage: React.FC = () => {
         </div>
         )}
 
+        {/* Доступ пользователей к меню — настраивает админ/разработчик */}
+        {canManageUsers && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">
+            <Users size={18} />
+            Меню для пользователей
+          </h3>
+          <p className="settings-hint" style={{ marginTop: -6, marginBottom: 10 }}>
+            Какие разделы видят сотрудники с ролью «Пользователь». «Главная» доступна всегда.
+          </p>
+          <div className="sidebar-cfg-list">
+            {userMenuConfigItems.map((item) => {
+              const forced = item.id === 'dashboard';
+              const isVisible = forced || (localSettings.userVisiblePages || []).includes(item.id);
+              return (
+                <div key={item.id} className="sidebar-cfg-row">
+                  <span className="cfg-name">{t(item.labelKey)}</span>
+                  <button
+                    className={`sidebar-cfg-pin ${isVisible ? 'on' : ''}`}
+                    onClick={() => toggleUserPage(item.id)}
+                    disabled={forced}
+                    title={isVisible ? 'Видно' : 'Скрыто'}
+                  >
+                    {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    {isVisible ? 'Видно' : 'Скрыто'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )}
+
         {/* База знаний — перенесена в настройки */}
         <div className="settings-section">
           <h3 className="settings-section-title">
@@ -667,22 +722,6 @@ const SettingsPage: React.FC = () => {
             Автоматизация
           </h3>
           <div className="settings-fields">
-            {/* <div className="settings-toggle-field">
-              <div>
-                <label className="settings-label">Авто-выключение света</label>
-                <p className="settings-hint">
-                  Автоматически выключать свет при завершении игры
-                </p>
-              </div>
-              <button
-                onClick={() =>
-                  setLocalSettings((prev) => ({ ...prev, autoLightOff: !prev.autoLightOff }))
-                }
-                className={`toggle ${localSettings.autoLightOff ? 'on' : 'off'}`}
-              >
-                <div className="toggle-dot" />
-              </button>
-            </div> */}
             <div className="settings-toggle-field">
               <div>
                 <label className="settings-label">Звуковые уведомления</label>
@@ -985,8 +1024,8 @@ const SettingsPage: React.FC = () => {
         </div>
         )}
 
-        {/* Данные */}
-        {canAccessAllSettings && (
+        {/* Данные — только разработчик */}
+        {isDeveloper && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <Trash2 size={18} />
@@ -1008,8 +1047,8 @@ const SettingsPage: React.FC = () => {
         </div>
         )}
 
-        {/* Резервное копирование */}
-        {canAccessAllSettings && (
+        {/* Резервное копирование — только разработчик */}
+        {isDeveloper && (
         <div className="settings-section settings-section-full">
           <h3 className="settings-section-title">
             <Shield size={18} />
@@ -1100,7 +1139,8 @@ const SettingsPage: React.FC = () => {
         </div>
         )}
 
-        {/* Порт устройства */}
+        {/* Порт устройства / контроллер — только разработчик */}
+        {isDeveloper && (
         <div className="settings-section settings-section-full">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <h3 className="settings-section-title" style={{ margin: 0 }}>
@@ -1202,11 +1242,16 @@ const SettingsPage: React.FC = () => {
             </p>
           )}
         </div>
+        )}
 
-        {/* Облачная синхронизация (biliardo.kz) */}
-        <CloudSyncSection />
+        {/* Облачная синхронизация (biliardo.kz) — только разработчик */}
+        {isDeveloper && <CloudSyncSection />}
 
-        {/* Обновления */}
+        {/* Telegram-бот — только разработчик */}
+        {isDeveloper && <TelegramSection />}
+
+        {/* Обновления — только разработчик */}
+        {isDeveloper && (
         <div className="settings-section">
           <h3 className="settings-section-title">
             <RefreshCw size={18} />
@@ -1238,6 +1283,7 @@ const SettingsPage: React.FC = () => {
             </p>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

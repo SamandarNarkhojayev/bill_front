@@ -98,6 +98,20 @@ export const uz: Dict = {
     view_compact: 'Plitka',
     view_list: "Ro'yxat",
   },
+  toasts: {
+    prev_shift_closed: 'Oldingi smena avtomatik yopildi',
+    relays_detected: 'Rele aniqlandi: {count} dona',
+    lights_restored: 'Yorug\'lik holati tiklandi: {count} stol',
+    revision_saved: 'Inventarizatsiya saqlandi',
+    table_reserved: '{name} band qilindi',
+    reservation_cancelled: 'Bron bekor qilindi',
+  },
+  payment: {
+    label: "To'lov",
+    cash: 'Naqd',
+    card: 'Karta',
+    transfer: "O'tkazma",
+  },
   bar: {
     title_bar: 'Bar',
     title_kitchen: 'Oshxona',

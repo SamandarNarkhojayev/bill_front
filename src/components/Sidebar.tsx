@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   LayoutDashboard,
   Wine,
@@ -33,12 +34,28 @@ const menuItems: { id: PageType; labelKey: string; icon: React.ReactNode }[] = [
 ];
 
 const Sidebar: React.FC = () => {
-  const { currentPage, setCurrentPage, settings, updateSettings, tables, sidebarCollapsed, toggleSidebar, logout, currentUser } = useStore();
+  // Узкая подписка: сайдбар всегда смонтирован, раньше ре-рендерился на любое
+  // изменение стора (тост/продажа/тик). Теперь — только на нужные срезы. Счётчик
+  // занятых столов берём отдельными примитивными селекторами, чтобы сайдбар не
+  // ре-рендерился на каждое изменение массива tables (свет/стоимость), а лишь когда
+  // реально меняется число занятых/всего.
+  const { currentPage, setCurrentPage, settings, updateSettings, sidebarCollapsed, toggleSidebar, logout, currentUser } = useStore(
+    useShallow((s) => ({
+      currentPage: s.currentPage,
+      setCurrentPage: s.setCurrentPage,
+      settings: s.settings,
+      updateSettings: s.updateSettings,
+      sidebarCollapsed: s.sidebarCollapsed,
+      toggleSidebar: s.toggleSidebar,
+      logout: s.logout,
+      currentUser: s.currentUser,
+    }))
+  );
   const { t } = useT();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const occupiedTables = tables.filter((t) => t.status === 'occupied').length;
-  const totalTables = tables.length;
+  const occupiedTables = useStore((s) => s.tables.filter((tbl) => tbl.status === 'occupied').length);
+  const totalTables = useStore((s) => s.tables.length);
 
   const canManageUsers = currentUser?.role === 'admin' || currentUser?.role === 'developer';
   // Пункт «Кухня» показываем только когда включено разделение бара и кухни
@@ -51,12 +68,20 @@ const Sidebar: React.FC = () => {
     : menuItems;
   const visibleMenuItems = navItems.filter((item) => item.id !== 'users' || canManageUsers);
 
-  // Закреплённые пункты — наверху; остальные — в «Ещё» (стиль Bitrix24, настраивается)
+  // Для роли «user» админ ограничивает набор пунктов меню (dashboard виден всегда).
+  const isUser = currentUser?.role === 'user';
+  const userAllowed = settings.userVisiblePages ?? [];
+  const roleVisibleItems = isUser
+    ? visibleMenuItems.filter((item) => item.id === 'dashboard' || userAllowed.includes(item.id))
+    : visibleMenuItems;
+
+  // Закреплённые пункты — наверху; остальные — в «Ещё» (стиль Bitrix24, настраивается).
+  // Для обычного пользователя «Ещё» не используем — показываем все доступные пункты сразу.
   const pinned = settings.sidebarPinned && settings.sidebarPinned.length > 0
     ? settings.sidebarPinned
     : ['dashboard', 'bar', 'reports', 'settings'];
-  const pinnedItems = visibleMenuItems.filter((item) => pinned.includes(item.id));
-  const moreItems = visibleMenuItems.filter((item) => !pinned.includes(item.id));
+  const pinnedItems = isUser ? roleVisibleItems : roleVisibleItems.filter((item) => pinned.includes(item.id));
+  const moreItems = isUser ? [] : roleVisibleItems.filter((item) => !pinned.includes(item.id));
   // Если активная страница спрятана в «Ещё» — раскрываем список
   const activeInMore = moreItems.some((item) => item.id === currentPage);
 
@@ -157,21 +182,6 @@ const Sidebar: React.FC = () => {
           <span>{t('nav.logout')}</span>
         </button>
 
-
-        {/* <div className="sidebar-stats">
-          <div className="sidebar-stat">
-            <span className="sidebar-stat-label">Занято столов</span>
-            <span className="sidebar-stat-value text-emerald-400">
-              {occupiedTables} / {totalTables}
-            </span>
-          </div>
-          <div className="sidebar-stat">
-            <span className="sidebar-stat-label">Свободных</span>
-            <span className="sidebar-stat-value text-sky-400">
-              {totalTables - occupiedTables}
-            </span>
-          </div>
-        </div> */}
         <div className="sidebar-version">v{__APP_VERSION__}</div>
       </div>
     </aside>

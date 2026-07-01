@@ -97,6 +97,20 @@ export const ru = {
     view_compact: 'Плитка',
     view_list: 'Список',
   },
+  toasts: {
+    prev_shift_closed: 'Предыдущая смена завершена автоматически',
+    relays_detected: 'Обнаружено реле: {count} шт.',
+    lights_restored: 'Восстановлено состояние света: {count} столов',
+    revision_saved: 'Ревизия сохранена',
+    table_reserved: '{name} забронирован',
+    reservation_cancelled: 'Бронь отменена',
+  },
+  payment: {
+    label: 'Оплата',
+    cash: 'Наличные',
+    card: 'Карта',
+    transfer: 'Перевод',
+  },
   bar: {
     title_bar: 'Бар',
     title_kitchen: 'Кухня',

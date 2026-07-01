@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CircleDot, Eye, EyeOff, LogIn, AlertCircle, ChevronDown, Shield, Code, UserCheck } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
@@ -15,14 +15,25 @@ const getRoleLabel = (role: string) => {
 const LoginPage: React.FC = () => {
   const { login, users } = useStore();
   const { t } = useT();
-  const activeUsers = users.filter((u) => u.isActive);
-  const [selectedUserId, setSelectedUserId] = useState(activeUsers[0]?.id || '');
+  // Порядок: разработчик всегда последним; среди остальных — кто последним заходил, тот первым.
+  const sortedUsers = useMemo(() => {
+    const devRank = (role: string) => (role === 'developer' ? 1 : 0);
+    return users
+      .filter((u) => u.isActive)
+      .sort((a, b) => {
+        const ra = devRank(a.role);
+        const rb = devRank(b.role);
+        if (ra !== rb) return ra - rb;
+        return (b.lastLoginAt ?? 0) - (a.lastLoginAt ?? 0);
+      });
+  }, [users]);
+  const [selectedUserId, setSelectedUserId] = useState(sortedUsers[0]?.id || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const selectedUser = activeUsers.find((u) => u.id === selectedUserId);
+  const selectedUser = sortedUsers.find((u) => u.id === selectedUserId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +47,7 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
     await new Promise((r) => setTimeout(r, 300));
 
-    const user = activeUsers.find((u) => u.id === selectedUserId);
+    const user = sortedUsers.find((u) => u.id === selectedUserId);
     if (!user) {
       setError('Пользователь не найден');
       setIsLoading(false);
@@ -84,7 +95,7 @@ const LoginPage: React.FC = () => {
                     setError('');
                   }}
                 >
-                  {activeUsers.map((user) => (
+                  {sortedUsers.map((user) => (
                     <option key={user.id} value={user.id}>
                       {user.displayName} — {getRoleLabel(user.role)}
                     </option>

@@ -6243,6 +6243,7 @@
 }
 .cloud-note-warn { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
 .cloud-note-err { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+.cloud-note-ok { color: #86efac; background: rgba(34, 197, 94, 0.1); }
 
 .cloud-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .cloud-btn-danger { color: #f87171; }
@@ -6275,3 +6276,152 @@
 [data-theme="light"] .cloud-stat { color: #475569; }
 [data-theme="light"] .cloud-stat strong { color: #1e293b; }
 [data-theme="light"] .cloud-pill.off { color: #475569; }
+
+/* ===================== Telegram-бот ===================== */
+.tg-section { display: flex; flex-direction: column; gap: 14px; }
+
+.tg-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(42, 171, 238, 0.16), rgba(34, 158, 217, 0.06));
+  border: 1px solid rgba(42, 171, 238, 0.25);
+}
+.tg-hero-icon {
+  width: 48px; height: 48px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; color: #fff;
+  background: linear-gradient(135deg, #2AABEE, #229ED9);
+  box-shadow: 0 6px 16px rgba(34, 158, 217, 0.35);
+}
+.tg-hero-title { margin: 0; font-size: 17px; font-weight: 700; color: #e2e8f0; }
+.tg-hero-sub { margin: 2px 0 0; font-size: 12.5px; color: #94a3b8; }
+
+.tg-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.tg-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.tg-pill.on { color: #22c55e; background: rgba(34, 197, 94, 0.13); }
+.tg-pill.on .tg-pill-dot { animation: tg-pulse 1.8s infinite; }
+.tg-pill.wait { color: #fbbf24; background: rgba(251, 191, 36, 0.13); }
+.tg-pill.off { color: #94a3b8; background: rgba(148, 163, 184, 0.13); }
+@keyframes tg-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.tg-master {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-radius: 12px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.tg-master-l { display: flex; align-items: center; gap: 12px; }
+.tg-master-title { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+.tg-master-sub { font-size: 12px; color: #94a3b8; margin-top: 1px; }
+.tg-ic-on { color: #22c55e; }
+.tg-ic-off { color: #64748b; }
+
+.tg-step { display: flex; gap: 12px; }
+.tg-step-badge {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 13px; font-weight: 700;
+  color: #cbd5e1; background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+.tg-step-badge.done { color: #22c55e; background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.35); }
+.tg-step-body { flex: 1; min-width: 0; }
+.tg-step-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: #e2e8f0; margin-bottom: 4px; }
+.tg-step-text { font-size: 12.5px; color: #94a3b8; margin: 0 0 8px; line-height: 1.5; }
+.tg-step-text code { background: rgba(148,163,184,0.16); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+
+.tg-btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+
+.tg-chip-ok, .tg-chip-wait {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 500;
+}
+.tg-chip-ok { color: #86efac; background: rgba(34, 197, 94, 0.12); }
+.tg-chip-wait { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+
+.tg-block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; margin-bottom: 8px; }
+.tg-events {
+  padding: 12px 14px; border-radius: 12px;
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.tg-event-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(148, 163, 184, 0.08); }
+.tg-event-row:last-child { border-bottom: none; }
+.tg-event-l { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tg-event-emoji { font-size: 18px; flex-shrink: 0; }
+.tg-event-label { font-size: 13.5px; font-weight: 500; color: #e2e8f0; }
+.tg-event-hint { font-size: 11.5px; color: #94a3b8; margin-top: 1px; }
+
+.tg-params { display: flex; gap: 14px; flex-wrap: wrap; }
+.tg-param { display: flex; flex-direction: column; gap: 6px; }
+.tg-param-label { font-size: 12px; font-weight: 600; color: #94a3b8; }
+.tg-param .form-input { max-width: 180px; }
+
+.tg-footer {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+.tg-footer-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #94a3b8; }
+
+[data-theme="light"] .tg-hero-title,
+[data-theme="light"] .tg-master-title,
+[data-theme="light"] .tg-step-title,
+[data-theme="light"] .tg-event-label { color: #1e293b; }
+[data-theme="light"] .tg-hero-sub,
+[data-theme="light"] .tg-master-sub,
+[data-theme="light"] .tg-step-text,
+[data-theme="light"] .tg-event-hint,
+[data-theme="light"] .tg-footer-item,
+[data-theme="light"] .tg-param-label { color: #475569; }
+
+/* ===================== Способ оплаты ===================== */
+.payment-method-picker {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  flex-wrap: wrap;
+}
+.payment-method-label { font-size: 13px; font-weight: 600; color: #94a3b8; }
+.payment-method-options { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; }
+.payment-method-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1.5px solid rgba(148, 163, 184, 0.18);
+  color: #cbd5e1; transition: all 0.15s;
+}
+.payment-method-btn:hover:not(:disabled) { border-color: rgba(148, 163, 184, 0.4); }
+.payment-method-btn.active {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: #22c55e; color: #86efac;
+}
+.payment-method-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+[data-theme="light"] .payment-method-label { color: #475569; }
+[data-theme="light"] .payment-method-btn { color: #334155; background: #f1f5f9; border-color: #e2e8f0; }
+[data-theme="light"] .payment-method-btn.active { background: rgba(34,197,94,0.12); border-color: #22c55e; color: #15803d; }
+
+/* ===================== Разбивка по оплате (отчёты) ===================== */
+.report-payment-breakdown {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;
+}
+.report-payment-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-radius: 12px;
+  background: var(--card-bg, rgba(148,163,184,0.06));
+  border: 1px solid rgba(148,163,184,0.14);
+}
+.report-payment-item > div { display: flex; flex-direction: column; }
+.report-payment-label { font-size: 12px; color: #94a3b8; }
+.report-payment-value { font-size: 17px; font-weight: 700; color: #e2e8f0; }
+.report-payment-item.cash svg { color: #22c55e; }
+.report-payment-item.card svg { color: #3b82f6; }
+.report-payment-item.transfer svg { color: #a855f7; }
+[data-theme="light"] .report-payment-value { color: #1e293b; }
+[data-theme="light"] .report-payment-label { color: #64748b; }
+@media (max-width: 640px) { .report-payment-breakdown { grid-template-columns: 1fr; } }

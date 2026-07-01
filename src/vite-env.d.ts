@@ -80,8 +80,9 @@ interface ElectronAPI {
   backup?: ElectronBackupAPI;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
+// Этот файл — ambient script (без import/export), поэтому augment делаем
+// напрямую через top-level `interface Window` (без `declare global`, который
+// валиден только в модулях). Это единственный источник типа window.electronAPI.
+interface Window {
+  electronAPI?: ElectronAPI;
 }

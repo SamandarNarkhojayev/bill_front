@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Play,
   Pause,
@@ -11,6 +12,8 @@ import {
   Timer,
   Infinity as InfinityIcon,
   Banknote,
+  CreditCard,
+  Smartphone,
   AlertCircle,
   Printer,
   CalendarClock,
@@ -24,11 +27,12 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
-import type { BilliardTable, SessionMode, Tariff } from '../types';
+import type { BilliardTable, SessionMode, Tariff, PaymentMethod } from '../types';
 import TableModal from './TableModal';
 import NumberInput from './NumberInput';
-import { playStartSound, playStopSound, playTimerEndSound } from '../utils/sounds';
-import { printReceipt, printKitchenTicket } from '../utils/receipt';
+import { playStartSound, playStopSound } from '../utils/sounds';
+import { printSessionReceipt, printKitchenTicket } from '../utils/receipt';
+import { computeSessionCharges } from '../utils/sessionCharges';
 import { getItemDepartment } from '../utils/department';
 import {
   calculatePausedSessionCost,
@@ -64,14 +68,19 @@ const formatPhone = (value: string, prevValue = '') => {
 };
 
 // ===== ТАЙМЕР СЕССИИ (с обратным отсчётом для режима "по времени") =====
-const SessionTimer: React.FC<{
+const SessionTimer = React.memo(function SessionTimer({
+  startTime,
+  mode,
+  plannedDuration,
+  pausedAt,
+  totalPausedMs,
+}: {
   startTime: number;
   mode: SessionMode;
   plannedDuration: number | null;
   pausedAt: number | null;
   totalPausedMs: number;
-  onTimeExpired?: () => void;
-}> = ({ startTime, mode, plannedDuration, pausedAt, totalPausedMs, onTimeExpired }) => {
+}) {
   const [display, setDisplay] = useState('');
   const [expired, setExpired] = useState(false);
   const isPaused = !!pausedAt;
@@ -89,10 +98,11 @@ const SessionTimer: React.FC<{
         const totalSec = plannedDuration;
         const remaining = totalSec - elapsedSec;
 
-        // Истечение не срабатывает на паузе (там время заморожено)
+        // Истечение не срабатывает на паузе (там время заморожено).
+        // Завершение сессии и печать делает глобальный watchdog в App.tsx —
+        // здесь только переключаем визуальное состояние «истекло» (красный таймер).
         if (remaining <= 0 && !expired && !pausedAt) {
           setExpired(true);
-          onTimeExpired?.();
         }
 
         const absRemaining = Math.abs(remaining);
@@ -113,7 +123,7 @@ const SessionTimer: React.FC<{
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [startTime, mode, plannedDuration, pausedAt, totalPausedMs, expired, onTimeExpired]);
+  }, [startTime, mode, plannedDuration, pausedAt, totalPausedMs, expired]);
 
   return (
     <span className={`timer-display ${expired ? 'timer-expired' : ''} ${isPaused ? 'timer-paused' : ''}`}>
@@ -122,22 +132,35 @@ const SessionTimer: React.FC<{
       {display}{isPaused ? ' · пауза' : ''}
     </span>
   );
-};
+});
 
 // ===== КАРТОЧКА СТОЛА =====
-const TableCard: React.FC<{
+const TableCard = React.memo(function TableCard({
+  table,
+  onStart,
+  onStop,
+  onPause,
+  onResume,
+  onOpenBar,
+  onReserve,
+  onCancelReservation,
+  reservation,
+}: {
   table: BilliardTable;
   onStart: (tableId: number) => void;
   onStop: (tableId: number) => void;
   onPause: (tableId: number) => void;
   onResume: (tableId: number) => void;
   onOpenBar: (tableId: number) => void;
-  onTimeExpired: (tableId: number) => void;
   onReserve: (tableId: number) => void;
   onCancelReservation: (tableId: number) => void;
   reservation?: { customerName: string; customerPhone: string; reservedFor: number; notes: string } | null;
-}> = ({ table, onStart, onStop, onPause, onResume, onOpenBar, onTimeExpired, onReserve, onCancelReservation, reservation }) => {
-  const { settings } = useStore();
+}) {
+  // Узкая подписка: карточке нужна только валюта из настроек, а не весь стор.
+  // Иначе любое изменение стора (тост, продажа в баре, чужой стол) ре-рендерило
+  // ВСЕ карточки. Теперь карточка ре-рендерится только при смене своих props (table)
+  // благодаря React.memo + стабильным обработчикам из Dashboard (useCallback).
+  const currency = useStore((s) => s.settings.currency);
   const { t } = useT();
   const isOccupied = table.status === 'occupied';
   const isReserved = table.status === 'reserved';
@@ -196,10 +219,6 @@ const TableCard: React.FC<{
     ? <Banknote size={12} />
     : <InfinityIcon size={12} />;
 
-  const handleTimeExpired = useCallback(() => {
-    onTimeExpired(table.id);
-  }, [table.id, onTimeExpired]);
-
   return (
     <div className={`table-card ${isOccupied ? 'occupied' : isReserved ? 'reserved' : 'free'} ${isPaused ? 'paused' : ''}`}>
       <div className={`table-card-status-bar ${isPaused ? 'bg-amber-500' : isOccupied ? 'bg-emerald-500' : isReserved ? 'bg-amber-500' : 'bg-slate-600'}`} />
@@ -229,27 +248,26 @@ const TableCard: React.FC<{
                 plannedDuration={session.plannedDuration}
                 pausedAt={session.pausedAt}
                 totalPausedMs={session.totalPausedMs ?? 0}
-                onTimeExpired={handleTimeExpired}
               />
             </div>
             <div className="session-info-row">
               <DollarSign size={14} className="text-emerald-400" />
               <span className="session-cost">
-                {currentCost.toLocaleString()} {settings.currency}
+                {currentCost.toLocaleString()} {currency}
               </span>
             </div>
             {barTotal > 0 && (
               <div className="session-info-row">
                 <ShoppingBag size={14} className="text-amber-400" />
                 <span className="session-bar-cost">
-                  Бар: {barTotal.toLocaleString()} {settings.currency}
+                  Бар: {barTotal.toLocaleString()} {currency}
                 </span>
               </div>
             )}
             <div className="session-total">
               <TrendingUp size={14} />
               <span>
-                Итого: {(currentCost + barTotal).toLocaleString()} {settings.currency}
+                Итого: {(currentCost + barTotal).toLocaleString()} {currency}
               </span>
             </div>
           </div>
@@ -286,7 +304,7 @@ const TableCard: React.FC<{
           <div className="table-card-empty">
             <div className="table-card-price">
               <Zap size={14} />
-              {activePricePerHour.toLocaleString()} {settings.currency}/час
+              {activePricePerHour.toLocaleString()} {currency}/час
             </div>
             <p className="table-card-hint">
               {table.priceSchedule.length > 0 ? t('dashboard.schedule_active') : t('dashboard.ready')}
@@ -343,15 +361,44 @@ const TableCard: React.FC<{
       </div>
     </div>
   );
-};
+});
 
 // ===== DASHBOARD =====
 const Dashboard: React.FC = () => {
+  // Узкая подписка (useShallow) вместо useStore() на весь стор: Dashboard больше не
+  // ре-рендерится на каждый тост / открытие модалки / изменение чужого среза. Ре-рендер
+  // только при смене реально нужных срезов. sessionHistory — ради живого пересчёта
+  // выручки (getTodayRevenue читает его). Экшены zustand стабильны по ссылке.
   const {
     tables, startSession, endSession, pauseSession, resumeSession, settings, getTodayRevenue, getTodaySessions, openModal,
     reservations, addReservation, cancelReservation, tariffs, addBarOrderToTable, barMenu, barCategories, updateSettings,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      tables: s.tables,
+      startSession: s.startSession,
+      endSession: s.endSession,
+      pauseSession: s.pauseSession,
+      resumeSession: s.resumeSession,
+      settings: s.settings,
+      getTodayRevenue: s.getTodayRevenue,
+      getTodaySessions: s.getTodaySessions,
+      openModal: s.openModal,
+      reservations: s.reservations,
+      addReservation: s.addReservation,
+      cancelReservation: s.cancelReservation,
+      tariffs: s.tariffs,
+      addBarOrderToTable: s.addBarOrderToTable,
+      barMenu: s.barMenu,
+      barCategories: s.barCategories,
+      updateSettings: s.updateSettings,
+      sessionHistory: s.sessionHistory,
+    }))
+  );
   const { t } = useT();
+  // Защита от двойного клика по «Завершить»: синхронный замок (ref обновляется
+  // мгновенно, в отличие от state) + флаг для блокировки кнопки в UI.
+  const closingRef = useRef(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
   const [showReserveModal, setShowReserveModal] = useState(false);
@@ -394,7 +441,7 @@ const Dashboard: React.FC = () => {
       )
     : 0;
 
-  const handleStart = (tableId: number) => {
+  const handleStart = useCallback((tableId: number) => {
     setSelectedTable(tableId);
     setSelectedMode(null);
     setTimeHours(1);
@@ -402,7 +449,7 @@ const Dashboard: React.FC = () => {
     setFixedAmount(5000);
     setSelectedTariff(null);
     setShowStartModal(true);
-  };
+  }, []);
 
   const handleConfirmStart = () => {
     if (!selectedTable || !selectedMode) return;
@@ -456,147 +503,45 @@ const Dashboard: React.FC = () => {
     setSelectedTariff(null);
   };
 
-  const handleStop = (tableId: number) => {
+  const handleStop = useCallback((tableId: number) => {
     setSelectedTable(tableId);
     setShowEndModal(true);
-  };
+  }, []);
 
-  const handleConfirmEnd = async (shouldPrint?: boolean) => {
+  const handleConfirmEnd = async (shouldPrint?: boolean, paymentMethod: PaymentMethod = 'cash') => {
     if (!selectedTable) return;
-    
+    // Re-entry guard: повторный клик до завершения первого — игнорируем.
+    if (closingRef.current) return;
+
     const table = tables.find(t => t.id === selectedTable);
     if (!table || !table.currentSession) return;
 
-    // Если нужно печатать чек (или включена автопечать)
-    if (shouldPrint || settings.autoPrintReceipt) {
-      const session = table.currentSession;
-      const endTime = Date.now();
-      const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
-      const durationMinutes = Math.ceil(activeMs / 60000);
-      const tableCost = calculatePausedSessionCost(
-        session.startTime,
-        endTime,
-        table.pricePerHour,
-        table.priceSchedule,
-        session.mode,
-        session.fixedAmount,
-        session.packagePrice,
-        session.pauseIntervals
-      );
-      const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const serviceCharge = settings.serviceChargeEnabled
-        ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
-        : 0;
-
-      await printReceipt({
-        clubName: settings.clubName,
-        receiptCompanyName: settings.receiptCompanyName,
-        receiptCity: settings.receiptCity,
-        receiptPhone: settings.receiptPhone,
-        receiptCashierName: settings.receiptCashierName,
-        tableName: table.name,
-        mode: session.mode,
-        startTime: session.startTime,
-        endTime,
-        duration: durationMinutes,
-        tableCost,
-        barOrders: session.barOrders,
-        barCost,
-        serviceCharge,
-        serviceChargePercent: settings.serviceChargePercent,
-        totalCost: tableCost + barCost + serviceCharge,
-        currency: settings.currency,
-        receiptWidthMm: settings.receiptWidthMm,
-        receiptFontSize: settings.receiptFontSize,
-        receiptPaddingMm: settings.receiptPaddingMm,
-        silentPrint: settings.silentPrint,
-        deviceName: settings.receiptPrinterName,
-      });
-    }
-
-    endSession(selectedTable);
-    if (settings.soundEnabled) playStopSound();
-    setShowEndModal(false);
-  };
-
-  const handleTimeExpired = useCallback(async (tableId: number) => {
-    const table = tables.find((t) => t.id === tableId);
-    if (!table?.currentSession) return;
-
-    if (settings.soundEnabled) playTimerEndSound();
-
-    const session = table.currentSession;
-    const endTime = Date.now();
-    const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
-    const durationMinutes = Math.ceil(activeMs / 60000);
-    const tableCost = calculatePausedSessionCost(
-      session.startTime,
-      endTime,
-      table.pricePerHour,
-      table.priceSchedule,
-      session.mode,
-      session.fixedAmount,
-      session.packagePrice,
-      session.pauseIntervals
-    );
-    const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const serviceCharge = settings.serviceChargeEnabled
-      ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
-      : 0;
-
+    closingRef.current = true;
+    setIsClosing(true);
     try {
-      await printReceipt({
-        clubName: settings.clubName,
-        receiptCompanyName: settings.receiptCompanyName,
-        receiptCity: settings.receiptCity,
-        receiptPhone: settings.receiptPhone,
-        receiptCashierName: settings.receiptCashierName,
-        tableName: table.name,
-        mode: session.mode,
-        startTime: session.startTime,
-        endTime,
-        duration: durationMinutes,
-        tableCost,
-        barOrders: session.barOrders,
-        barCost,
-        serviceCharge,
-        serviceChargePercent: settings.serviceChargePercent,
-        totalCost: tableCost + barCost + serviceCharge,
-        currency: settings.currency,
-        receiptWidthMm: settings.receiptWidthMm,
-        receiptFontSize: settings.receiptFontSize,
-        receiptPaddingMm: settings.receiptPaddingMm,
-        silentPrint: settings.silentPrint,
-        deviceName: settings.receiptPrinterName,
-      });
-    } catch (error) {
-      console.error('Auto print on expire failed:', error);
+      const session = table.currentSession;
+      // Фиксируем момент завершения ОДИН раз: и для чека, и для записи в отчёт,
+      // чтобы суммы совпадали до тенге (см. endSession(tableId, endTime)).
+      const endTime = Date.now();
+
+      if (shouldPrint || settings.autoPrintReceipt) {
+        await printSessionReceipt({ table, session, settings, endTime });
+      }
+
+      endSession(selectedTable, endTime, paymentMethod);
+      if (settings.soundEnabled) playStopSound();
+      setShowEndModal(false);
+    } finally {
+      closingRef.current = false;
+      setIsClosing(false);
     }
-
-    endSession(tableId);
-  }, [
-    tables,
-    settings.soundEnabled,
-    settings.clubName,
-    settings.receiptCompanyName,
-    settings.receiptCity,
-    settings.receiptPhone,
-    settings.receiptCashierName,
-    settings.currency,
-    settings.receiptWidthMm,
-    settings.receiptFontSize,
-    settings.receiptPaddingMm,
-    settings.silentPrint,
-    settings.serviceChargeEnabled,
-    settings.serviceChargePercent,
-    endSession,
-  ]);
-
-  const handleOpenBar = (tableId: number) => {
-    openModal('bar-order', { tableId });
   };
 
-  const handleReserve = (tableId: number) => {
+  const handleOpenBar = useCallback((tableId: number) => {
+    openModal('bar-order', { tableId });
+  }, [openModal]);
+
+  const handleReserve = useCallback((tableId: number) => {
     setSelectedTable(tableId);
     setReserveName('');
     setReservePhone('');
@@ -611,7 +556,7 @@ const Dashboard: React.FC = () => {
     setReserveTime(`${h}:${min}`);
     setReserveNotes('');
     setShowReserveModal(true);
-  };
+  }, []);
 
   const handleConfirmReserve = () => {
     if (!selectedTable || !reserveDate || !reserveTime) return;
@@ -622,10 +567,10 @@ const Dashboard: React.FC = () => {
     setShowReserveModal(false);
   };
 
-  const handleCancelReservation = (tableId: number) => {
+  const handleCancelReservation = useCallback((tableId: number) => {
     const r = reservations.find((res) => res.tableId === tableId);
     if (r) cancelReservation(r.id);
-  };
+  }, [reservations, cancelReservation]);
 
   const getTableReservation = (tableId: number) => {
     return reservations.find((r) => r.tableId === tableId) || null;
@@ -710,7 +655,6 @@ const Dashboard: React.FC = () => {
             onPause={pauseSession}
             onResume={resumeSession}
             onOpenBar={handleOpenBar}
-            onTimeExpired={handleTimeExpired}
             onReserve={handleReserve}
             onCancelReservation={handleCancelReservation}
             reservation={getTableReservation(table.id)}
@@ -951,6 +895,7 @@ const Dashboard: React.FC = () => {
           onConfirm={handleConfirmEnd}
           onCancel={() => setShowEndModal(false)}
           autoPrintEnabled={settings.autoPrintReceipt}
+          busy={isClosing}
         />
       )}
 
@@ -1042,34 +987,27 @@ const Dashboard: React.FC = () => {
 };
 
 // ===== МОДАЛКА ЗАВЕРШЕНИЯ СЕССИИ =====
+const PAYMENT_ICONS: Record<PaymentMethod, React.ReactNode> = {
+  cash: <Banknote size={16} />,
+  card: <CreditCard size={16} />,
+  transfer: <Smartphone size={16} />,
+};
+const PAYMENT_IDS: PaymentMethod[] = ['cash', 'card', 'transfer'];
+
 const EndSessionModal: React.FC<{
   table: BilliardTable;
-  onConfirm: (shouldPrint?: boolean) => void;
+  onConfirm: (shouldPrint?: boolean, paymentMethod?: PaymentMethod) => void;
   onCancel: () => void;
   autoPrintEnabled: boolean;
-}> = ({ table, onConfirm, onCancel, autoPrintEnabled }) => {
-  const { settings } = useStore();
+  busy?: boolean;
+}> = ({ table, onConfirm, onCancel, autoPrintEnabled, busy }) => {
+  const settings = useStore((s) => s.settings);
   const { t } = useT();
+  const [payment, setPayment] = useState<PaymentMethod>('cash');
   const session = table.currentSession!;
-  const endTime = Date.now();
-  const activeMs = getActiveElapsedMs(session.startTime, endTime, session.pausedAt, session.totalPausedMs);
-  const durationMinutes = Math.ceil(activeMs / 60000);
-  const tableCost = calculatePausedSessionCost(
-    session.startTime,
-    endTime,
-    table.pricePerHour,
-    table.priceSchedule,
-    session.mode,
-    session.fixedAmount,
-    session.packagePrice,
-    session.pauseIntervals
-  );
-
-  const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const serviceCharge = settings.serviceChargeEnabled
-    ? Math.round((tableCost + barCost) * settings.serviceChargePercent / 100)
-    : 0;
-  const grandTotal = tableCost + barCost + serviceCharge;
+  // Предпросмотр сумм на текущий момент (тот же расчёт, что и для чека/отчёта).
+  const { durationMinutes, tableCost, barCost, serviceCharge, grandTotal } =
+    computeSessionCharges(table, session, settings, Date.now());
   const hours = Math.floor(durationMinutes / 60);
   const mins = durationMinutes % 60;
 
@@ -1142,20 +1080,39 @@ const EndSessionModal: React.FC<{
             <span>{grandTotal.toLocaleString()} {settings.currency}</span>
           </div>
 
+          {/* Способ оплаты */}
+          <div className="payment-method-picker">
+            <span className="payment-method-label">{t('payment.label')}:</span>
+            <div className="payment-method-options">
+              {PAYMENT_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPayment(id)}
+                  className={`payment-method-btn ${payment === id ? 'active' : ''}`}
+                  disabled={busy}
+                >
+                  {PAYMENT_ICONS[id]}
+                  <span>{t(`payment.${id}`)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div style={{ textAlign: 'center', marginTop: 12, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <p style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Фискальный документ НЕ сформирован</p>
             <p style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Для получения фискального документа используйте ККМ</p>
           </div>
         </div>
         <div className="modal-actions end-session-actions">
-          <button onClick={onCancel} className="btn btn-ghost">{t('common.back')}</button>
+          <button onClick={onCancel} className="btn btn-ghost" disabled={busy}>{t('common.back')}</button>
           {!autoPrintEnabled && (
-            <button onClick={() => onConfirm(true)} className="btn btn-primary">
+            <button onClick={() => onConfirm(true, payment)} className="btn btn-primary" disabled={busy}>
               <Printer size={16} />
               {t('dashboard.end_print')}
             </button>
           )}
-          <button onClick={() => onConfirm(false)} className="btn btn-danger">
+          <button onClick={() => onConfirm(false, payment)} className="btn btn-danger" disabled={busy}>
             <Square size={16} />
             {t('dashboard.end_close')}
           </button>

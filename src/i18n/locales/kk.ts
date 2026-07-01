@@ -97,6 +97,20 @@ export const kk: Dict = {
     view_compact: 'Тақташа',
     view_list: 'Тізім',
   },
+  toasts: {
+    prev_shift_closed: 'Алдыңғы ауысым автоматты түрде жабылды',
+    relays_detected: 'Реле анықталды: {count} дана',
+    lights_restored: 'Жарық күйі қалпына келтірілді: {count} үстел',
+    revision_saved: 'Түгендеу сақталды',
+    table_reserved: '{name} брондалды',
+    reservation_cancelled: 'Брондау тоқтатылды',
+  },
+  payment: {
+    label: 'Төлем',
+    cash: 'Қолма-қол',
+    card: 'Карта',
+    transfer: 'Аударым',
+  },
   bar: {
     title_bar: 'Бар',
     title_kitchen: 'Ас үй',

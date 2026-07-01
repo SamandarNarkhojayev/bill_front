@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle, Info, AlertTriangle, XCircle, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 
 const iconMap = {
   success: <CheckCircle size={18} />,
@@ -10,7 +11,10 @@ const iconMap = {
 };
 
 const ToastContainer: React.FC = () => {
-  const { toasts, removeToast } = useStore();
+  // Всегда смонтирован — подписываемся только на тосты, а не на весь стор.
+  const { toasts, removeToast } = useStore(
+    useShallow((s) => ({ toasts: s.toasts, removeToast: s.removeToast }))
+  );
 
   if (toasts.length === 0) return null;
 

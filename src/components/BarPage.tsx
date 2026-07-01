@@ -10,26 +10,25 @@ import {
   Check,
   X,
   Package,
-  ClipboardList,
   Image as ImageIcon,
   Layers,
   AlertTriangle,
-  BarChart3,
   Coffee,
   Sandwich,
   Wind,
   Beer,
   CircleDot,
   GripVertical,
-  PackageOpen,
-  Archive,
   Tag,
   Printer,
   ChefHat,
+  Banknote,
+  CreditCard,
+  Smartphone,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
-import type { BarMenuItem, BarCategoryConfig, InventoryRevisionItem, Department } from '../types';
+import type { BarMenuItem, BarCategoryConfig, Department, PaymentMethod } from '../types';
 import { generateBarSaleReceiptHTML, printKitchenTicket } from '../utils/receipt';
 import { getCategoryDepartment, getItemDepartment } from '../utils/department';
 import NumberInput from './NumberInput';
@@ -57,8 +56,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
   const {
     barMenu, barCategories, addMenuItem, updateMenuItem, removeMenuItem,
     addBarCategory, updateBarCategory, removeBarCategory,
-    tables, addBarOrderToTable, settings, updateStock,
-    createRevision, inventoryRevisions, sellFromBar,
+    tables, addBarOrderToTable, settings, sellFromBar,
     currentUser, addToast,
   } = useStore();
   const { t } = useT();
@@ -109,13 +107,12 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
   const [editingCat, setEditingCat] = useState<string | null>(null);
   const [editCatForm, setEditCatForm] = useState<Partial<BarCategoryConfig>>({});
 
-  // Ревизия
-  const [revisionItems, setRevisionItems] = useState<Map<string, number>>(new Map());
-  const [revisionNotes, setRevisionNotes] = useState('');
-  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
-
   // Модальное окно подтверждения печати чека
   const [showPrintModal, setShowPrintModal] = useState(false);
+  // Защита от двойного клика по продаже (печать/без печати) — синхронный замок.
+  const sellingRef = useRef(false);
+  // Способ оплаты для прямой продажи (shopMode)
+  const [quickPayment, setQuickPayment] = useState<PaymentMethod>('cash');
 
   const occupiedTables = tables.filter((t) => t.status === 'occupied');
 
@@ -204,7 +201,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     });
   };
 
-  const executeQuickOrder = () => {
+  const executeQuickOrder = (paymentMethod: PaymentMethod = 'cash') => {
     if (shopMode) {
       const items: { menuItem: BarMenuItem; quantity: number }[] = [];
       quickCart.forEach((qty, itemId) => {
@@ -213,7 +210,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       });
       if (items.length === 0) return;
       emitKitchenTicket(quickCart);
-      sellFromBar(items);
+      sellFromBar(items, paymentMethod);
     } else {
       if (!selectedTable) return;
       emitKitchenTicket(quickCart);
@@ -226,6 +223,8 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
   };
 
   const handlePrintAndSell = async () => {
+    if (sellingRef.current) return;
+    sellingRef.current = true;
     // Собираем позиции для чека
     const receiptItems: { name: string; quantity: number; price: number }[] = [];
     quickCart.forEach((qty, itemId) => {
@@ -255,12 +254,16 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       console.error('Bar receipt print error:', err);
     }
     setShowPrintModal(false);
-    executeQuickOrder();
+    executeQuickOrder(shopMode ? quickPayment : 'cash');
+    setTimeout(() => { sellingRef.current = false; }, 0);
   };
 
   const handleSellWithoutPrint = () => {
+    if (sellingRef.current) return;
+    sellingRef.current = true;
     setShowPrintModal(false);
-    executeQuickOrder();
+    executeQuickOrder(shopMode ? quickPayment : 'cash');
+    setTimeout(() => { sellingRef.current = false; }, 0);
   };
 
   const handleQuickOrder = () => {
@@ -311,27 +314,6 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     setShowAddForm(false);
   };
 
-  // Ревизия
-  const trackableItems = barMenu.filter((i) => i.stock >= 0);
-
-  const startRevision = () => {
-    const map = new Map<string, number>();
-    trackableItems.forEach((item) => map.set(item.id, item.stock));
-    setRevisionItems(map);
-    setRevisionNotes('');
-  };
-
-  const handleSaveRevision = () => {
-    const items: Omit<InventoryRevisionItem, 'difference'>[] = trackableItems.map((item) => ({
-      menuItemId: item.id,
-      menuItemName: item.name,
-      expectedStock: item.stock,
-      actualStock: revisionItems.get(item.id) ?? item.stock,
-      costPrice: item.costPrice,
-    }));
-    createRevision(items, revisionNotes);
-    setRevisionItems(new Map());
-  };
 
   // Рендер
   const renderItemImage = (item: BarMenuItem, size: 'sm' | 'md' | 'lg' = 'md') => {
@@ -378,6 +360,23 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
               <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
                 {quickCartTotal.toLocaleString()} {settings.currency}
               </p>
+              {shopMode && (
+                <div className="payment-method-picker" style={{ justifyContent: 'center', borderTop: 'none', marginTop: 14 }}>
+                  <span className="payment-method-label">{t('payment.label')}:</span>
+                  <div className="payment-method-options" style={{ flex: 'unset' }}>
+                    {([
+                      { id: 'cash' as PaymentMethod, icon: <Banknote size={16} /> },
+                      { id: 'card' as PaymentMethod, icon: <CreditCard size={16} /> },
+                      { id: 'transfer' as PaymentMethod, icon: <Smartphone size={16} /> },
+                    ]).map((opt) => (
+                      <button key={opt.id} type="button" onClick={() => setQuickPayment(opt.id)}
+                        className={`payment-method-btn ${quickPayment === opt.id ? 'active' : ''}`}>
+                        {opt.icon}<span>{t(`payment.${opt.id}`)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-actions">
               <button onClick={handleSellWithoutPrint} className="btn btn-ghost">
@@ -682,109 +681,6 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* === КАТЕГОРИИ === (убран раздел Склад) */}
-      {false && (
-        <div className="bar-inventory">
-          <div className="bar-inventory-header">
-            <div className="bar-inventory-stats">
-              <div className="bar-inv-stat">
-                <PackageOpen size={18} />
-                <div><span className="bar-inv-stat-val">{trackableItems.length}</span><span className="bar-inv-stat-label">С учётом</span></div>
-              </div>
-              <div className="bar-inv-stat warning">
-                <AlertTriangle size={18} />
-                <div><span className="bar-inv-stat-val">{trackableItems.filter((i) => i.stock <= 3 && i.stock > 0).length}</span><span className="bar-inv-stat-label">Мало</span></div>
-              </div>
-              <div className="bar-inv-stat danger">
-                <Archive size={18} />
-                <div><span className="bar-inv-stat-val">{trackableItems.filter((i) => i.stock === 0).length}</span><span className="bar-inv-stat-label">Закончилось</span></div>
-              </div>
-            </div>
-            <div className="bar-inventory-actions">
-              <button onClick={() => setShowRevisionHistory(!showRevisionHistory)} className="btn btn-ghost">
-                <BarChart3 size={16} /> История ({inventoryRevisions.length})
-              </button>
-              {revisionItems.size === 0 ? (
-                <button onClick={startRevision} className="btn btn-primary btn-lg"><ClipboardList size={18} /> Начать ревизию</button>
-              ) : (
-                <button onClick={handleSaveRevision} className="btn btn-emerald btn-lg"><Check size={18} /> Сохранить ревизию</button>
-              )}
-            </div>
-          </div>
-
-          {showRevisionHistory && inventoryRevisions.length > 0 && (
-            <div className="bar-revision-history">
-              <h3 className="bar-sidebar-title"><BarChart3 size={16} /> История ревизий</h3>
-              {inventoryRevisions.slice().reverse().slice(0, 5).map((rev) => {
-                const totalDiff = rev.items.reduce((s, i) => s + (i.difference < 0 ? Math.abs(i.difference) * i.costPrice : 0), 0);
-                const negCount = rev.items.filter((i) => i.difference < 0).length;
-                return (
-                  <div key={rev.id} className="bar-revision-card">
-                    <div className="bar-revision-card-header">
-                      <span className="bar-revision-date">{new Date(rev.timestamp).toLocaleDateString('ru-RU')}</span>
-                      {negCount > 0 && <span className="bar-revision-diff">−{totalDiff.toLocaleString()} {settings.currency} недостача</span>}
-                    </div>
-                    {rev.notes && <p className="bar-revision-notes">{rev.notes}</p>}
-                    <div className="bar-revision-items">
-                      {rev.items.filter((i) => i.difference !== 0).map((i, idx) => (
-                        <span key={idx} className={`bar-revision-item ${i.difference < 0 ? 'neg' : 'pos'}`}>
-                          {i.menuItemName}: {i.difference > 0 ? '+' : ''}{i.difference}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="bar-stock-table">
-            <div className="bar-stock-header">
-              <span>Товар</span><span>Категория</span><span>Себест.</span><span>Остаток</span>
-              {revisionItems.size > 0 && <span>Факт</span>}
-              <span>Действия</span>
-            </div>
-            {trackableItems.map((item) => {
-              const cat = getCategoryById(item.categoryId);
-              const isLow = item.stock <= 3 && item.stock > 0;
-              const isOut = item.stock === 0;
-              return (
-                <div key={item.id} className={`bar-stock-row ${isOut ? 'out' : isLow ? 'low' : ''}`}>
-                  <div className="bar-stock-cell-product">{renderItemImage(item, 'sm')}<span>{item.name}</span></div>
-                  <span className="bar-stock-cell-cat" style={{ color: cat?.color }}>{cat?.name || '—'}</span>
-                  <span className="bar-stock-cell-cost">{item.costPrice.toLocaleString()} {settings.currency}</span>
-                  <div className="bar-stock-cell-qty">
-                    <span className={`stock-qty ${isOut ? 'out' : isLow ? 'low' : ''}`}>{item.stock} {item.unit}</span>
-                  </div>
-                  {revisionItems.size > 0 && (
-                    <div className="bar-stock-cell-fact">
-                      <input type="number" value={revisionItems.get(item.id) ?? item.stock}
-                        onChange={(e) => { const val = Number(e.target.value); setRevisionItems((prev) => { const next = new Map(prev); next.set(item.id, val); return next; }); }}
-                        className="form-input form-input-xs" min={0} />
-                    </div>
-                  )}
-                  <div className="bar-stock-cell-actions">
-                    <button className="bar-qty-btn-v2 plus sm" onClick={() => updateStock(item.id, 1)}><Plus size={12} /></button>
-                    <button className="bar-qty-btn-v2 minus sm" onClick={() => updateStock(item.id, -1)}><Minus size={12} /></button>
-                  </div>
-                </div>
-              );
-            })}
-            {trackableItems.length === 0 && (
-              <p className="bar-sidebar-empty" style={{ padding: 24 }}>Нет товаров с учётом остатков</p>
-            )}
-          </div>
-          {revisionItems.size > 0 && (
-            <div className="bar-revision-footer">
-              <input type="text" placeholder="Заметки к ревизии..." value={revisionNotes}
-                onChange={(e) => setRevisionNotes(e.target.value)} className="form-input" style={{ flex: 1 }} />
-              <button onClick={() => setRevisionItems(new Map())} className="btn btn-ghost">Отмена</button>
-              <button onClick={handleSaveRevision} className="btn btn-emerald"><Check size={16} /> Сохранить</button>
-            </div>
-          )}
         </div>
       )}
 

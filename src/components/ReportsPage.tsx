@@ -13,6 +13,9 @@ import {
   Download,
   Briefcase,
   Printer,
+  Banknote,
+  CreditCard,
+  Smartphone,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
@@ -149,7 +152,15 @@ const ReportsPage: React.FC = () => {
       if (hour >= 0 && hour < 24) byHour[hour]++;
     });
 
-    return { tableRev, barRev, totalRev, totalHours, avgSession, avgCheck, byTable, byHour, count: filteredSessions.length };
+    // По способу оплаты (старые записи без метода считаем наличными)
+    const byPayment = { cash: 0, card: 0, transfer: 0 };
+    filteredSessions.forEach((s) => {
+      const amount = safeNumber(s.totalCost, safeNumber(s.tableCost) + safeNumber(s.barCost));
+      const method = s.paymentMethod ?? 'cash';
+      byPayment[method] += amount;
+    });
+
+    return { tableRev, barRev, totalRev, totalHours, avgSession, avgCheck, byTable, byHour, byPayment, count: filteredSessions.length };
   }, [filteredSessions]);
 
   const historyTableNames = useMemo(() => {
@@ -222,14 +233,15 @@ const ReportsPage: React.FC = () => {
       if (m === 'amount') return t('reports.modeAmount');
       return t('reports.modeUnlimited');
     };
-    const header = t('reports.csvTable') + ';' + t('reports.csvMode') + ';' + t('reports.csvStart') + ';' + t('reports.csvEnd') + ';' + t('reports.csvDurationMin') + ';' + t('reports.csvTable') + ' (' + settings.currency + ');' + t('reports.csvBar') + ' (' + settings.currency + ');' + t('reports.csvTotal') + ' (' + settings.currency + ')';
+    const paymentLabel = (m?: string) => (m === 'card' ? t('payment.card') : m === 'transfer' ? t('payment.transfer') : t('payment.cash'));
+    const header = t('reports.csvTable') + ';' + t('reports.csvMode') + ';' + t('reports.csvStart') + ';' + t('reports.csvEnd') + ';' + t('reports.csvDurationMin') + ';' + t('reports.csvTable') + ' (' + settings.currency + ');' + t('reports.csvBar') + ' (' + settings.currency + ');' + t('reports.csvTotal') + ' (' + settings.currency + ');Оплата';
     const rows = filteredSessions
       .slice()
       .reverse()
       .map((s) => {
         const start = new Date(s.startTime).toLocaleString('ru-RU');
         const end = new Date(s.endTime).toLocaleString('ru-RU');
-        return `${s.tableName};${modeLabel(s.mode, s.tariffName)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost}`;
+        return `${s.tableName};${modeLabel(s.mode, s.tariffName)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost};${paymentLabel(s.paymentMethod)}`;
       });
 
     // Итоги
@@ -619,6 +631,31 @@ const ReportsPage: React.FC = () => {
           <div>
             <p className="report-stat-label">{t('reports.statAvgTime')}</p>
             <p className="report-stat-value">{stats.avgSession} {t('reports.min')}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Разбивка по способу оплаты */}
+      <div className="report-payment-breakdown">
+        <div className="report-payment-item cash">
+          <Banknote size={18} />
+          <div>
+            <span className="report-payment-label">{t('payment.cash')}</span>
+            <span className="report-payment-value">{formatMoney(stats.byPayment.cash, settings.currency)}</span>
+          </div>
+        </div>
+        <div className="report-payment-item card">
+          <CreditCard size={18} />
+          <div>
+            <span className="report-payment-label">{t('payment.card')}</span>
+            <span className="report-payment-value">{formatMoney(stats.byPayment.card, settings.currency)}</span>
+          </div>
+        </div>
+        <div className="report-payment-item transfer">
+          <Smartphone size={18} />
+          <div>
+            <span className="report-payment-label">{t('payment.transfer')}</span>
+            <span className="report-payment-value">{formatMoney(stats.byPayment.transfer, settings.currency)}</span>
           </div>
         </div>
       </div>

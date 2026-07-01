@@ -97,6 +97,20 @@ export const en: Dict = {
     view_compact: 'Tiles',
     view_list: 'List',
   },
+  toasts: {
+    prev_shift_closed: 'Previous shift closed automatically',
+    relays_detected: 'Relays detected: {count}',
+    lights_restored: 'Light state restored: {count} tables',
+    revision_saved: 'Inventory saved',
+    table_reserved: '{name} reserved',
+    reservation_cancelled: 'Reservation cancelled',
+  },
+  payment: {
+    label: 'Payment',
+    cash: 'Cash',
+    card: 'Card',
+    transfer: 'Transfer',
+  },
   bar: {
     title_bar: 'Bar',
     title_kitchen: 'Kitchen',

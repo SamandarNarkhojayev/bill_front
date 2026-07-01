@@ -113,6 +113,7 @@ interface SessionPayload {
   date: string;
   barOrders?: BarOrderOut[];
   shiftId?: string | null;
+  paymentMethod?: 'cash' | 'card' | 'transfer';
 }
 
 interface AuthResponse {
@@ -127,6 +128,7 @@ interface SyncStatus {
   lastSyncAt: number | null;
   lastError: string | null;
   pendingSessions: number;
+  pendingShifts: number;
   wsConnected: boolean;
 }
 
@@ -170,6 +172,9 @@ let wsConnected = false;
 let wsClosingIntentionally = false;
 // Сессии, отправка которых упала с сетевой ошибкой — повторяем при следующем sync.
 const pendingSessions: SessionPayload[] = [];
+// Смены, отправка которых упала — повторяем при следующем sync. Map по id: запись
+// идемпотентна (open/close с одним id), последняя версия (закрытие) перетирает раннюю.
+const pendingShifts = new Map<string, ShiftPayload>();
 
 function emit(): void {
   const status = getStatus();
@@ -406,8 +411,9 @@ export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
     lastSyncAt = Date.now();
     lastError = null;
     emit();
-    // Попробуем сбросить накопленные сессии (если были network-fail).
+    // Попробуем сбросить накопленные сессии и смены (если были network-fail).
     await flushPendingSessions();
+    await flushPendingShifts();
     return { ok: true };
   } catch (err) {
     lastError = (err as Error).message || 'network error';
@@ -638,6 +644,7 @@ function recordToPayload(r: SessionRecord, shiftId: string | null): SessionPaylo
     date: r.date,
     barOrders: barOrders.length > 0 ? barOrders : undefined,
     shiftId: shiftId ?? undefined,
+    paymentMethod: r.paymentMethod ?? undefined,
   };
 }
 
@@ -699,13 +706,46 @@ export async function pushShift(payload: ShiftPayload): Promise<void> {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    if (!res.ok && res.status !== 401) {
-      console.warn('[cloudSync] pushShift failed:', res.status);
+    if (res.ok) {
+      pendingShifts.delete(payload.id);
+      emit();
+      return;
     }
-    if (res.status === 401) clearAuth();
+    if (res.status === 401) {
+      clearAuth();
+      return;
+    }
+    // Иначе — буферим до следующего sync (последняя версия по id побеждает).
+    console.warn('[cloudSync] pushShift failed:', res.status);
+    pendingShifts.set(payload.id, payload);
+    emit();
   } catch (err) {
     console.warn('[cloudSync] pushShift network error:', err);
+    pendingShifts.set(payload.id, payload);
+    emit();
   }
+}
+
+async function flushPendingShifts(): Promise<void> {
+  if (pendingShifts.size === 0) return;
+  const toFlush = Array.from(pendingShifts.values());
+  for (const p of toFlush) {
+    try {
+      const res = await request('/club/shift', {
+        method: 'POST',
+        body: JSON.stringify(p),
+      });
+      if (res.ok) {
+        pendingShifts.delete(p.id);
+      } else if (res.status === 401) {
+        return; // токен протух — прекращаем, дофлашим после повторного логина
+      }
+      // иначе оставляем в очереди, повторим позже
+    } catch {
+      // сеть упала — оставляем в очереди
+    }
+  }
+  emit();
 }
 
 // ===== Status API =====
@@ -716,6 +756,7 @@ export function getStatus(): SyncStatus {
     lastSyncAt,
     lastError,
     pendingSessions: pendingSessions.length,
+    pendingShifts: pendingShifts.size,
     wsConnected,
   };
 }

@@ -11,7 +11,10 @@ import { useStore } from '../store/useStore';
 import type { UpdaterState } from '../types/arduino';
 
 const AppHeader: React.FC = () => {
-  const { currentShift, endShift, addToast, sessionHistory, settings } = useStore();
+  // Узкие селекторы вместо подписки на весь стор — только нужные срезы.
+  const currentShift = useStore((s) => s.currentShift);
+  const sessionHistory = useStore((s) => s.sessionHistory);
+  const currency = useStore((s) => s.settings.currency);
   const [now, setNow] = useState(Date.now());
   const [updater, setUpdater] = useState<UpdaterState>({
     status: 'idle',
@@ -115,7 +118,7 @@ const AppHeader: React.FC = () => {
               </div>
               <div className="header-shift-revenue">
                 <DollarSign size={14} />
-                <span>{getShiftRevenue().toLocaleString()} {settings.currency}</span>
+                <span>{getShiftRevenue().toLocaleString()} {currency}</span>
               </div>
             </div>
           </div>

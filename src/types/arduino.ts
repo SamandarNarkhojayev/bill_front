@@ -72,7 +72,7 @@ export interface PrinterAPI {
 }
 
 export interface UpdaterState {
-  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
+  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'installing' | 'installed' | 'error' | 'unsupported';
   message: string;
   currentVersion: string;
   availableVersion: string | null;
@@ -88,20 +88,7 @@ export interface UpdaterAPI {
   removeAllListeners(): void;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      arduino?: ArduinoAPI;
-      printer?: PrinterAPI;
-      updater?: UpdaterAPI;
-      store?: {
-        get: (key: string) => Promise<string | null>;
-        set: (key: string, value: string) => Promise<void>;
-        remove: (key: string) => Promise<void>;
-        flush: () => Promise<{ success: boolean }>;
-      };
-    };
-  }
-}
+// Полная декларация window.electronAPI живёт в src/vite-env.d.ts (единый источник),
+// чтобы не было конфликта и потери полей app/backup/bracket.
 
-export {};;
+export {};

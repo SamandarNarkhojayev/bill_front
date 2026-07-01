@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot, Search, LayoutGrid, UtensilsCrossed } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
@@ -16,6 +16,8 @@ const TableModal: React.FC = () => {
     useStore();
   const { t } = useT();
   const [cart, setCart] = useState<Map<string, number>>(new Map());
+  // Защита от двойного клика по «Добавить к счёту» (ref обновляется синхронно).
+  const submittingRef = useRef(false);
   // 'all' | 'dept:bar' | 'dept:kitchen' | <categoryId>
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [query, setQuery] = useState('');
@@ -70,6 +72,9 @@ const TableModal: React.FC = () => {
   const cartCount = Array.from(cart.values()).reduce((sum, qty) => sum + qty, 0);
 
   const handleSubmit = () => {
+    if (submittingRef.current) return;
+    if (cart.size === 0) return;
+    submittingRef.current = true;
     // Заказ блюд — на кухонный принтер (xprinter)
     if (settings.autoPrintKitchenTicket) {
       const kitchenItems: { name: string; quantity: number }[] = [];
@@ -102,6 +107,8 @@ const TableModal: React.FC = () => {
     });
     setCart(new Map());
     closeModal();
+    // Снимаем замок после закрытия модалки (следующее открытие — чистое).
+    setTimeout(() => { submittingRef.current = false; }, 0);
   };
 
   return (

@@ -11,6 +11,7 @@ export interface User {
   createdAt: number;
   createdBy: string | null; // id пользователя-создателя
   isActive: boolean;
+  lastLoginAt?: number; // timestamp последнего входа (для сортировки на экране выбора)
 }
 
 export interface Shift {
@@ -27,6 +28,9 @@ export interface Shift {
 export type TableStatus = 'free' | 'occupied' | 'reserved' | 'maintenance';
 
 export type SessionMode = 'time' | 'amount' | 'unlimited';
+
+// Способ оплаты (для разбивки выручки в отчётах/сверке кассы)
+export type PaymentMethod = 'cash' | 'card' | 'transfer';
 
 export interface TablePriceRule {
   id: string;
@@ -172,6 +176,7 @@ export interface SessionRecord {
   barCost: number;
   totalCost: number;
   date: string;
+  paymentMethod?: PaymentMethod; // как оплатили (по умолчанию наличные для старых записей)
 }
 
 // ===== НАСТРОЙКИ =====
@@ -182,6 +187,7 @@ export interface AppSettings {
   language: AppLanguage;        // язык интерфейса (по умолчанию 'ru')
   lastSeenVersion: string;      // последняя версия, для которой показали «Что нового»
   sidebarPinned: PageType[];    // закреплённые пункты бокового меню (остальные — в «Ещё»)
+  userVisiblePages: PageType[]; // какие страницы видны роли 'user' (настраивает админ); dashboard всегда виден
   tablesViewMode: 'grid' | 'compact' | 'list'; // вид сетки столов на главной
   clubName: string;
   receiptCompanyName: string;

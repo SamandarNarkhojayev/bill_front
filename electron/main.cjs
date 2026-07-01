@@ -1120,8 +1120,13 @@ ipcMain.handle('store:get', (_event, key) => {
 ipcMain.handle('store:set', (_event, key, value) => {
   const store = readStorage();
   store[key] = value;
+  // writeStorage() обновляет in-memory кэш сразу и дебаунсит запись на диск
+  // (WRITE_DEBOUNCE). Раньше здесь стоял немедленный flushToDisk() на КАЖДЫЙ set —
+  // он сводил дебаунс на нет: полная сериализация всего стора + атомарная запись с
+  // fsync на каждое действие (тормоза росли вместе с историей и блокировали другие IPC
+  // — Arduino/печать). Durability обеспечивают явные store.flush() из renderer:
+  // автосейв 30с, blur/visibilitychange/beforeunload и close-hook.
   writeStorage(store);
-  flushToDisk();
 });
 
 ipcMain.handle('store:remove', (_event, key) => {

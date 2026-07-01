@@ -20,6 +20,7 @@ interface Status {
   lastSyncAt: number | null;
   lastError: string | null;
   pendingSessions: number;
+  pendingShifts: number;
   wsConnected: boolean;
 }
 
@@ -139,9 +140,11 @@ const CloudSyncSection: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                {status.pendingSessions > 0 && (
+                {(status.pendingSessions > 0 || status.pendingShifts > 0) && (
                   <div className="cloud-note cloud-note-warn">
-                    В очереди {status.pendingSessions} сессий — отправятся при следующей синхронизации
+                    В очереди{status.pendingSessions > 0 ? ` ${status.pendingSessions} сессий` : ''}
+                    {status.pendingSessions > 0 && status.pendingShifts > 0 ? ' и' : ''}
+                    {status.pendingShifts > 0 ? ` ${status.pendingShifts} смен` : ''} — отправятся при следующей синхронизации
                   </div>
                 )}
                 {status.lastError && (
