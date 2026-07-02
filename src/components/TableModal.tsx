@@ -5,6 +5,7 @@ import { useT } from '../i18n';
 import type { BarMenuItem } from '../types';
 import { printKitchenTicket } from '../utils/receipt';
 import { getItemDepartment } from '../utils/department';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
   Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot,
@@ -39,6 +40,8 @@ const TableModal: React.FC = () => {
       return true;
     });
   }, [barMenu, barCategories, activeCategory, query]);
+
+  useModalKeyboard({ active: activeModal === 'bar-order' && !!modalData, onEscape: closeModal });
 
   if (activeModal !== 'bar-order' || !modalData) return null;
 

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
+import { showConfirm } from './confirmController';
 import type { UserRole } from '../types';
 
 const UsersPage: React.FC = () => {
@@ -81,11 +82,15 @@ const UsersPage: React.FC = () => {
     setShowPasswordModal(null);
   };
 
-  const handleRemoveUser = (id: string, name: string) => {
+  const handleRemoveUser = async (id: string, name: string) => {
     if (id === currentUser?.id) return;
-    if (window.confirm(t('users.deleteConfirm', { name }))) {
-      removeUser(id);
-    }
+    const ok = await showConfirm({
+      title: t('common.delete'),
+      message: t('users.deleteConfirm', { name }),
+      confirmText: t('common.delete'),
+      danger: true,
+    });
+    if (ok) removeUser(id);
   };
 
   const getRoleIcon = (role: string) => {

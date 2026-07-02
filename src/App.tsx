@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useStore } from './store/useStore'
 import LoginPage from './components/LoginPage'
 import AppHeader from './components/AppHeader'
 import Sidebar from './components/Sidebar'
+// Часто используемые страницы грузятся сразу; редкие/тяжёлые — лениво (code splitting),
+// чтобы уменьшить начальный бандл и ускорить холодный старт на слабых клубных ПК.
 import Dashboard from './components/Dashboard'
 import BarPage from './components/BarPage'
-import ReportsPage from './components/ReportsPage'
-import SettingsPage from './components/SettingsPage'
-import UsersPage from './components/UsersPage'
-import TournamentPage from './components/TournamentPage'
-import TariffsPage from './components/TariffsPage'
-import KnowledgePage from './components/KnowledgePage'
+const ReportsPage = lazy(() => import('./components/ReportsPage'))
+const SettingsPage = lazy(() => import('./components/SettingsPage'))
+const UsersPage = lazy(() => import('./components/UsersPage'))
+const TournamentPage = lazy(() => import('./components/TournamentPage'))
+const TariffsPage = lazy(() => import('./components/TariffsPage'))
+const KnowledgePage = lazy(() => import('./components/KnowledgePage'))
 import ToastContainer from './components/ToastContainer'
+import { ConfirmDialogHost } from './components/ConfirmDialog'
 import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
 import WhatsNewModal, { getUnseenEntries } from './components/WhatsNewModal'
@@ -495,11 +498,14 @@ function App() {
       <main className="main-content">
         <AppHeader />
         <div className="main-content-body">
-          {renderPage()}
+          <Suspense fallback={<div className="page-loading"><span className="page-loading-spinner" />Загрузка…</div>}>
+            {renderPage()}
+          </Suspense>
         </div>
       </main>
       <AdBanner />
       <ToastContainer />
+      <ConfirmDialogHost />
       {activeModal === 'logout-confirm' && Boolean(modalData?.shift) && (
         <LogoutConfirmModal
           shift={modalData?.shift as Shift}

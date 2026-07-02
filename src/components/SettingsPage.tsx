@@ -35,6 +35,7 @@ import type { PageType } from '../types';
 import CloudSyncSection from './CloudSyncSection';
 import TelegramSection from './TelegramSection';
 import NumberInput from './NumberInput';
+import { showConfirm } from './confirmController';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
@@ -370,14 +371,17 @@ const SettingsPage: React.FC = () => {
   };
 
 
-  const handleFactoryReset = () => {
+  const handleFactoryReset = async () => {
     if (!canDeleteData) {
       return;
     }
 
-    const confirmed = window.confirm(
-      'Сбросить приложение к заводским настройкам? Это удалит сохранённые настройки, меню бара, категории, ревизии и историю.'
-    );
+    const confirmed = await showConfirm({
+      title: 'Сброс к заводским настройкам',
+      message: 'Сбросить приложение к заводским настройкам? Это удалит сохранённые настройки, меню бара, категории, ревизии и историю.',
+      confirmText: 'Сбросить',
+      danger: true,
+    });
 
     if (!confirmed) return;
 
@@ -428,9 +432,12 @@ const SettingsPage: React.FC = () => {
     const api = window.electronAPI?.backup;
     if (!api) return;
 
-    const confirmed = window.confirm(
-      'Импортировать данные из файла? Текущие данные будут заменены. Перед этим автоматически создастся бэкап.'
-    );
+    const confirmed = await showConfirm({
+      title: 'Импорт данных',
+      message: 'Импортировать данные из файла? Текущие данные будут заменены. Перед этим автоматически создастся бэкап.',
+      confirmText: 'Импортировать',
+      danger: true,
+    });
     if (!confirmed) return;
 
     setBackupLoading(true);
@@ -475,9 +482,12 @@ const SettingsPage: React.FC = () => {
     const api = window.electronAPI?.backup;
     if (!api) return;
 
-    const confirmed = window.confirm(
-      `Восстановить данные из "${backupName}"? Текущие данные будут заменены (перед этим создастся бэкап).`
-    );
+    const confirmed = await showConfirm({
+      title: 'Восстановление из бэкапа',
+      message: `Восстановить данные из "${backupName}"? Текущие данные будут заменены (перед этим создастся бэкап).`,
+      confirmText: 'Восстановить',
+      danger: true,
+    });
     if (!confirmed) return;
 
     setBackupLoading(true);

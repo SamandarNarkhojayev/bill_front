@@ -34,6 +34,7 @@ import { playStartSound, playStopSound } from '../utils/sounds';
 import { printSessionReceipt, printKitchenTicket } from '../utils/receipt';
 import { computeSessionCharges } from '../utils/sessionCharges';
 import { getItemDepartment } from '../utils/department';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import {
   calculatePausedSessionCost,
   estimateCostForDuration,
@@ -576,6 +577,11 @@ const Dashboard: React.FC = () => {
     return reservations.find((r) => r.tableId === tableId) || null;
   };
 
+  // Клавиатура для модалок: Escape закрывает; для брони Enter подтверждает.
+  // У модалки старта Enter не вешаем — там сперва выбирают режим.
+  useModalKeyboard({ active: showStartModal, onEscape: () => setShowStartModal(false) });
+  useModalKeyboard({ active: showReserveModal, onEscape: () => setShowReserveModal(false), onEnter: handleConfirmReserve });
+
   return (
     <div className="dashboard">
       {/* Статистика за день */}
@@ -920,6 +926,7 @@ const Dashboard: React.FC = () => {
                   onChange={(e) => setReserveName(e.target.value)}
                   placeholder="Имя клиента"
                   className="modal-input"
+                  autoFocus
                 />
               </div>
               <div>
@@ -1004,6 +1011,9 @@ const EndSessionModal: React.FC<{
   const settings = useStore((s) => s.settings);
   const { t } = useT();
   const [payment, setPayment] = useState<PaymentMethod>('cash');
+  // Escape — отмена, Enter — завершить с выбранным способом оплаты (защита от busy —
+  // повторный вызов отсекает closingRef в Dashboard).
+  useModalKeyboard({ onEscape: onCancel, onEnter: () => { if (!busy) onConfirm(false, payment); } });
   const session = table.currentSession!;
   // Предпросмотр сумм на текущий момент (тот же расчёт, что и для чека/отчёта).
   const { durationMinutes, tableCost, barCost, serviceCharge, grandTotal } =

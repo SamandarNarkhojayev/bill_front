@@ -17,6 +17,7 @@ import {
   ShieldCheck, Save, KeyRound, ExternalLink,
 } from 'lucide-react';
 import telegram, { type TelegramStatus, type TelegramConfig, type TelegramEvent } from '../utils/telegram';
+import { showConfirm } from './confirmController';
 
 const EVENT_LABELS: { key: TelegramEvent; emoji: string; label: string; hint: string }[] = [
   { key: 'shiftClose', emoji: '🧾', label: 'Отчёт при закрытии смены', hint: 'Сводка: оператор, выручка, сессии' },
@@ -225,7 +226,10 @@ const TelegramSection: React.FC = () => {
                 <span key={c.id} className="tg-chip-ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <CheckCircle2 size={13} /> {c.title || c.id}
                   <button
-                    onClick={() => { if (confirm(`Убрать доступ у «${c.title || c.id}»?`)) telegram.removeAuthorizedChat(c.id); }}
+                    onClick={async () => {
+                      const ok = await showConfirm({ title: 'Убрать доступ', message: `Убрать доступ у «${c.title || c.id}»?`, confirmText: 'Убрать', danger: true });
+                      if (ok) telegram.removeAuthorizedChat(c.id);
+                    }}
                     title="Убрать доступ"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 15, lineHeight: 1, padding: 0 }}
                   >
@@ -234,7 +238,10 @@ const TelegramSection: React.FC = () => {
                 </span>
               ))}
               <button
-                onClick={() => { if (confirm('Отвязать ВСЕ чаты? Доступ придётся получать заново по коду.')) telegram.unlinkChat(); }}
+                onClick={async () => {
+                  const ok = await showConfirm({ title: 'Отвязать все чаты', message: 'Отвязать ВСЕ чаты? Доступ придётся получать заново по коду.', confirmText: 'Отвязать все', danger: true });
+                  if (ok) telegram.unlinkChat();
+                }}
                 className="btn btn-ghost"
               >
                 Отвязать все

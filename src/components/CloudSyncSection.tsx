@@ -13,6 +13,7 @@ import {
   ShieldCheck, Globe, Radio, Clock, Loader2,
 } from 'lucide-react';
 import cloudSync from '../utils/cloudSync';
+import { showConfirm } from './confirmController';
 
 interface Status {
   loggedIn: boolean;
@@ -88,10 +89,14 @@ const CloudSyncSection: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    if (confirm('Отключить облачную синхронизацию? Данные продолжат сохраняться локально.')) {
-      cloudSync.logout();
-    }
+  const handleLogout = async () => {
+    const ok = await showConfirm({
+      title: 'Отключить синхронизацию',
+      message: 'Отключить облачную синхронизацию? Данные продолжат сохраняться локально.',
+      confirmText: 'Отключить',
+      danger: true,
+    });
+    if (ok) cloudSync.logout();
   };
 
   const handleManualSync = async () => {

@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import { parseTimeToMinutes } from '../utils/pricing';
 import NumberInput from './NumberInput';
+import { showConfirm } from './confirmController';
 import type { Tariff, TariffMenuProduct, BarMenuItem, TablePriceRule } from '../types';
 
 const DAY_MINUTES = 24 * 60;
@@ -372,11 +373,16 @@ const TariffsPage: React.FC = () => {
     setShowCreateModal(true);
   };
 
-  const handleDeleteTariff = (tariffId: string) => {
-    if (confirm(t('tariffs.deleteConfirm'))) {
-      removeTariff(tariffId);
-      addToast('success', t('tariffs.tariffDeleted'));
-    }
+  const handleDeleteTariff = async (tariffId: string) => {
+    const ok = await showConfirm({
+      title: t('common.delete'),
+      message: t('tariffs.deleteConfirm'),
+      confirmText: t('common.delete'),
+      danger: true,
+    });
+    if (!ok) return;
+    removeTariff(tariffId);
+    addToast('success', t('tariffs.tariffDeleted'));
   };
 
   const handleToggleTariffStatus = (tariffId: string) => {

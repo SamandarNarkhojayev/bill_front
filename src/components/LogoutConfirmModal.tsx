@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock, LogOut, X } from 'lucide-react';
 import type { Shift } from '../types';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 
 interface LogoutConfirmModalProps {
   shift: Shift;
@@ -9,6 +10,7 @@ interface LogoutConfirmModalProps {
 }
 
 const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({ shift, onConfirm, onCancel }) => {
+  useModalKeyboard({ onEscape: onCancel, onEnter: onConfirm });
   const startTime = new Date(shift.startTime).toLocaleTimeString('ru-RU', {
     hour: '2-digit',
     minute: '2-digit',

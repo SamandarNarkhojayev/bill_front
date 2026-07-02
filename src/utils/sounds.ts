@@ -1,5 +1,10 @@
-// Звуковые эффекты через Web Audio API
-const audioContext = typeof window !== 'undefined' ? new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)() : null;
+// Звуковые эффекты через Web Audio API.
+// Конструктор AudioContext может отсутствовать (тесты/jsdom, старые webview) —
+// поэтому проверяем его наличие, а не только typeof window.
+const AudioCtx = typeof window !== 'undefined'
+  ? (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
+  : undefined;
+const audioContext = AudioCtx ? new AudioCtx() : null;
 
 function playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume = 0.15) {
   if (!audioContext) return;

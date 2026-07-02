@@ -3,6 +3,7 @@ import { Trophy, Plus, Users, Grid, Settings as SettingsIcon, Play, Award, Trash
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import NumberInput from './NumberInput';
+import { showConfirm } from './confirmController';
 import type { Tournament, BracketType, TournamentStatus, TournamentParticipant, TournamentMatch, MatchStatus, TournamentPlacement } from '../types';
 
 type ParticipantDraft = {
@@ -1221,11 +1222,16 @@ const TournamentPage: React.FC = () => {
     addToast('success', t('tournaments.toastRoundStarted', { round: nextRound }));
   };
 
-  const handleDeleteTournament = (tournamentId: string) => {
-    if (confirm(t('tournaments.confirmDelete'))) {
-      removeTournament(tournamentId);
-      addToast('success', t('tournaments.toastDeleted'));
-    }
+  const handleDeleteTournament = async (tournamentId: string) => {
+    const ok = await showConfirm({
+      title: t('common.delete'),
+      message: t('tournaments.confirmDelete'),
+      confirmText: t('common.delete'),
+      danger: true,
+    });
+    if (!ok) return;
+    removeTournament(tournamentId);
+    addToast('success', t('tournaments.toastDeleted'));
   };
 
   const getBracketTypeName = (type: BracketType) => {
@@ -2196,11 +2202,15 @@ const TournamentPage: React.FC = () => {
               )}
               {selectedTournament.status === 'active' && (
                 <button
-                  onClick={() => {
-                    if (confirm(t('tournaments.confirmComplete'))) {
-                      handleCompleteTournament(selectedTournament);
-                      setSelectedTournament(prev => prev ? { ...prev, status: 'completed' as TournamentStatus, endTime: Date.now() } : prev);
-                    }
+                  onClick={async () => {
+                    const ok = await showConfirm({
+                      title: t('tournaments.completeTournament'),
+                      message: t('tournaments.confirmComplete'),
+                      confirmText: t('tournaments.completeTournament'),
+                    });
+                    if (!ok) return;
+                    handleCompleteTournament(selectedTournament);
+                    setSelectedTournament(prev => prev ? { ...prev, status: 'completed' as TournamentStatus, endTime: Date.now() } : prev);
                   }}
                   className="btn btn-ghost"
                   style={{ color: '#fbbf24' }}

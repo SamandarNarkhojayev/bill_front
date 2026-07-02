@@ -34,6 +34,43 @@
   overflow-y: auto;
 }
 
+/* Единое модальное подтверждение (ConfirmDialog) */
+.confirm-modal {
+  max-width: 440px;
+  width: calc(100% - 32px);
+}
+.confirm-modal-message {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 6px 0 20px;
+  white-space: pre-line;
+}
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Заглушка при ленивой загрузке страницы (React.lazy + Suspense) */
+.page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 60vh;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.page-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border, #334155);
+  border-top-color: var(--accent, #10b981);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .sidebar-collapsed .main-content {
   margin-left: 72px;
 }
