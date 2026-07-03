@@ -29,6 +29,7 @@ import {
   EyeOff,
   Users,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT, LANGUAGES } from '../i18n';
 import type { PageType } from '../types';
@@ -39,7 +40,10 @@ import { showConfirm } from './confirmController';
 import type { SerialPort as SerialPortInfo } from '../types/arduino';
 
 const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, sessionHistory, currentUser, currentPage, setCurrentPage } = useStore();
+  const { settings, updateSettings, sessionHistory, currentUser, currentPage, setCurrentPage } = useStore(useShallow((s) => ({
+    settings: s.settings, updateSettings: s.updateSettings, sessionHistory: s.sessionHistory,
+    currentUser: s.currentUser, currentPage: s.currentPage, setCurrentPage: s.setCurrentPage,
+  })));
   const { t } = useT();
 
   // Пункты бокового меню, доступные для закрепления (зависят от прав и разделения кухни)

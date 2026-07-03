@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Tag, Plus, Clock, Trash2, Edit, Package, ShoppingBag, Hash, Cpu } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import { parseTimeToMinutes } from '../utils/pricing';
@@ -90,7 +91,10 @@ const getPriceScheduleConflict = (rules: TablePriceRule[]): PriceScheduleConflic
 };
 
 const TariffsPage: React.FC = () => {
-  const { settings, updateSettings, currentUser, barMenu, addToast, tariffs, addTariff, updateTariff, removeTariff } = useStore();
+  const { settings, updateSettings, currentUser, barMenu, addToast, tariffs, addTariff, updateTariff, removeTariff } = useStore(useShallow((s) => ({
+    settings: s.settings, updateSettings: s.updateSettings, currentUser: s.currentUser, barMenu: s.barMenu,
+    addToast: s.addToast, tariffs: s.tariffs, addTariff: s.addTariff, updateTariff: s.updateTariff, removeTariff: s.removeTariff,
+  })));
   const { t } = useT();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTariff, setEditingTariff] = useState<Tariff | null>(null);
@@ -111,7 +115,19 @@ const TariffsPage: React.FC = () => {
   const [bulkEndTime, setBulkEndTime] = useState('19:00');
   const [bulkPricePerHour, setBulkPricePerHour] = useState(2000);
 
-  const activeTables = settings.tables.filter(t => t.isActive);
+  const activeTables = useMemo(() => settings.tables.filter(t => t.isActive), [settings.tables]);
+  // O(1)-справочники для рендера карточек тарифов: было barMenu.find()/activeTables.find()
+  // внутри .map() (O(n·m)), пересчитывалось на каждый рендер/нажатие клавиши.
+  const barMenuPriceById = useMemo(() => {
+    const m = new Map<string, number>();
+    barMenu.forEach((item: BarMenuItem) => m.set(item.id, item.price));
+    return m;
+  }, [barMenu]);
+  const activeTableNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    activeTables.forEach((tb) => m.set(tb.id, tb.name));
+    return m;
+  }, [activeTables]);
 
   const sortPriceRules = (rules: TablePriceRule[]) => (
     rules.slice().sort((left, right) => parseTimeToMinutes(left.startTime) - parseTimeToMinutes(right.startTime))
@@ -394,8 +410,7 @@ const TariffsPage: React.FC = () => {
 
   const getTotalProductsCost = (products: TariffMenuProduct[]) => {
     return products.reduce((sum, product) => {
-      const menuItem = barMenu.find((item: BarMenuItem) => item.id === product.productId);
-      return sum + (menuItem?.price || 0) * product.quantity;
+      return sum + (barMenuPriceById.get(product.productId) || 0) * product.quantity;
     }, 0);
   };
 
@@ -772,7 +787,7 @@ const TariffsPage: React.FC = () => {
                 }}>
                   <div style={{ fontSize: 13, color: '#64748b' }}>
                     {t('tariffs.tablesLabel')}: {tariff.tableIds.map(id =>
-                      activeTables.find(tb => tb.id === id)?.name || `#${id}`
+                      activeTableNameById.get(id) || `#${id}`
                     ).join(', ')}
                   </div>
                   <button

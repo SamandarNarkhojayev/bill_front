@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import {
   Wine,
   Plus,
@@ -26,12 +26,14 @@ import {
   CreditCard,
   Smartphone,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import type { BarMenuItem, BarCategoryConfig, Department, PaymentMethod } from '../types';
 import { generateBarSaleReceiptHTML, printKitchenTicket } from '../utils/receipt';
 import { getCategoryDepartment, getItemDepartment } from '../utils/department';
 import NumberInput from './NumberInput';
+import ModalCloseX from './ModalCloseX';
 
 // Маппинг иконок
 const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
@@ -47,18 +49,101 @@ const colorPresets = [
 
 type BarTab = 'quick-order' | 'menu' | 'categories';
 
+// Картинка позиции (загруженное фото или иконка категории). memo — не пересобираем при
+// перерисовке родителя, если сам товар/категория не менялись. Фото декодируется лениво.
+const ItemImage = memo<{ item: BarMenuItem; category?: BarCategoryConfig; size?: 'sm' | 'md' | 'lg' }>(
+  ({ item, category, size = 'md' }) => {
+    const sizeClass = `bar-item-img bar-item-img-${size}`;
+    if (item.image) {
+      return <div className={sizeClass}><img src={item.image} alt={item.name} loading="lazy" decoding="async" /></div>;
+    }
+    const IconComp = category ? getIconComponent(category.icon) : Package;
+    return (
+      <div className={sizeClass} style={{ background: category ? `${category.color}20` : 'rgba(255,255,255,0.05)' }}>
+        <IconComp size={size === 'lg' ? 28 : size === 'md' ? 22 : 16} style={{ color: category?.color || '#94a3b8' }} />
+      </div>
+    );
+  }
+);
+ItemImage.displayName = 'ItemImage';
+
+// Бейдж остатка. memo по товару.
+const StockBadge = memo<{ item: BarMenuItem }>(({ item }) => {
+  if (item.stock === -1) return null;
+  const isLow = item.stock <= 3 && item.stock > 0;
+  const isOut = item.stock === 0;
+  return (
+    <span className={`stock-badge ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
+      {isOut ? 'Нет' : `${item.stock} ${item.unit}`}
+    </span>
+  );
+});
+StockBadge.displayName = 'StockBadge';
+
+// Карточка товара в сетке быстрого заказа. memo + примитивные/стабильные пропсы: при
+// добавлении одной позиции в корзину перерисовывается ТОЛЬКО затронутая карточка (её qty),
+// а не вся сетка — критично при сотнях позиций бара/кухни.
+interface ProductCardProps {
+  item: BarMenuItem;
+  qty: number;
+  category?: BarCategoryConfig;
+  currency: string;
+  onAdd: (item: BarMenuItem) => void;
+  onRemove: (id: string) => void;
+}
+
+const ProductCard = memo<ProductCardProps>(({ item, qty, category, currency, onAdd, onRemove }) => {
+  const isOutOfStock = item.stock === 0;
+  return (
+    <div
+      className={`bar-product-card ${qty > 0 ? 'in-cart' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
+      onClick={() => !isOutOfStock && onAdd(item)}
+    >
+      <ItemImage item={item} category={category} size="lg" />
+      <div className="bar-product-info">
+        <span className="bar-product-name">{item.name}</span>
+        <span className="bar-product-price">{item.price.toLocaleString()} {currency}</span>
+      </div>
+      <StockBadge item={item} />
+      {qty > 0 && (
+        <div className="bar-product-qty-badge" onClick={(e) => e.stopPropagation()}>
+          <button className="bar-qty-btn-v2 minus" onClick={() => onRemove(item.id)}><Minus size={14} /></button>
+          <span className="bar-qty-v2">{qty}</span>
+          <button className="bar-qty-btn-v2 plus" onClick={() => onAdd(item)}><Plus size={14} /></button>
+        </div>
+      )}
+      {isOutOfStock && (
+        <div className="bar-product-overlay">
+          <AlertTriangle size={20} />
+          <span>Нет в наличии</span>
+        </div>
+      )}
+    </div>
+  );
+});
+ProductCard.displayName = 'ProductCard';
+
 // 'bar' — только напитки/снэки, 'kitchen' — только блюда, 'combined' — всё на одной странице
 interface BarPageProps {
   department?: Department | 'combined';
 }
 
 const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
+  // Узкая подписка: перерисовываемся только при изменении используемых срезов, а не на
+  // КАЖДУЮ мутацию стора (тосты, тики столов и т.п.). Экшены — стабильные ссылки, поэтому
+  // их наличие в объекте не добавляет перерисовок.
   const {
     barMenu, barCategories, addMenuItem, updateMenuItem, removeMenuItem,
     addBarCategory, updateBarCategory, removeBarCategory,
     tables, addBarOrderToTable, settings, sellFromBar,
     currentUser, addToast,
-  } = useStore();
+  } = useStore(useShallow((s) => ({
+    barMenu: s.barMenu, barCategories: s.barCategories,
+    addMenuItem: s.addMenuItem, updateMenuItem: s.updateMenuItem, removeMenuItem: s.removeMenuItem,
+    addBarCategory: s.addBarCategory, updateBarCategory: s.updateBarCategory, removeBarCategory: s.removeBarCategory,
+    tables: s.tables, addBarOrderToTable: s.addBarOrderToTable, settings: s.settings, sellFromBar: s.sellFromBar,
+    currentUser: s.currentUser, addToast: s.addToast,
+  })));
   const { t } = useT();
 
   const isKitchen = department === 'kitchen';
@@ -114,25 +199,49 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
   // Способ оплаты для прямой продажи (shopMode)
   const [quickPayment, setQuickPayment] = useState<PaymentMethod>('cash');
 
-  const occupiedTables = tables.filter((t) => t.status === 'occupied');
+  const occupiedTables = useMemo(() => tables.filter((t) => t.status === 'occupied'), [tables]);
+
+  // O(1)-справочники: категории и позиции по id. Заменяют .find() в горячих путях
+  // (рендер сетки, корзина, подсчёт итога) — было O(n·m), стало O(1) на обращение.
+  const categoryById = useMemo(() => {
+    const m = new Map<string, BarCategoryConfig>();
+    barCategories.forEach((c) => m.set(c.id, c));
+    return m;
+  }, [barCategories]);
+
+  const barMenuById = useMemo(() => {
+    const m = new Map<string, BarMenuItem>();
+    barMenu.forEach((i) => m.set(i.id, i));
+    return m;
+  }, [barMenu]);
 
   // Категории текущего отдела (combined — все)
-  const sortedCategories = [...barCategories]
-    .filter((c) => isCombined || getCategoryDepartment(c) === department)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const sortedCategories = useMemo(
+    () => barCategories
+      .filter((c) => isCombined || getCategoryDepartment(c) === department)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    [barCategories, isCombined, department]
+  );
 
-  // Позиции меню текущего отдела
-  const departmentMenu = isCombined
-    ? barMenu
-    : barMenu.filter((item) => getItemDepartment(item, barCategories) === department);
+  // Позиции меню текущего отдела (отдел позиции — через O(1)-справочник категорий)
+  const departmentMenu = useMemo(
+    () => isCombined
+      ? barMenu
+      : barMenu.filter((item) => getCategoryDepartment(categoryById.get(item.categoryId)) === department),
+    [barMenu, categoryById, isCombined, department]
+  );
 
-  const filteredMenu = departmentMenu.filter((item) => {
-    const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = activeCategory === 'all' || item.categoryId === activeCategory;
-    return matchSearch && matchCategory;
-  });
+  const filteredMenu = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return departmentMenu.filter((item) => {
+      const matchSearch = !q || item.name.toLowerCase().includes(q);
+      const matchCategory = activeCategory === 'all' || item.categoryId === activeCategory;
+      return matchSearch && matchCategory;
+    });
+  }, [departmentMenu, search, activeCategory]);
 
-  const getCategoryById = (id: string) => barCategories.find((c) => c.id === id);
+  // Только доступные позиции — то, что реально рисуется в сетке быстрого заказа.
+  const availableMenu = useMemo(() => filteredMenu.filter((i) => i.available), [filteredMenu]);
 
   // Если выбранная категория исчезла из текущего отдела (удалена или сменился отдел) — сброс на «Все»,
   // иначе сетка покажет пустоту без подсвеченного чипа.
@@ -143,8 +252,8 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategory, department, barCategories]);
 
-  // Быстрый заказ
-  const addToQuickCart = (item: BarMenuItem) => {
+  // Быстрый заказ. Колбэки стабильны (deps=[]) — иначе memo на ProductCard не держится.
+  const addToQuickCart = useCallback((item: BarMenuItem) => {
     if (item.stock === 0) return;
     setQuickCart((prev) => {
       const next = new Map(prev);
@@ -153,9 +262,9 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       next.set(item.id, current + 1);
       return next;
     });
-  };
+  }, []);
 
-  const removeFromQuickCart = (itemId: string) => {
+  const removeFromQuickCart = useCallback((itemId: string) => {
     setQuickCart((prev) => {
       const next = new Map(prev);
       const qty = next.get(itemId) || 0;
@@ -163,14 +272,27 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       else next.set(itemId, qty - 1);
       return next;
     });
-  };
+  }, []);
 
-  const quickCartTotal = Array.from(quickCart.entries()).reduce((sum, [id, qty]) => {
-    const item = barMenu.find((i) => i.id === id);
-    return sum + (item ? item.price * qty : 0);
-  }, 0);
+  const quickCartTotal = useMemo(() => {
+    let sum = 0;
+    quickCart.forEach((qty, id) => {
+      const item = barMenuById.get(id);
+      if (item) sum += item.price * qty;
+    });
+    return sum;
+  }, [quickCart, barMenuById]);
 
-  const quickCartCount = Array.from(quickCart.values()).reduce((s, q) => s + q, 0);
+  const quickCartCount = useMemo(() => {
+    let n = 0;
+    quickCart.forEach((qty) => { n += qty; });
+    return n;
+  }, [quickCart]);
+
+  // Обслуживание для продажи без стола (walk-in) — начисляется на чек, как у столов.
+  const quickServiceCharge = shopMode && settings.serviceChargeEnabled
+    ? Math.round((quickCartTotal * settings.serviceChargePercent) / 100)
+    : 0;
 
   // Отправить заказ блюд на кухонный принтер (xprinter). Срабатывает при пробитии,
   // независимо от того, разделены ли бар и кухня — маршрутизация по отделу позиции.
@@ -178,7 +300,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     if (!settings.autoPrintKitchenTicket) return;
     const kitchenItems: { name: string; quantity: number }[] = [];
     cart.forEach((qty, itemId) => {
-      const item = barMenu.find((i) => i.id === itemId);
+      const item = barMenuById.get(itemId);
       if (item && getItemDepartment(item, barCategories) === 'kitchen') {
         kitchenItems.push({ name: item.name, quantity: qty });
       }
@@ -205,7 +327,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     if (shopMode) {
       const items: { menuItem: BarMenuItem; quantity: number }[] = [];
       quickCart.forEach((qty, itemId) => {
-        const item = barMenu.find((i) => i.id === itemId);
+        const item = barMenuById.get(itemId);
         if (item) items.push({ menuItem: item, quantity: qty });
       });
       if (items.length === 0) return;
@@ -215,7 +337,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       if (!selectedTable) return;
       emitKitchenTicket(quickCart);
       quickCart.forEach((qty, itemId) => {
-        const item = barMenu.find((i) => i.id === itemId);
+        const item = barMenuById.get(itemId);
         if (item) addBarOrderToTable(selectedTable, item, qty);
       });
     }
@@ -228,12 +350,14 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     // Собираем позиции для чека
     const receiptItems: { name: string; quantity: number; price: number }[] = [];
     quickCart.forEach((qty, itemId) => {
-      const item = barMenu.find((i) => i.id === itemId);
+      const item = barMenuById.get(itemId);
       if (item) receiptItems.push({ name: item.name, quantity: qty, price: item.price });
     });
     const tableName = !shopMode && selectedTable
       ? tables.find((t) => t.id === selectedTable)?.name
       : undefined;
+    // Обслуживание для продажи БЕЗ СТОЛА (walk-in) — quickServiceCharge > 0 только когда
+    // shopMode && serviceChargeEnabled. Для заказа НА СТОЛ обслуживание добавится при закрытии стола.
     try {
       const html = generateBarSaleReceiptHTML({
         clubName: settings.clubName,
@@ -243,6 +367,8 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
         receiptCashierName: settings.receiptCashierName,
         items: receiptItems,
         totalCost: quickCartTotal,
+        serviceCharge: quickServiceCharge,
+        serviceChargePercent: settings.serviceChargePercent,
         currency: settings.currency,
         tableName,
         receiptWidthMm: settings.receiptWidthMm,
@@ -314,39 +440,13 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
     setShowAddForm(false);
   };
 
-
-  // Рендер
-  const renderItemImage = (item: BarMenuItem, size: 'sm' | 'md' | 'lg' = 'md') => {
-    const sizeClass = `bar-item-img bar-item-img-${size}`;
-    const cat = getCategoryById(item.categoryId);
-    if (item.image) {
-      return <div className={sizeClass}><img src={item.image} alt={item.name} /></div>;
-    }
-    const IconComp = cat ? getIconComponent(cat.icon) : Package;
-    return (
-      <div className={sizeClass} style={{ background: cat ? `${cat.color}20` : 'rgba(255,255,255,0.05)' }}>
-        <IconComp size={size === 'lg' ? 28 : size === 'md' ? 22 : 16} style={{ color: cat?.color || '#94a3b8' }} />
-      </div>
-    );
-  };
-
-  const renderStockBadge = (item: BarMenuItem) => {
-    if (item.stock === -1) return null;
-    const isLow = item.stock <= 3 && item.stock > 0;
-    const isOut = item.stock === 0;
-    return (
-      <span className={`stock-badge ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
-        {isOut ? 'Нет' : `${item.stock} ${item.unit}`}
-      </span>
-    );
-  };
-
   return (
     <div className="page-content">
       {/* Модальное окно: Распечатать чек? */}
       {showPrintModal && (
         <div className="modal-overlay" onClick={() => setShowPrintModal(false)}>
           <div className="modal bar-print-modal" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseX onClose={() => setShowPrintModal(false)} />
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Printer size={22} style={{ color: '#f59e0b' }} />
@@ -438,35 +538,17 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
       {activeTab === 'quick-order' && (
         <div className="bar-order-layout">
           <div className="bar-menu-grid-v2">
-            {filteredMenu.filter((i) => i.available).map((item) => {
-              const qty = quickCart.get(item.id) || 0;
-              const isOutOfStock = item.stock === 0;
-              return (
-                <div key={item.id}
-                  className={`bar-product-card ${qty > 0 ? 'in-cart' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
-                  onClick={() => !isOutOfStock && addToQuickCart(item)}>
-                  {renderItemImage(item, 'lg')}
-                  <div className="bar-product-info">
-                    <span className="bar-product-name">{item.name}</span>
-                    <span className="bar-product-price">{item.price.toLocaleString()} {settings.currency}</span>
-                  </div>
-                  {renderStockBadge(item)}
-                  {qty > 0 && (
-                    <div className="bar-product-qty-badge" onClick={(e) => e.stopPropagation()}>
-                      <button className="bar-qty-btn-v2 minus" onClick={() => removeFromQuickCart(item.id)}><Minus size={14} /></button>
-                      <span className="bar-qty-v2">{qty}</span>
-                      <button className="bar-qty-btn-v2 plus" onClick={() => addToQuickCart(item)}><Plus size={14} /></button>
-                    </div>
-                  )}
-                  {isOutOfStock && (
-                    <div className="bar-product-overlay">
-                      <AlertTriangle size={20} />
-                      <span>Нет в наличии</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {availableMenu.map((item) => (
+              <ProductCard
+                key={item.id}
+                item={item}
+                qty={quickCart.get(item.id) || 0}
+                category={categoryById.get(item.categoryId)}
+                currency={settings.currency}
+                onAdd={addToQuickCart}
+                onRemove={removeFromQuickCart}
+              />
+            ))}
           </div>
 
           <div className="bar-order-sidebar">
@@ -521,11 +603,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                 <>
                   <div className="bar-cart-items">
                     {Array.from(quickCart.entries()).map(([id, qty]) => {
-                      const item = barMenu.find((i) => i.id === id);
+                      const item = barMenuById.get(id);
                       if (!item) return null;
                       return (
                         <div key={id} className="bar-cart-row">
-                          {renderItemImage(item, 'sm')}
+                          <ItemImage item={item} category={categoryById.get(item.categoryId)} size="sm" />
                           <div className="bar-cart-row-info">
                             <span className="bar-cart-row-name">{item.name}</span>
                             <span className="bar-cart-row-price">{(item.price * qty).toLocaleString()} {settings.currency}</span>
@@ -539,9 +621,15 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
                       );
                     })}
                   </div>
+                  {quickServiceCharge > 0 && (
+                    <div className="bar-cart-total-row" style={{ fontWeight: 500, opacity: 0.85 }}>
+                      <span>Обслуживание ({settings.serviceChargePercent}%)</span>
+                      <span>{quickServiceCharge.toLocaleString()} {settings.currency}</span>
+                    </div>
+                  )}
                   <div className="bar-cart-total-row">
                     <span>{t('common.total')}</span>
-                    <span className="bar-cart-total-value">{quickCartTotal.toLocaleString()} {settings.currency}</span>
+                    <span className="bar-cart-total-value">{(quickCartTotal + quickServiceCharge).toLocaleString()} {settings.currency}</span>
                   </div>
                   <button onClick={handleQuickOrder} disabled={!shopMode && !selectedTable}
                     className={`btn ${shopMode ? 'btn-amber' : 'btn-amber'} btn-full bar-cart-submit`}>
@@ -602,7 +690,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
 
           <div className="bar-menu-list-v2">
             {filteredMenu.map((item) => {
-              const cat = getCategoryById(item.categoryId);
+              const cat = categoryById.get(item.categoryId);
               if (editingItem === item.id) {
                 return (
                   <div key={item.id} className="bar-menu-edit-card">
@@ -657,12 +745,12 @@ const BarPage: React.FC<BarPageProps> = ({ department = 'combined' }) => {
               }
               return (
                 <div key={item.id} className="bar-menu-row-v2">
-                  {renderItemImage(item, 'md')}
+                  <ItemImage item={item} category={cat} size="md" />
                   <div className="bar-menu-row-info">
                     <span className="bar-menu-row-name">{item.name}</span>
                     <div className="bar-menu-row-meta">
                       {cat && <span className="bar-menu-row-cat" style={{ color: cat.color, background: `${cat.color}15` }}>{cat.name}</span>}
-                      {renderStockBadge(item)}
+                      <StockBadge item={item} />
                     </div>
                   </div>
                   <div className="bar-menu-row-prices">

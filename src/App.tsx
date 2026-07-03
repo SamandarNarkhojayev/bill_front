@@ -15,6 +15,7 @@ const TariffsPage = lazy(() => import('./components/TariffsPage'))
 const KnowledgePage = lazy(() => import('./components/KnowledgePage'))
 import ToastContainer from './components/ToastContainer'
 import { ConfirmDialogHost } from './components/ConfirmDialog'
+import { CancelAuthDialogHost } from './components/CancelAuthDialog'
 import AdBanner from './components/AdBanner'
 import UpdateModal from './components/UpdateModal'
 import WhatsNewModal, { getUnseenEntries } from './components/WhatsNewModal'
@@ -278,7 +279,8 @@ function App() {
     const unsubStore = useStore.subscribe((s) => {
       if (s.tables !== lastTablesRef) {
         lastTablesRef = s.tables
-        cloudSync.broadcastSync()
+        // Коалесцируем всплески мутаций столов в один WS-broadcast (см. cloudSync).
+        cloudSync.scheduleBroadcastSync()
       }
     })
 
@@ -461,10 +463,13 @@ function App() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />
+      // ВАЖНО: один и тот же key для «Бар» и «Кухня» — чтобы при переходе между ними
+      // компонент НЕ пересоздавался и корзина сохранялась. Пользователь может набрать
+      // позиции бара, перейти на кухню, добрать блюда и пробить ОДним чеком (а не тремя).
       case 'bar':
-        return <BarPage key="bar" department={settings.kitchenSeparate ? 'bar' : 'combined'} />
+        return <BarPage key="barpage" department={settings.kitchenSeparate ? 'bar' : 'combined'} />
       case 'kitchen':
-        return <BarPage key="kitchen" department={settings.kitchenSeparate ? 'kitchen' : 'combined'} />
+        return <BarPage key="barpage" department={settings.kitchenSeparate ? 'kitchen' : 'combined'} />
       case 'reports':
         return <ReportsPage />
       case 'settings':
@@ -506,6 +511,7 @@ function App() {
       <AdBanner />
       <ToastContainer />
       <ConfirmDialogHost />
+      <CancelAuthDialogHost />
       {activeModal === 'logout-confirm' && Boolean(modalData?.shift) && (
         <LogoutConfirmModal
           shift={modalData?.shift as Shift}

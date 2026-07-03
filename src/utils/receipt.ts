@@ -329,7 +329,9 @@ interface BarSaleReceiptData {
   receiptCashierName?: string;
   orderNumber?: string;
   items: { name: string; quantity: number; price: number }[];
-  totalCost: number;
+  totalCost: number; // сумма позиций (без обслуживания)
+  serviceCharge?: number;       // сумма обслуживания (0 = не показывать строку)
+  serviceChargePercent?: number; // процент обслуживания (для подписи строки)
   currency: string;
   tableName?: string; // если добавили к столу
   receiptWidthMm?: number;
@@ -347,6 +349,8 @@ export const generateBarSaleReceiptHTML = (data: BarSaleReceiptData): string => 
     orderNumber,
     items,
     totalCost,
+    serviceCharge = 0,
+    serviceChargePercent = 0,
     currency,
     tableName,
     receiptWidthMm = 80,
@@ -429,9 +433,18 @@ export const generateBarSaleReceiptHTML = (data: BarSaleReceiptData): string => 
       </table>
     </div>
     <div class="total-section">
+      ${serviceCharge > 0 ? `
+      <div class="total-row" style="font-size:${receiptFontSize}px;font-weight:600;">
+        <span>Сумма:</span>
+        <span>${totalCost.toLocaleString()} ${currency}</span>
+      </div>
+      <div class="total-row" style="font-size:${receiptFontSize}px;font-weight:600;">
+        <span>Обслуживание (${serviceChargePercent}%):</span>
+        <span>${serviceCharge.toLocaleString()} ${currency}</span>
+      </div>` : ''}
       <div class="total-row">
         <span>ИТОГО:</span>
-        <span>${totalCost.toLocaleString()} ${currency}</span>
+        <span>${(totalCost + serviceCharge).toLocaleString()} ${currency}</span>
       </div>
     </div>
     <div class="footer">
@@ -456,6 +469,7 @@ interface ReportReceiptData {
   totalTable: number;
   totalBar: number;
   totalRevenue: number;
+  totalService?: number;
   totalCount: number;
   receiptWidthMm?: number;
   receiptFontSize?: number;
@@ -475,6 +489,7 @@ export const generateReportReceiptHTML = (data: ReportReceiptData): string => {
     totalTable,
     totalBar,
     totalRevenue,
+    totalService = 0,
     totalCount,
     receiptWidthMm = 80,
     receiptFontSize = 12,
@@ -581,6 +596,7 @@ export const generateReportReceiptHTML = (data: ReportReceiptData): string => {
     <div class="line"><span>Игр:</span><span>${totalCount}</span></div>
     <div class="line"><span>Столы:</span><span>${totalTable.toLocaleString()} ${currency}</span></div>
     <div class="line"><span>Бар:</span><span>${totalBar.toLocaleString()} ${currency}</span></div>
+    ${totalService > 0 ? `<div class="line"><span>Обслуживание:</span><span>${totalService.toLocaleString()} ${currency}</span></div>` : ''}
     <div class="line grand"><span>ИТОГО:</span><span>${totalRevenue.toLocaleString()} ${currency}</span></div>
   </div>
 

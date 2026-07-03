@@ -72,7 +72,7 @@ beforeEach(() => {
     toasts: [],
     barMenu: [makeDrink()],
     currentUser: makeUser(),
-    settings: { ...s.settings, autoLightOff: true, soundEnabled: false, defaultPricePerHour: 1000 },
+    settings: { ...s.settings, autoLightOff: true, soundEnabled: false, defaultPricePerHour: 1000, serviceChargeEnabled: false, serviceChargePercent: 10 },
   }));
 });
 
@@ -152,6 +152,23 @@ describe('endSession', () => {
   it('ничего не делает для свободного стола', () => {
     useStore.getState().endSession(1, T0 + HOUR);
     expect(useStore.getState().sessionHistory.length).toBe(0);
+  });
+
+  it('пишет сервисный сбор в запись отчёта, когда он включён (totalCost — без сбора)', () => {
+    useStore.setState((s) => ({ settings: { ...s.settings, serviceChargeEnabled: true, serviceChargePercent: 10 } }));
+    useStore.getState().startSession(1, 'unlimited');
+    setSessionStart(1, T0);
+    useStore.getState().endSession(1, T0 + HOUR); // стол 1000
+    const rec = useStore.getState().sessionHistory.at(-1)!;
+    expect(rec.serviceCharge).toBe(100); // 10% от 1000
+    expect(rec.totalCost).toBe(1000);    // totalCost остаётся без сбора
+  });
+
+  it('сервисный сбор = 0, когда обслуживание выключено', () => {
+    useStore.getState().startSession(1, 'unlimited');
+    setSessionStart(1, T0);
+    useStore.getState().endSession(1, T0 + HOUR);
+    expect(useStore.getState().sessionHistory.at(-1)!.serviceCharge).toBe(0);
   });
 });
 

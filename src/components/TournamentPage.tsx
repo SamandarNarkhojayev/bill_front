@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Trophy, Plus, Users, Grid, Settings as SettingsIcon, Play, Award, Trash2, Info, Camera, Upload, Maximize2 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import NumberInput from './NumberInput';
@@ -568,7 +569,10 @@ const fillGroupPlayoffNextRound = (
 };
 
 const TournamentPage: React.FC = () => {
-  const { settings, addToast, tournaments, addTournament, updateTournament, removeTournament } = useStore();
+  const { settings, addToast, tournaments, addTournament, updateTournament, removeTournament } = useStore(useShallow((s) => ({
+    settings: s.settings, addToast: s.addToast, tournaments: s.tournaments,
+    addTournament: s.addTournament, updateTournament: s.updateTournament, removeTournament: s.removeTournament,
+  })));
   const { t } = useT();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
@@ -599,7 +603,27 @@ const TournamentPage: React.FC = () => {
   const [score1Input, setScore1Input] = useState('');
   const [score2Input, setScore2Input] = useState('');
 
-  const activeTables = settings.tables.filter(t => t.isActive);
+  const activeTables = useMemo(() => settings.tables.filter(t => t.isActive), [settings.tables]);
+
+  // Мемоизация тяжёлых пересчётов сетки: группировка матчей по раундам (было Set+filter
+  // на каждый раунд прямо в JSX, O(раунды×матчи)) и seed-индекс по id (было findIndex на
+  // каждый матч, O(матчи×слоты)). Пересчитывается только при изменении матчей/слотов —
+  // не на каждый рендер/ввод счёта.
+  const { bracketRounds, matchesByRound } = useMemo(() => {
+    const byRound = new Map<number, TournamentMatch[]>();
+    for (const m of bracketPreviewMatches) {
+      const arr = byRound.get(m.round);
+      if (arr) arr.push(m);
+      else byRound.set(m.round, [m]);
+    }
+    const rounds = Array.from(byRound.keys()).sort((a, b) => a - b);
+    return { bracketRounds: rounds, matchesByRound: byRound };
+  }, [bracketPreviewMatches]);
+  const seedIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    bracketSeedSlots.forEach((s, i) => { if (s) m.set(s.id, i); });
+    return m;
+  }, [bracketSeedSlots]);
 
   // Открыть турнирную сетку в отдельном окне на весь экран
   const openBracketWindow = () => {
@@ -2018,7 +2042,7 @@ const TournamentPage: React.FC = () => {
                 ) : (selectedTournament.bracketType === 'single-elimination' || selectedTournament.bracketType === 'double-elimination') ? (
                   /* ── Tree-style bracket for elimination types ── */
                   (() => {
-                    const rounds = Array.from(new Set(bracketPreviewMatches.map((m) => m.round))).sort((a, b) => a - b);
+                    const rounds = bracketRounds;
                     const totalRounds = rounds.length;
 
                     const getRoundLabel = (roundIndex: number, totalR: number) => {
@@ -2034,7 +2058,7 @@ const TournamentPage: React.FC = () => {
                     return (
                       <div className="bracket-container">
                         {rounds.map((round, roundIndex) => {
-                          const roundMatches = bracketPreviewMatches.filter((m) => m.round === round);
+                          const roundMatches = matchesByRound.get(round) ?? [];
                           const isFinal = roundIndex === totalRounds - 1;
                           const isLast = roundIndex === rounds.length - 1;
 
@@ -2068,7 +2092,7 @@ const TournamentPage: React.FC = () => {
                                         </div>
                                         <div className={`bracket-match-player${!match.participant1 ? ' is-tbd' : ''}${match.winner?.id === match.participant1?.id ? ' is-winner' : ''}`}>
                                           <span className="bracket-match-seed">
-                                            {match.participant1 ? (roundIndex === 0 ? (bracketSeedSlots.findIndex(s => s?.id === match.participant1?.id) + 1) || '?' : '—') : '—'}
+                                            {match.participant1 ? (roundIndex === 0 ? ((seedIndexById.get(match.participant1.id) ?? -1) + 1) || '?' : '—') : '—'}
                                           </span>
                                           <span className="bracket-match-name">{getParticipantLabel(match.participant1)}</span>
                                           {isCompleted && match.score1 != null && (
@@ -2080,7 +2104,7 @@ const TournamentPage: React.FC = () => {
                                         </div>
                                         <div className={`bracket-match-player${!match.participant2 ? ' is-tbd' : ''}${match.winner?.id === match.participant2?.id ? ' is-winner' : ''}`}>
                                           <span className="bracket-match-seed">
-                                            {match.participant2 ? (roundIndex === 0 ? (bracketSeedSlots.findIndex(s => s?.id === match.participant2?.id) + 1) || '?' : '—') : '—'}
+                                            {match.participant2 ? (roundIndex === 0 ? ((seedIndexById.get(match.participant2.id) ?? -1) + 1) || '?' : '—') : '—'}
                                           </span>
                                           <span className="bracket-match-name">{getParticipantLabel(match.participant2)}</span>
                                           {isCompleted && match.score2 != null && (
@@ -2122,8 +2146,8 @@ const TournamentPage: React.FC = () => {
                 ) : (
                   /* ── Grid-card layout for round-robin, swiss, group, page types ── */
                   <div className="bracket-grid-layout">
-                    {Array.from(new Set(bracketPreviewMatches.map((m) => m.round))).sort((a, b) => a - b).map((round) => {
-                      const roundMatches = bracketPreviewMatches.filter((m) => m.round === round);
+                    {bracketRounds.map((round) => {
+                      const roundMatches = matchesByRound.get(round) ?? [];
                       const isPagePlayoff = selectedTournament.bracketType === 'page-playoff';
                       const roundLabel = isPagePlayoff
                         ? (round === 1 ? t('tournaments.pageFirstRound') : round === 2 ? t('tournaments.pageSecondChance') : t('tournaments.roundFinal'))

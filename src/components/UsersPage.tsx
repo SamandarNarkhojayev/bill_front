@@ -14,13 +14,17 @@ import {
   KeyRound,
   Clock,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import { showConfirm } from './confirmController';
 import type { UserRole } from '../types';
 
 const UsersPage: React.FC = () => {
-  const { users, currentUser, addUser, updateUser, removeUser, changeUserPassword, shiftHistory } = useStore();
+  const { users, currentUser, addUser, updateUser, removeUser, changeUserPassword, shiftHistory } = useStore(useShallow((s) => ({
+    users: s.users, currentUser: s.currentUser, addUser: s.addUser, updateUser: s.updateUser,
+    removeUser: s.removeUser, changeUserPassword: s.changeUserPassword, shiftHistory: s.shiftHistory,
+  })));
   const { t } = useT();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState<string | null>(null);

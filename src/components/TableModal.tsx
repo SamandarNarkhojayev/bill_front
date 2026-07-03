@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot, Search, LayoutGrid, UtensilsCrossed } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import type { BarMenuItem } from '../types';
@@ -14,7 +15,11 @@ const getIconComponent = (iconName: string) => iconMap[iconName] || Package;
 
 const TableModal: React.FC = () => {
   const { activeModal, modalData, closeModal, barMenu, barCategories, addBarOrderToTable, tables, settings, addToast } =
-    useStore();
+    useStore(useShallow((s) => ({
+      activeModal: s.activeModal, modalData: s.modalData, closeModal: s.closeModal,
+      barMenu: s.barMenu, barCategories: s.barCategories, addBarOrderToTable: s.addBarOrderToTable,
+      tables: s.tables, settings: s.settings, addToast: s.addToast,
+    })));
   const { t } = useT();
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   // Защита от двойного клика по «Добавить к счёту» (ref обновляется синхронно).

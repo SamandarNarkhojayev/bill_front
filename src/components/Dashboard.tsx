@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Play,
@@ -27,7 +27,9 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
-import type { BilliardTable, SessionMode, Tariff, PaymentMethod } from '../types';
+import { requestCancelAuth } from './cancelAuthController';
+import ModalCloseX from './ModalCloseX';
+import type { BilliardTable, SessionMode, Tariff, PaymentMethod, BarOrderItem } from '../types';
 import TableModal from './TableModal';
 import NumberInput from './NumberInput';
 import { playStartSound, playStopSound } from '../utils/sounds';
@@ -573,9 +575,12 @@ const Dashboard: React.FC = () => {
     if (r) cancelReservation(r.id);
   }, [reservations, cancelReservation]);
 
-  const getTableReservation = (tableId: number) => {
-    return reservations.find((r) => r.tableId === tableId) || null;
-  };
+  // O(1)-поиск брони по столу: было reservations.find() на КАЖДЫЙ стол в рендере (O(столы×броней)).
+  const reservationByTableId = useMemo(
+    () => new Map(reservations.map((r) => [r.tableId, r])),
+    [reservations]
+  );
+  const getTableReservation = (tableId: number) => reservationByTableId.get(tableId) ?? null;
 
   // Клавиатура для модалок: Escape закрывает; для брони Enter подтверждает.
   // У модалки старта Enter не вешаем — там сперва выбирают режим.
@@ -672,6 +677,7 @@ const Dashboard: React.FC = () => {
       {showStartModal && selectedTableData && (
         <div className="modal-overlay" onClick={() => setShowStartModal(false)}>
           <div className="modal modal-start" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseX onClose={() => setShowStartModal(false)} />
             <h2 className="modal-title">
               <Play size={20} className="text-emerald-400" />
               {t('dashboard.choose_mode', { name: selectedTableData.name })}
@@ -912,6 +918,7 @@ const Dashboard: React.FC = () => {
       {showReserveModal && selectedTableData && (
         <div className="modal-overlay" onClick={() => setShowReserveModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseX onClose={() => setShowReserveModal(false)} />
             <h2 className="modal-title">
               <CalendarClock size={20} className="text-amber-400" />
               Бронирование — {selectedTableData.name}
@@ -1009,8 +1016,15 @@ const EndSessionModal: React.FC<{
   busy?: boolean;
 }> = ({ table, onConfirm, onCancel, autoPrintEnabled, busy }) => {
   const settings = useStore((s) => s.settings);
+  const cancelOpenTableItem = useStore((s) => s.cancelOpenTableItem);
   const { t } = useT();
   const [payment, setPayment] = useState<PaymentMethod>('cash');
+
+  // Отмена ошибочно пробитой позиции прямо на чекауте (защищено паролем + причина).
+  const handleCancelBarItem = async (item: BarOrderItem) => {
+    const auth = await requestCancelAuth({ itemLabel: `${item.menuItemName} × ${item.quantity}` });
+    if (auth) cancelOpenTableItem(table.id, item.id, auth);
+  };
   // Escape — отмена, Enter — завершить с выбранным способом оплаты (защита от busy —
   // повторный вызов отсекает closingRef в Dashboard).
   useModalKeyboard({ onEscape: onCancel, onEnter: () => { if (!busy) onConfirm(false, payment); } });
@@ -1030,6 +1044,7 @@ const EndSessionModal: React.FC<{
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal modal-lg end-session-modal" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseX onClose={onCancel} title={t('common.back')} />
         <h2 className="modal-title">
           <Square size={20} className="text-red-400" />
           {t('dashboard.end_title', { name: table.name })}
@@ -1062,11 +1077,22 @@ const EndSessionModal: React.FC<{
 
           {session.barOrders.length > 0 && (
             <div className="end-session-orders">
-              <h4 className="end-session-orders-title">Заказы бара:</h4>
+              <h4 className="end-session-orders-title">Заказы бара · {session.barOrders.length}</h4>
               {session.barOrders.map((item) => (
                 <div key={item.id} className="end-session-order-item">
                   <span>{item.menuItemName} × {item.quantity}</span>
-                  <span>{(item.price * item.quantity).toLocaleString()} {settings.currency}</span>
+                  <span className="end-session-order-right">
+                    <span>{(item.price * item.quantity).toLocaleString()} {settings.currency}</span>
+                    <button
+                      type="button"
+                      className="order-cancel-btn"
+                      title={t('cancel.cancel_position')}
+                      onClick={() => handleCancelBarItem(item)}
+                      disabled={busy}
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
                 </div>
               ))}
             </div>
@@ -1085,12 +1111,7 @@ const EndSessionModal: React.FC<{
             </div>
           )}
 
-          <div className="end-session-total">
-            <span>ИТОГО К ОПЛАТЕ</span>
-            <span>{grandTotal.toLocaleString()} {settings.currency}</span>
-          </div>
-
-          {/* Способ оплаты */}
+          {/* Способ оплаты — над итогом к оплате */}
           <div className="payment-method-picker">
             <span className="payment-method-label">{t('payment.label')}:</span>
             <div className="payment-method-options">
@@ -1107,6 +1128,11 @@ const EndSessionModal: React.FC<{
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="end-session-total">
+            <span>ИТОГО К ОПЛАТЕ</span>
+            <span>{grandTotal.toLocaleString()} {settings.currency}</span>
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 12, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>

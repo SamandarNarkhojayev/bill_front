@@ -466,6 +466,21 @@ export function broadcastSync(): void {
   } catch { /* ignore */ }
 }
 
+// Коалесцирующий планировщик для «горячего» пути (подписка на каждое изменение столов).
+// broadcastSync() делает mapTables (цикл с расчётом стоимости по каждому столу) + JSON.stringify
+// СИНХРОННО в колбэке стора — при всплеске мутаций (закрытие стола, серия бар-заказов) это
+// повторялось на каждую мутацию. Здесь всплеск схлопывается максимум в один broadcast за окно,
+// причём на срабатывании читается свежайший снапшот (snapshotProvider берёт текущее состояние).
+let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
+export function scheduleBroadcastSync(delayMs = 300): void {
+  if (broadcastTimer) return; // уже запланировано в этом окне — коалесцируем
+  if (!ws || ws.readyState !== WebSocket.OPEN) return; // нет смысла планировать без WS
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null;
+    broadcastSync();
+  }, delayMs);
+}
+
 function connectWs(): void {
   const token = getToken();
   const clubId = getClubId();
@@ -778,6 +793,7 @@ export const cloudSync = {
   setSnapshotProvider,
   onCommand,
   broadcastSync,
+  scheduleBroadcastSync,
   getStatus,
   subscribe,
 };

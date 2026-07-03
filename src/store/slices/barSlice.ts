@@ -142,6 +142,11 @@ export const createBarSlice: StateCreator<AppStore, [], [], Pick<AppStore, 'barM
         });
 
         const totalCost = items.reduce((sum, i) => sum + i.menuItem.price * i.quantity, 0);
+        // Сервисный сбор для продажи без стола — фиксируем в записи отчёта (та же формула, что на чеке).
+        const svc = get().settings;
+        const serviceCharge = svc.serviceChargeEnabled
+          ? Math.round((totalCost * svc.serviceChargePercent) / 100)
+          : 0;
 
         // Создать BarOrder для completedOrders
         const order: BarOrder = {
@@ -173,6 +178,7 @@ export const createBarSlice: StateCreator<AppStore, [], [], Pick<AppStore, 'barM
           barOrders: order.items.map((item) => ({ ...item })),
           barCost: totalCost,
           totalCost,
+          serviceCharge,
           date: localDateStr(),
           paymentMethod,
         };

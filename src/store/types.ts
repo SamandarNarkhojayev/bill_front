@@ -8,6 +8,8 @@ import type {
   InventoryRevision,
   InventoryRevisionItem,
   SessionRecord,
+  CancelLogEntry,
+  CancelAuthMeta,
   AppSettings,
   PageType,
   SessionMode,
@@ -78,6 +80,14 @@ export interface AppStore {
   addSessionRecord: (record: SessionRecord) => void;
   getTodayRevenue: () => { table: number; bar: number; total: number };
   getTodaySessions: () => number;
+
+  // Отмена позиций (защищено паролем + причина, всё пишется в журнал)
+  cancelLog: CancelLogEntry[];
+  // Отмена позиции в открытом столе (живая сессия). true — отменено.
+  cancelOpenTableItem: (tableId: number, orderItemId: string, meta: CancelAuthMeta) => boolean;
+  // Отмена позиции в закрытой записи (быстрая продажа / закрытый стол).
+  // Разрешено только в рамках текущей смены/дня; иначе false.
+  voidHistoryItem: (recordId: string, orderItemId: string, meta: CancelAuthMeta) => boolean;
 
   // Бронирование
   reservations: Reservation[];

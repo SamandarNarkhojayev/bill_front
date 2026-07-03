@@ -6,6 +6,7 @@ import { defaultUsers } from './defaults';
 import { createAuthSlice } from './slices/authSlice';
 import { createTablesSlice } from './slices/tablesSlice';
 import { createBarSlice } from './slices/barSlice';
+import { createCancelSlice } from './slices/cancelSlice';
 import { createReportsSlice } from './slices/reportsSlice';
 import { createCatalogSlice } from './slices/catalogSlice';
 import { createSettingsSlice } from './slices/settingsSlice';
@@ -51,6 +52,7 @@ const partializeStore = (state: AppStore) => ({
   currentShift: state.currentShift,
   sessionHistory: state.sessionHistory,
   completedOrders: state.completedOrders,
+  cancelLog: state.cancelLog,
   settings: state.settings,
   barMenu: state.barMenu,
   barCategories: state.barCategories,
@@ -239,6 +241,7 @@ export const useStore = create<AppStore>()(
       ...createAuthSlice(...a),
       ...createTablesSlice(...a),
       ...createBarSlice(...a),
+      ...createCancelSlice(...a),
       ...createReportsSlice(...a),
       ...createCatalogSlice(...a),
       ...createSettingsSlice(...a),

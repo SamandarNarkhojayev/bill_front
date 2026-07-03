@@ -174,9 +174,44 @@ export interface SessionRecord {
   tableCost: number;
   barOrders?: BarOrderItem[];
   barCost: number;
-  totalCost: number;
+  totalCost: number;             // стол + бар (без сервисного сбора)
+  serviceCharge?: number;        // сервисный сбор на момент продажи (0/undefined для старых записей)
   date: string;
   paymentMethod?: PaymentMethod; // как оплатили (по умолчанию наличные для старых записей)
+}
+
+// ===== ОТМЕНА ПОЗИЦИЙ (VOID) =====
+
+// Откуда отменяется позиция:
+//  - 'open-table'     — из открытого стола (живая сессия);
+//  - 'quick-sale'     — из быстрой продажи без стола (record.tableId === 0);
+//  - 'closed-session' — из уже закрытого стола (историческая запись).
+export type CancelSource = 'open-table' | 'quick-sale' | 'closed-session';
+
+// Данные подтверждения отмены (заполняет модалка ввода пароля + причины).
+export interface CancelAuthMeta {
+  authorizedById: string | null; // id пользователя, чьим паролем подтвердили отмену
+  authorizedByName: string;      // отображаемое имя подтвердившего
+  reason: string;                // обязательная причина отмены
+}
+
+// Запись журнала отмён — для подотчётности (кто, что, почему, когда).
+export interface CancelLogEntry {
+  id: string;
+  itemName: string;
+  quantity: number;
+  amount: number;                // сумма отменённой позиции (price × quantity)
+  source: CancelSource;
+  tableId: number | null;
+  tableName: string;
+  recordId?: string;             // id записи в истории/продаже (для закрытых)
+  cancelledById: string | null;  // кто выполнял отмену (текущий вошедший пользователь)
+  cancelledByName: string;
+  authorizedById: string | null; // чьим паролем подтвердили
+  authorizedByName: string;
+  reason: string;
+  timestamp: number;
+  date: string;                  // localDateStr — для фильтрации по периоду
 }
 
 // ===== НАСТРОЙКИ =====

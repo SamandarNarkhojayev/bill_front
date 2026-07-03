@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { CircleDot, Eye, EyeOff, LogIn, AlertCircle, ChevronDown, Shield, Code, UserCheck } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 
@@ -13,7 +14,7 @@ const getRoleLabel = (role: string) => {
 };
 
 const LoginPage: React.FC = () => {
-  const { login, users } = useStore();
+  const { login, users } = useStore(useShallow((s) => ({ login: s.login, users: s.users })));
   const { t } = useT();
   // Порядок: разработчик всегда последним; среди остальных — кто последним заходил, тот первым.
   const sortedUsers = useMemo(() => {

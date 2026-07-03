@@ -117,6 +117,13 @@ export const createTablesSlice: StateCreator<AppStore, [], [], Pick<AppStore, 't
 
         const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+        // Сервисный сбор фиксируем в записи на момент закрытия (для отчётов). Формула та
+        // же, что в computeSessionCharges/чеке. totalCost остаётся без сбора (сбор — отдельная строка).
+        const svcSettings = get().settings;
+        const serviceCharge = svcSettings.serviceChargeEnabled
+          ? Math.round(((tableCost + barCost) * svcSettings.serviceChargePercent) / 100)
+          : 0;
+
         const record: SessionRecord = {
           id: session.id,
           tableId: table.id,
@@ -130,6 +137,7 @@ export const createTablesSlice: StateCreator<AppStore, [], [], Pick<AppStore, 't
           barOrders: session.barOrders.map((item) => ({ ...item })),
           barCost,
           totalCost: tableCost + barCost,
+          serviceCharge,
           date: localDateStr(),
           paymentMethod,
         };

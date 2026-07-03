@@ -16,10 +16,18 @@ import {
   Banknote,
   CreditCard,
   Smartphone,
+  Percent,
+  Ban,
+  X,
+  ShieldAlert,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import { useT } from '../i18n';
 import { printReceipt, printReportReceipt } from '../utils/receipt';
+import { requestCancelAuth } from './cancelAuthController';
+import ModalCloseX from './ModalCloseX';
+import type { SessionRecord, BarOrderItem } from '../types';
 
 // Утилита: дата в строку YYYY-MM-DD (локальное время)
 const dateToStr = (d: Date) => {
@@ -52,8 +60,14 @@ const formatMoney = (value: unknown, currency: string): string => {
 };
 
 const ReportsPage: React.FC = () => {
-  const { sessionHistory, settings, currentShift, shiftHistory, addToast } = useStore();
+  const { sessionHistory, settings, currentShift, shiftHistory, addToast, voidHistoryItem, cancelLog } = useStore(useShallow((s) => ({
+    sessionHistory: s.sessionHistory, settings: s.settings, currentShift: s.currentShift, shiftHistory: s.shiftHistory,
+    addToast: s.addToast, voidHistoryItem: s.voidHistoryItem, cancelLog: s.cancelLog,
+  })));
   const { t } = useT();
+  // Открытая запись для отмены позиций (id записи истории).
+  const [voidSessionId, setVoidSessionId] = useState<string | null>(null);
+  const [showCancelLog, setShowCancelLog] = useState(false);
   const isSafeWebViewMode = useMemo(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -121,11 +135,55 @@ const ReportsPage: React.FC = () => {
     return normalized.filter((s) => s.date >= wStart && s.date <= wEnd);
   }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd, activeShift]);
 
+  // Журнал отмён за тот же период, что и сессии.
+  const filteredCancelLog = useMemo(() => {
+    const list = (cancelLog || []).filter(Boolean);
+    if (viewMode === 'all') return list;
+    if (viewMode === 'shift') {
+      const shift = activeShift;
+      if (!shift) return [];
+      const start = shift.startTime;
+      const end = shift.endTime || Date.now();
+      return list.filter((e) => e.timestamp >= start && e.timestamp <= end);
+    }
+    if (viewMode === 'day') return list.filter((e) => e.date === selectedDate);
+    if (viewMode === 'range') return list.filter((e) => e.date >= rangeStart && e.date <= rangeEnd);
+    // week
+    const sel = strToDate(selectedDate);
+    const day = sel.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(sel);
+    monday.setDate(sel.getDate() + mondayOffset);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const wStart = dateToStr(monday);
+    const wEnd = dateToStr(sunday);
+    return list.filter((e) => e.date >= wStart && e.date <= wEnd);
+  }, [cancelLog, viewMode, selectedDate, rangeStart, rangeEnd, activeShift]);
+
+  // Позицию из закрытой записи можно отменить только в текущей смене/дне
+  // (совпадает с гейтом в voidHistoryItem) и только если в записи есть бар-позиции.
+  const todayStr = dateToStr(new Date());
+  const canVoidRecord = (s: SessionRecord): boolean => {
+    if (!s.barOrders || s.barOrders.length === 0) return false;
+    if (currentShift) return s.startTime >= currentShift.startTime;
+    return s.date === todayStr;
+  };
+
+  const handleVoidItem = async (record: SessionRecord, item: BarOrderItem) => {
+    const auth = await requestCancelAuth({ itemLabel: `${item.menuItemName} × ${item.quantity}` });
+    if (auth) voidHistoryItem(record.id, item.id, auth);
+  };
+
+  // Живая запись открытого диалога отмены (следит за стором после каждой отмены).
+  const voidRecord = voidSessionId ? sessionHistory.find((r) => r.id === voidSessionId) ?? null : null;
+
   // Статистика
   const stats = useMemo(() => {
     const tableRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.tableCost), 0);
     const barRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.barCost), 0);
     const totalRev = tableRev + barRev;
+    const serviceRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.serviceCharge), 0);
     const totalHours = filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / 60;
     const avgSession = filteredSessions.length > 0
       ? Math.round(filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / filteredSessions.length)
@@ -160,7 +218,7 @@ const ReportsPage: React.FC = () => {
       byPayment[method] += amount;
     });
 
-    return { tableRev, barRev, totalRev, totalHours, avgSession, avgCheck, byTable, byHour, byPayment, count: filteredSessions.length };
+    return { tableRev, barRev, totalRev, serviceRev, totalHours, avgSession, avgCheck, byTable, byHour, byPayment, count: filteredSessions.length };
   }, [filteredSessions]);
 
   const historyTableNames = useMemo(() => {
@@ -215,6 +273,10 @@ const ReportsPage: React.FC = () => {
     return list;
   }, [filteredSessions, historyTableFilter, historyModeFilter, historyAmountSort, historyTimeSort, historyTableTimeSort]);
 
+  // Реверс мемоизируем: historySessions может быть тысячи записей — не аллоцируем
+  // перевёрнутую копию на каждый рендер, только при смене самого списка/фильтров.
+  const reversedHistory = useMemo(() => historySessions.slice().reverse(), [historySessions]);
+
   const resetHistoryFilters = () => {
     setHistoryTableFilter('all');
     setHistoryModeFilter('all');
@@ -223,7 +285,7 @@ const ReportsPage: React.FC = () => {
     setHistoryTableTimeSort('default');
   };
 
-  const maxByHour = Math.max(...stats.byHour, 1);
+  const maxByHour = useMemo(() => Math.max(...stats.byHour, 1), [stats.byHour]);
 
   // Экспорт отчёта в CSV
   const exportReport = () => {
@@ -250,6 +312,7 @@ const ReportsPage: React.FC = () => {
     rows.push(`${t('reports.csvRevenueTables')}:;${stats.tableRev}`);
     rows.push(`${t('reports.csvRevenueBar')}:;${stats.barRev}`);
     rows.push(`${t('reports.csvRevenueTotal')}:;${stats.totalRev}`);
+    if (stats.serviceRev > 0) rows.push(`${t('reports.statService')}:;${stats.serviceRev}`);
 
     const csv = '\uFEFF' + header + '\n' + rows.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -374,6 +437,7 @@ const ReportsPage: React.FC = () => {
       totalTable: stats.tableRev,
       totalBar: stats.barRev,
       totalRevenue: stats.totalRev,
+      totalService: stats.serviceRev,
       totalCount: stats.count,
       receiptWidthMm: settings.receiptWidthMm,
       receiptFontSize: settings.receiptFontSize,
@@ -633,6 +697,19 @@ const ReportsPage: React.FC = () => {
             <p className="report-stat-value">{stats.avgSession} {t('reports.min')}</p>
           </div>
         </div>
+        {stats.serviceRev > 0 && (
+          <div className="report-stat-card violet">
+            <div className="report-stat-icon">
+              <Percent size={24} />
+            </div>
+            <div>
+              <p className="report-stat-label">{t('reports.statService')}</p>
+              <p className="report-stat-value">
+                {formatMoney(stats.serviceRev, settings.currency)}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Разбивка по способу оплаты */}
@@ -826,9 +903,7 @@ const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {historySessions
-                  .slice()
-                  .reverse()
+                {reversedHistory
                   .map((session) => (
                     <tr key={session.id}>
                       <td>{session.tableName}</td>
@@ -854,14 +929,26 @@ const ReportsPage: React.FC = () => {
                         {formatMoney(session.totalCost, settings.currency)}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-ghost btn-sm report-print-btn"
-                          onClick={() => handlePrintSession(session)}
-                          title={t('reports.printPrecheckTitle')}
-                        >
-                          <Printer size={14} />
-                          {t('reports.precheck')}
-                        </button>
+                        <div className="report-row-actions">
+                          <button
+                            className="btn btn-ghost btn-sm report-print-btn"
+                            onClick={() => handlePrintSession(session)}
+                            title={t('reports.printPrecheckTitle')}
+                          >
+                            <Printer size={14} />
+                            {t('reports.precheck')}
+                          </button>
+                          {canVoidRecord(session) && (
+                            <button
+                              className="btn btn-ghost btn-sm report-void-btn"
+                              onClick={() => setVoidSessionId(session.id)}
+                              title={t('cancel.void_title', { name: session.tableName })}
+                            >
+                              <Ban size={14} />
+                              {t('cancel.void_action')}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -870,6 +957,89 @@ const ReportsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ===== Журнал отмён ===== */}
+      {filteredCancelLog.length > 0 && (
+        <div className="report-section cancel-log-section">
+          <button type="button" className="cancel-log-header" onClick={() => setShowCancelLog((v) => !v)}>
+            <span className="cancel-log-title">
+              <ShieldAlert size={16} className="text-red-400" />
+              {t('cancel.log_title')}
+              <span className="cancel-log-count">{filteredCancelLog.length}</span>
+            </span>
+            <span className="cancel-log-toggle">{showCancelLog ? t('cancel.log_hide') : t('cancel.log_show')}</span>
+          </button>
+          {showCancelLog && (
+            <div className="report-table-wrapper">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>{t('cancel.col_time')}</th>
+                    <th>{t('cancel.col_item')}</th>
+                    <th>{t('cancel.col_amount')}</th>
+                    <th>{t('cancel.col_source')}</th>
+                    <th>{t('cancel.col_reason')}</th>
+                    <th>{t('cancel.col_by')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCancelLog.map((e) => (
+                    <tr key={e.id}>
+                      <td>{new Date(e.timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                      <td>{e.itemName} × {e.quantity}{e.tableName ? ` · ${e.tableName}` : ''}</td>
+                      <td className="text-amber-400">−{formatMoney(e.amount, settings.currency)}</td>
+                      <td>{t(`cancel.source_${e.source === 'open-table' ? 'open' : e.source === 'quick-sale' ? 'quick' : 'closed'}`)}</td>
+                      <td>{e.reason}</td>
+                      <td>{e.cancelledByName}{e.authorizedByName && e.authorizedByName !== e.cancelledByName ? ` (${e.authorizedByName})` : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== Модалка отмены позиций закрытой записи ===== */}
+      {voidRecord && (
+        <div className="modal-overlay" onClick={() => setVoidSessionId(null)}>
+          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseX onClose={() => setVoidSessionId(null)} />
+            <h2 className="modal-title">
+              <Ban size={20} className="text-red-400" />
+              {t('cancel.void_title', { name: voidRecord.tableName })}
+            </h2>
+            <div className="modal-body">
+              <p className="confirm-modal-message">{t('cancel.void_hint')}</p>
+              {voidRecord.barOrders && voidRecord.barOrders.length > 0 ? (
+                <div className="end-session-orders">
+                  {voidRecord.barOrders.map((item) => (
+                    <div key={item.id} className="end-session-order-item">
+                      <span>{item.menuItemName} × {item.quantity}</span>
+                      <span className="end-session-order-right">
+                        <span>{(item.price * item.quantity).toLocaleString()} {settings.currency}</span>
+                        <button
+                          type="button"
+                          className="order-cancel-btn"
+                          title={t('cancel.cancel_position')}
+                          onClick={() => handleVoidItem(voidRecord, item)}
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="confirm-modal-message">{t('cancel.void_empty')}</p>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setVoidSessionId(null)}>{t('common.close')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

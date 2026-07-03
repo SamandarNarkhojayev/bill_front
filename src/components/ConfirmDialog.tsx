@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { registerConfirm, type PendingConfirm } from './confirmController';
+import ModalCloseX from './ModalCloseX';
 
 export const ConfirmDialogHost: React.FC = () => {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
@@ -51,6 +52,7 @@ export const ConfirmDialogHost: React.FC = () => {
         role="dialog"
         aria-modal="true"
       >
+        <ModalCloseX onClose={() => close(false)} />
         <h2 className="modal-title">
           {pending.danger
             ? <AlertTriangle size={20} className="text-red-400" />

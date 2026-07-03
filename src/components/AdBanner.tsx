@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, MapPin, Phone } from 'lucide-react';
 
 const AdBanner: React.FC = () => {
   const [isVisible, setIsVisible] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
+  // Держим id отложенных таймеров, чтобы гасить их при размонтировании и повторных кликах.
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (isVisible) {
@@ -11,15 +13,22 @@ const AdBanner: React.FC = () => {
     }
   }, [isVisible]);
 
+  // Чистим таймеры при размонтировании: иначе через 2 минуты setIsVisible сработает
+  // на размонтированном компоненте (утечка + предупреждение React).
+  useEffect(() => () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
+
   const handleClose = () => {
     setIsAnimating(false);
-    setTimeout(() => {
-      setIsVisible(false);
-    }, 300);
-    // Показать баннер снова через 2 минуты
-    setTimeout(() => {
-      setIsVisible(true);
-    }, 2 * 60 * 1000); // 120000 мс = 2 минуты
+    // Сбрасываем прежние таймеры — повторные клики не должны копить их.
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [
+      setTimeout(() => setIsVisible(false), 300),
+      // Показать баннер снова через 2 минуты (120000 мс)
+      setTimeout(() => setIsVisible(true), 2 * 60 * 1000),
+    ];
   };
 
   if (!isVisible) return null;

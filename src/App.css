@@ -872,7 +872,39 @@
   align-items: center;
   padding: 20px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* Шапка липкая: крестик закрытия остаётся на месте при прокрутке содержимого.
+     Фон совпадает с верхом градиента .modal (#1e293b) — стыка не видно. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #1e293b;
+  border-radius: 20px 20px 0 0;
 }
+
+/* Единый крестик закрытия для модалок без .modal-header-bar. Прижат к правому
+   верхнему углу, остаётся на месте при прокрутке (sticky в скролл-контейнере). */
+.modal-x {
+  position: sticky;
+  top: 0;
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin: -8px -8px 4px 10px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  cursor: pointer;
+  z-index: 30;
+  transition: all 0.15s ease;
+}
+.modal-x:hover { background: rgba(255, 255, 255, 0.14); color: #f1f5f9; }
+[data-theme="light"] .modal-x { background: rgba(0, 0, 0, 0.05); color: #64748b; }
+[data-theme="light"] .modal-x:hover { background: rgba(0, 0, 0, 0.1); color: #1e293b; }
+[data-theme="light"] .modal-header-bar { background: #ffffff; }
 
 .modal-close {
   display: flex;
@@ -1054,24 +1086,33 @@
 }
 
 .end-session-orders {
-  margin-bottom: 12px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
 }
 
 .end-session-orders-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: #94a3b8;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .end-session-order-item {
   display: flex;
   justify-content: space-between;
-  padding: 7px 10px;
-  font-size: 12px;
-  color: #94a3b8;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  align-items: center;
+  padding: 7px 0;
+  font-size: 13px;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
+
+.end-session-order-item:last-child { border-bottom: none; }
 
 .end-session-total {
   display: flex;
@@ -1086,20 +1127,21 @@
 
 .end-session-modal {
   overflow-y: auto;
+  padding: 20px;
+}
+
+.end-session-modal .modal-title { margin-bottom: 14px; }
+
+.end-session-modal .modal-body {
+  margin-bottom: 16px;
+  gap: 10px;
 }
 
 .end-session-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 8;
   align-items: center;
-  padding: 10px 8px 0;
-  margin-top: 8px;
+  padding-top: 12px;
+  margin-top: 2px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px 12px 0 0;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.26);
 }
 
 /* ===== BAR ORDER MODAL ===== */
@@ -1347,12 +1389,17 @@
 }
 
 .bar-cart-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  /* Непрозрачный фон: под липким футером не должны просвечивать позиции меню */
+  background: #141c2e;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .bar-cart-info {
@@ -1478,6 +1525,10 @@
   transition: all 0.2s ease;
   user-select: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* Пропускаем отрисовку/раскладку карточек за пределами вьюпорта — при сотнях позиций
+     красится только видимое. contain-intrinsic-size резервирует высоту, чтобы скролл не прыгал. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 128px;
 }
 .bar-product-card:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
 .bar-product-card.in-cart { border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.06); }
@@ -1705,6 +1756,9 @@
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 12px;
   transition: all 0.2s ease;
+  /* Список позиций управления меню тоже может быть длинным — красим только видимые строки. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
 }
 .bar-menu-row-v2:hover { background: rgba(255, 255, 255, 0.05); }
 
@@ -3583,6 +3637,7 @@
 [data-theme="light"] .bar-cart-footer {
   border-top-color: rgba(0, 0, 0, 0.06);
   background: #f8fafc;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
 }
 
 [data-theme="light"] .bar-menu-card:hover,
@@ -3712,8 +3767,6 @@
 
 [data-theme="light"] .end-session-actions {
   border-top-color: rgba(0, 0, 0, 0.08);
-  background: rgba(248, 250, 252, 0.92);
-  box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
 }
 
 [data-theme="light"] .end-session-total {
@@ -6462,3 +6515,131 @@
 [data-theme="light"] .report-payment-value { color: #1e293b; }
 [data-theme="light"] .report-payment-label { color: #64748b; }
 @media (max-width: 640px) { .report-payment-breakdown { grid-template-columns: 1fr; } }
+
+/* ===== ОТМЕНА ПОЗИЦИЙ (VOID) ===== */
+
+/* Правая часть строки заказа: цена + кнопка отмены. */
+.end-session-order-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Маленькая красная кнопка «✕» для отмены позиции. */
+.order-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex: 0 0 auto;
+}
+.order-cancel-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+}
+.order-cancel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Диалог подтверждения отмены (пароль + причина). */
+.cancel-auth-modal { max-width: 440px; }
+.cancel-auth-field { margin-top: 14px; }
+.cancel-auth-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+.cancel-auth-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.cancel-auth-input:focus { border-color: rgba(239, 68, 68, 0.5); }
+.cancel-auth-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.cancel-reason-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: #cbd5e1;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cancel-reason-chip:hover { background: rgba(255, 255, 255, 0.07); }
+.cancel-reason-chip.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+.cancel-auth-error {
+  margin-top: 12px;
+  color: #f87171;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Кнопки-действия в строке истории отчётов. */
+.report-row-actions { display: inline-flex; gap: 6px; }
+.report-void-btn { color: #f87171 !important; }
+.report-void-btn:hover { background: rgba(239, 68, 68, 0.12) !important; }
+
+/* Журнал отмён (сворачиваемая секция в отчётах). */
+.cancel-log-section { margin-top: 16px; }
+.cancel-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.05);
+  color: #f1f5f9;
+  cursor: pointer;
+}
+.cancel-log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.cancel-log-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 700;
+}
+.cancel-log-toggle { font-size: 12px; color: #94a3b8; }
+
+[data-theme="light"] .cancel-auth-input { background: #f8fafc; color: #1e293b; border-color: #e2e8f0; }
+[data-theme="light"] .cancel-reason-chip { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+[data-theme="light"] .cancel-log-header { background: rgba(239, 68, 68, 0.06); color: #1e293b; }
