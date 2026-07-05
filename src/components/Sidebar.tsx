@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Users,
+  Briefcase,
   LogOut,
   Trophy,
   Tag,
@@ -37,6 +38,7 @@ const menuItems: { id: PageType; labelKey: string; icon: React.ReactNode }[] = [
   },
   { id: "tariffs", labelKey: "nav.tariffs", icon: <Tag size={20} /> },
   { id: "reports", labelKey: "nav.reports", icon: <BarChart3 size={20} /> },
+  { id: "personnel", labelKey: "nav.personnel", icon: <Briefcase size={20} /> },
   { id: "users", labelKey: "nav.users", icon: <Users size={20} /> },
   { id: "settings", labelKey: "nav.settings", icon: <Settings size={20} /> },
 ];
@@ -98,7 +100,9 @@ const Sidebar: React.FC = () => {
       )
     : menuItems;
   const visibleMenuItems = navItems.filter(
-    (item) => item.id !== "users" || canManageUsers,
+    (item) =>
+      ((item.id !== "users" && item.id !== "personnel") || canManageUsers) &&
+      (item.id !== "personnel" || settings.personnelEnabled),
   );
 
   // Для роли «user» админ ограничивает набор пунктов меню (dashboard виден всегда).

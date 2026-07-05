@@ -576,6 +576,7 @@ export const defaultSettings: AppSettings = {
   serviceChargePercent: 10,
   kitchenSeparate: false,
   autoPrintKitchenTicket: true,
+  personnelEnabled: false,
   receiptPrinterName: "",
   kitchenPrinterName: "",
   tables: [

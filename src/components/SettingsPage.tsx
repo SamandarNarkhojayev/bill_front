@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   Users,
+  Briefcase,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
@@ -69,6 +70,10 @@ const SettingsPage: React.FC = () => {
     { id: "tournaments", labelKey: "nav.tournaments" },
     { id: "tariffs", labelKey: "nav.tariffs" },
     { id: "reports", labelKey: "nav.reports" },
+    ...(settings.personnelEnabled &&
+    (currentUser?.role === "admin" || currentUser?.role === "developer")
+      ? [{ id: "personnel" as PageType, labelKey: "nav.personnel" }]
+      : []),
     ...(currentUser?.role === "admin" || currentUser?.role === "developer"
       ? [{ id: "users" as PageType, labelKey: "nav.users" }]
       : []),
@@ -951,6 +956,28 @@ const SettingsPage: React.FC = () => {
                     }))
                   }
                   className={`toggle ${localSettings.autoPrintKitchenTicket ? "on" : "off"}`}
+                >
+                  <div className="toggle-dot" />
+                </button>
+              </div>
+              <div className="settings-toggle-field">
+                <div>
+                  <label className="settings-label">
+                    <Briefcase size={14} style={{ marginRight: 6 }} />
+                    {t("settings.personnel_enabled")}
+                  </label>
+                  <p className="settings-hint">
+                    {t("settings.personnel_enabled_hint")}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      personnelEnabled: !prev.personnelEnabled,
+                    }))
+                  }
+                  className={`toggle ${localSettings.personnelEnabled ? "on" : "off"}`}
                 >
                   <div className="toggle-dot" />
                 </button>

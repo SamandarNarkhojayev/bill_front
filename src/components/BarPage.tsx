@@ -36,19 +36,23 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
 import { useT } from "../i18n";
+import { requestCancelAuth } from "./cancelAuthController";
 import type {
   BarMenuItem,
   BarCategoryConfig,
   Department,
+  PaymentDetails,
   PaymentMethod,
 } from "../types";
 import {
   generateBarSaleReceiptHTML,
   printKitchenTicket,
 } from "../utils/receipt";
+import { playStopSound } from "../utils/sounds";
 import { getCategoryDepartment, getItemDepartment } from "../utils/department";
 import NumberInput from "./NumberInput";
 import ModalCloseX from "./ModalCloseX";
+import PaymentBreakdownPicker from "./PaymentBreakdownPicker";
 
 // Маппинг иконок
 const iconMap: Record<
@@ -81,6 +85,13 @@ const colorPresets = [
 ];
 
 type BarTab = "quick-order" | "menu" | "categories";
+
+const getWalkInAccountNumber = (label: string): number | null => {
+  const match = label.match(/(\d+)$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
 
 // Картинка позиции (загруженное фото или иконка категории). memo — не пересобираем при
 // перерисовке родителя, если сам товар/категория не менялись. Фото декодируется лениво.
@@ -203,9 +214,14 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
     updateBarCategory,
     removeBarCategory,
     tables,
+    barOrders,
     addBarOrderToTable,
+    createBarOrder,
+    finalizeBarOrder,
+    walkInAccountIntent,
+    clearWalkInAccountIntent,
+    cancelOpenWalkInItem,
     settings,
-    sellFromBar,
     currentUser,
     addToast,
   } = useStore(
@@ -219,9 +235,14 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
       updateBarCategory: s.updateBarCategory,
       removeBarCategory: s.removeBarCategory,
       tables: s.tables,
+      barOrders: s.barOrders,
       addBarOrderToTable: s.addBarOrderToTable,
+      createBarOrder: s.createBarOrder,
+      finalizeBarOrder: s.finalizeBarOrder,
+      walkInAccountIntent: s.walkInAccountIntent,
+      clearWalkInAccountIntent: s.clearWalkInAccountIntent,
+      cancelOpenWalkInItem: s.cancelOpenWalkInItem,
       settings: s.settings,
-      sellFromBar: s.sellFromBar,
       currentUser: s.currentUser,
       addToast: s.addToast,
     })),
@@ -283,6 +304,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
   const [quickCart, setQuickCart] = useState<Map<string, number>>(new Map());
   const [shopMode, setShopMode] = useState(false);
+  const [selectedWalkInAccount, setSelectedWalkInAccount] = useState(""); // Changed to empty string for initial state
 
   // Категории
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -299,15 +321,93 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
 
   // Модальное окно подтверждения печати чека
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showWalkInCloseModal, setShowWalkInCloseModal] = useState(false);
   // Защита от двойного клика по продаже (печать/без печати) — синхронный замок.
   const sellingRef = useRef(false);
   // Способ оплаты для прямой продажи (shopMode)
   const [quickPayment, setQuickPayment] = useState<PaymentMethod>("cash");
+  const [walkInPayment, setWalkInPayment] = useState<PaymentDetails>({
+    paymentMethod: "cash",
+  });
+  const [isWalkInPaymentValid, setIsWalkInPaymentValid] = useState(true);
 
   const occupiedTables = useMemo(
     () => tables.filter((t) => t.status === "occupied"),
     [tables],
   );
+  const walkInAccountBaseLabel = t("bar.walk_in_account");
+  const walkInAccounts = useMemo(() => {
+    const labels = barOrders
+      .filter((order) => order.tableId == null && !order.isPaid && order.label)
+      .map((order) => order.label as string)
+      .sort((left, right) => {
+        const leftNum = getWalkInAccountNumber(left) ?? Number.MAX_SAFE_INTEGER;
+        const rightNum =
+          getWalkInAccountNumber(right) ?? Number.MAX_SAFE_INTEGER;
+        if (leftNum !== rightNum) return leftNum - rightNum;
+        return left.localeCompare(right, "ru");
+      });
+
+    if (selectedWalkInAccount && !labels.includes(selectedWalkInAccount)) {
+      labels.push(selectedWalkInAccount);
+    }
+
+    if (labels.length === 0) {
+      labels.push(`${walkInAccountBaseLabel} 1`);
+    }
+
+    return labels;
+  }, [barOrders, selectedWalkInAccount, walkInAccountBaseLabel]);
+  const walkInOrdersByLabel = useMemo(() => {
+    const map = new Map<string, (typeof barOrders)[number]>();
+    barOrders.forEach((order) => {
+      if (order.tableId == null && !order.isPaid && order.label) {
+        map.set(order.label, order);
+      }
+    });
+    return map;
+  }, [barOrders]);
+  const selectedWalkInOrder =
+    walkInOrdersByLabel.get(selectedWalkInAccount) ?? null;
+
+  useEffect(() => {
+    if (!selectedWalkInAccount && walkInAccounts.length > 0) {
+      setSelectedWalkInAccount(walkInAccounts[0]);
+      return;
+    }
+    if (
+      selectedWalkInAccount &&
+      !walkInAccounts.includes(selectedWalkInAccount) &&
+      walkInAccounts.length > 0
+    ) {
+      setSelectedWalkInAccount(walkInAccounts[0]);
+    }
+  }, [selectedWalkInAccount, walkInAccounts]);
+
+  useEffect(() => {
+    if (!walkInAccountIntent) return;
+    setShopMode(true);
+    setSelectedTable(null);
+    setSelectedWalkInAccount(walkInAccountIntent.label);
+    if (
+      walkInAccountIntent.action === "close" &&
+      walkInOrdersByLabel.has(walkInAccountIntent.label)
+    ) {
+      setShowWalkInCloseModal(true);
+    }
+    clearWalkInAccountIntent();
+  }, [walkInAccountIntent, walkInOrdersByLabel, clearWalkInAccountIntent]);
+
+  const createWalkInAccount = () => {
+    const nextNumber =
+      Array.from(walkInOrdersByLabel.keys()).reduce((maxNumber, label) => {
+        const currentNumber = getWalkInAccountNumber(label);
+        return currentNumber != null && currentNumber > maxNumber
+          ? currentNumber
+          : maxNumber;
+      }, 0) + 1;
+    setSelectedWalkInAccount(`${walkInAccountBaseLabel} ${nextNumber}`);
+  };
 
   // O(1)-справочники: категории и позиции по id. Заменяют .find() в горячих путях
   // (рендер сетки, корзина, подсчёт итога) — было O(n·m), стало O(1) на обращение.
@@ -420,7 +520,10 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
 
   // Отправить заказ блюд на кухонный принтер (xprinter). Срабатывает при пробитии,
   // независимо от того, разделены ли бар и кухня — маршрутизация по отделу позиции.
-  const emitKitchenTicket = (cart: Map<string, number>) => {
+  const emitKitchenTicket = (
+    cart: Map<string, number>,
+    tableNameOverride?: string,
+  ) => {
     if (!settings.autoPrintKitchenTicket) return;
     const kitchenItems: { name: string; quantity: number }[] = [];
     cart.forEach((qty, itemId) => {
@@ -431,9 +534,10 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
     });
     if (kitchenItems.length === 0) return;
     const tableName =
-      !shopMode && selectedTable
+      tableNameOverride ??
+      (!shopMode && selectedTable
         ? tables.find((t) => t.id === selectedTable)?.name
-        : undefined;
+        : undefined);
     void printKitchenTicket({
       clubName: settings.clubName,
       tableName,
@@ -448,24 +552,30 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
     });
   };
 
-  const executeQuickOrder = (paymentMethod: PaymentMethod = "cash") => {
-    if (shopMode) {
-      const items: { menuItem: BarMenuItem; quantity: number }[] = [];
-      quickCart.forEach((qty, itemId) => {
-        const item = barMenuById.get(itemId);
-        if (item) items.push({ menuItem: item, quantity: qty });
-      });
-      if (items.length === 0) return;
-      emitKitchenTicket(quickCart);
-      sellFromBar(items, paymentMethod);
-    } else {
-      if (!selectedTable) return;
-      emitKitchenTicket(quickCart);
-      quickCart.forEach((qty, itemId) => {
-        const item = barMenuById.get(itemId);
-        if (item) addBarOrderToTable(selectedTable, item, qty);
-      });
-    }
+  const executeQuickOrder = () => {
+    if (!selectedTable) return;
+    emitKitchenTicket(quickCart);
+    quickCart.forEach((qty, itemId) => {
+      const item = barMenuById.get(itemId);
+      if (item) addBarOrderToTable(selectedTable, item, qty);
+    });
+    setQuickCart(new Map());
+  };
+
+  const handleAddToWalkInAccount = () => {
+    if (quickCart.size === 0) return;
+    const items: { menuItem: BarMenuItem; quantity: number }[] = [];
+    quickCart.forEach((qty, itemId) => {
+      const item = barMenuById.get(itemId);
+      if (item) items.push({ menuItem: item, quantity: qty });
+    });
+    if (items.length === 0) return;
+    emitKitchenTicket(quickCart, selectedWalkInAccount);
+    createBarOrder(null, items, { label: selectedWalkInAccount });
+    addToast(
+      "success",
+      t("bar.account_added_toast", { name: selectedWalkInAccount }),
+    );
     setQuickCart(new Map());
   };
 
@@ -517,7 +627,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
       console.error("Bar receipt print error:", err);
     }
     setShowPrintModal(false);
-    executeQuickOrder(shopMode ? quickPayment : "cash");
+    executeQuickOrder();
     setTimeout(() => {
       sellingRef.current = false;
     }, 0);
@@ -527,7 +637,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
     if (sellingRef.current) return;
     sellingRef.current = true;
     setShowPrintModal(false);
-    executeQuickOrder(shopMode ? quickPayment : "cash");
+    executeQuickOrder();
     setTimeout(() => {
       sellingRef.current = false;
     }, 0);
@@ -535,8 +645,101 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
 
   const handleQuickOrder = () => {
     if (quickCart.size === 0) return;
+    if (shopMode) {
+      handleAddToWalkInAccount();
+      return;
+    }
     if (!shopMode && !selectedTable) return;
     setShowPrintModal(true);
+  };
+
+  const handlePrintAndCloseWalkInAccount = async () => {
+    if (sellingRef.current || !selectedWalkInOrder) return;
+    sellingRef.current = true;
+    const serviceCharge = settings.serviceChargeEnabled
+      ? Math.round(
+          (selectedWalkInOrder.totalCost * settings.serviceChargePercent) / 100,
+        )
+      : 0;
+
+    try {
+      const html = generateBarSaleReceiptHTML({
+        clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
+        items: selectedWalkInOrder.items.map((item) => ({
+          name: item.menuItemName,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        totalCost: selectedWalkInOrder.totalCost,
+        serviceCharge,
+        serviceChargePercent: settings.serviceChargePercent,
+        currency: settings.currency,
+        tableName: selectedWalkInAccount,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
+      });
+      await window.electronAPI?.printer?.printReceipt(
+        html,
+        settings.receiptWidthMm,
+        settings.silentPrint,
+        settings.receiptPrinterName,
+      );
+    } catch (err) {
+      console.error("Walk-in receipt print error:", err);
+    }
+
+    if (!isWalkInPaymentValid) {
+      sellingRef.current = false;
+      return;
+    }
+
+    finalizeBarOrder(selectedWalkInOrder.id, walkInPayment);
+    if (settings.soundEnabled) playStopSound();
+    setShowWalkInCloseModal(false);
+    setTimeout(() => {
+      sellingRef.current = false;
+    }, 0);
+  };
+
+  const handleCloseWalkInAccountWithoutPrint = () => {
+    if (sellingRef.current || !selectedWalkInOrder) return;
+    sellingRef.current = true;
+    if (!isWalkInPaymentValid) {
+      sellingRef.current = false;
+      return;
+    }
+
+    finalizeBarOrder(selectedWalkInOrder.id, walkInPayment);
+    if (settings.soundEnabled) playStopSound();
+    setShowWalkInCloseModal(false);
+    setTimeout(() => {
+      sellingRef.current = false;
+    }, 0);
+  };
+
+  const handleCancelWalkInOrderItem = async (itemId: string) => {
+    if (!selectedWalkInOrder) return;
+    const item = selectedWalkInOrder.items.find((entry) => entry.id === itemId);
+    if (!item) return;
+
+    const auth = await requestCancelAuth({
+      itemLabel: `${item.menuItemName} × ${item.quantity}`,
+    });
+    if (!auth) return;
+
+    const cancelled = cancelOpenWalkInItem(
+      selectedWalkInOrder.id,
+      item.id,
+      auth,
+    );
+    if (cancelled && selectedWalkInOrder.items.length === 1) {
+      setShowWalkInCloseModal(false);
+    }
   };
 
   // Картинки
@@ -596,7 +799,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
   };
 
   return (
-    <div className="page-content">
+    <div className="page-content bar-page-content">
       {/* Модальное окно: Распечатать чек? */}
       {showPrintModal && (
         <div className="modal-overlay" onClick={() => setShowPrintModal(false)}>
@@ -676,6 +879,116 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                 {t("dashboard.end_close")}
               </button>
               <button onClick={handlePrintAndSell} className="btn btn-primary">
+                <Printer size={16} />
+                {t("bar.print_precheck")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWalkInCloseModal && selectedWalkInOrder && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowWalkInCloseModal(false)}
+        >
+          <div
+            className="modal bar-print-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ModalCloseX onClose={() => setShowWalkInCloseModal(false)} />
+            <div className="modal-header">
+              <div
+                className="modal-title"
+                style={{ display: "flex", alignItems: "center", gap: 10 }}
+              >
+                <Printer size={22} style={{ color: "#f59e0b" }} />
+                {t("bar.close_account")}: {selectedWalkInAccount}
+              </div>
+            </div>
+            <div
+              className="modal-body"
+              style={{ textAlign: "center", padding: "16px 24px" }}
+            >
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+                {t("bar.sale_of_bar")}:
+              </p>
+              <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
+                {(
+                  selectedWalkInOrder.totalCost +
+                  (settings.serviceChargeEnabled
+                    ? Math.round(
+                        (selectedWalkInOrder.totalCost *
+                          settings.serviceChargePercent) /
+                          100,
+                      )
+                    : 0)
+                ).toLocaleString()}{" "}
+                {settings.currency}
+              </p>
+              <div
+                className="end-session-orders"
+                style={{ marginTop: 14, textAlign: "left" }}
+              >
+                <h4 className="end-session-orders-title">
+                  {t("dashboard.walkin_positions_title")} ·{" "}
+                  {selectedWalkInOrder.items.length}
+                </h4>
+                {selectedWalkInOrder.items.map((item) => (
+                  <div key={item.id} className="end-session-order-item">
+                    <span>
+                      {item.menuItemName} × {item.quantity}
+                    </span>
+                    <span className="end-session-order-right">
+                      <span>
+                        {(item.price * item.quantity).toLocaleString()}{" "}
+                        {settings.currency}
+                      </span>
+                      <button
+                        type="button"
+                        className="order-cancel-btn"
+                        title={t("cancel.cancel_position")}
+                        onClick={() =>
+                          void handleCancelWalkInOrderItem(item.id)
+                        }
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <PaymentBreakdownPicker
+                total={
+                  selectedWalkInOrder.totalCost +
+                  (settings.serviceChargeEnabled
+                    ? Math.round(
+                        (selectedWalkInOrder.totalCost *
+                          settings.serviceChargePercent) /
+                          100,
+                      )
+                    : 0)
+                }
+                currency={settings.currency}
+                onChange={(details, valid) => {
+                  setWalkInPayment(details);
+                  setIsWalkInPaymentValid(valid);
+                }}
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                onClick={handleCloseWalkInAccountWithoutPrint}
+                className="btn btn-ghost"
+                disabled={!isWalkInPaymentValid}
+              >
+                {t("dashboard.end_close")}
+              </button>
+              <button
+                onClick={handlePrintAndCloseWalkInAccount}
+                className="btn btn-primary"
+                disabled={!isWalkInPaymentValid}
+              >
                 <Printer size={16} />
                 {t("bar.print_precheck")}
               </button>
@@ -836,6 +1149,68 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                   )}
                 </>
               )}
+              {shopMode && (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{ fontSize: 12, color: "var(--text-secondary)" }}
+                    >
+                      {t("bar.walk_in_accounts")}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={createWalkInAccount}
+                      className="btn btn-ghost"
+                      style={{
+                        padding: "6px 10px",
+                        minHeight: 30,
+                        fontSize: 12,
+                      }}
+                    >
+                      <Plus size={14} /> {t("common.add")}
+                    </button>
+                  </div>
+                  <div className="bar-table-list">
+                    {walkInAccounts.map((accountLabel) => {
+                      const accountOrder =
+                        walkInOrdersByLabel.get(accountLabel);
+                      return (
+                        <button
+                          key={accountLabel}
+                          onClick={() => setSelectedWalkInAccount(accountLabel)}
+                          className={`bar-table-btn ${selectedWalkInAccount === accountLabel ? "selected" : ""}`}
+                          style={
+                            selectedWalkInAccount === accountLabel
+                              ? {
+                                  borderColor: "#f59e0b40",
+                                  background: "#f59e0b10",
+                                }
+                              : undefined
+                          }
+                        >
+                          <span className="bar-table-btn-name">
+                            {accountLabel}
+                          </span>
+                          <span className="bar-table-btn-mode">
+                            {accountOrder
+                              ? `${accountOrder.items.length} поз. • ${accountOrder.totalCost.toLocaleString()} ${settings.currency}`
+                              : t("bar.account_empty")}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bar-sidebar-section bar-cart-section">
@@ -846,7 +1221,50 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                 )}
               </h3>
               {quickCart.size === 0 ? (
-                <p className="bar-sidebar-empty">{t("bar.cart_empty")}</p>
+                <>
+                  <p className="bar-sidebar-empty">{t("bar.cart_empty")}</p>
+                  {shopMode && selectedWalkInOrder && (
+                    <>
+                      <div
+                        className="bar-cart-total-row"
+                        style={{ marginTop: 8 }}
+                      >
+                        <span>{selectedWalkInAccount}</span>
+                        <span className="bar-cart-total-value">
+                          {selectedWalkInOrder.totalCost.toLocaleString()}{" "}
+                          {settings.currency}
+                        </span>
+                      </div>
+                      <div
+                        className="bar-cart-items"
+                        style={{ maxHeight: 180 }}
+                      >
+                        {selectedWalkInOrder.items.map((item) => (
+                          <div key={item.id} className="bar-cart-row">
+                            <div className="bar-cart-row-info">
+                              <span className="bar-cart-row-name">
+                                {item.menuItemName}
+                              </span>
+                              <span className="bar-cart-row-price">
+                                {(item.price * item.quantity).toLocaleString()}{" "}
+                                {settings.currency}
+                              </span>
+                            </div>
+                            <div className="bar-cart-row-qty">
+                              <span>{item.quantity}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setShowWalkInCloseModal(true)}
+                        className="btn btn-primary btn-full"
+                      >
+                        <Printer size={18} /> {t("bar.close_account")}
+                      </button>
+                    </>
+                  )}
+                </>
               ) : (
                 <>
                   <div className="bar-cart-items">
@@ -915,8 +1333,49 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                     className={`btn ${shopMode ? "btn-amber" : "btn-amber"} btn-full bar-cart-submit`}
                   >
                     <ShoppingCart size={18} />{" "}
-                    {shopMode ? t("bar.create_order") : t("bar.add_to_bill")}
+                    {shopMode ? t("bar.add_to_account") : t("bar.add_to_bill")}
                   </button>
+                  {shopMode && selectedWalkInOrder && (
+                    <>
+                      <div
+                        className="bar-cart-total-row"
+                        style={{ marginTop: 8 }}
+                      >
+                        <span>{selectedWalkInAccount}</span>
+                        <span className="bar-cart-total-value">
+                          {selectedWalkInOrder.totalCost.toLocaleString()}{" "}
+                          {settings.currency}
+                        </span>
+                      </div>
+                      <div
+                        className="bar-cart-items"
+                        style={{ maxHeight: 180 }}
+                      >
+                        {selectedWalkInOrder.items.map((item) => (
+                          <div key={item.id} className="bar-cart-row">
+                            <div className="bar-cart-row-info">
+                              <span className="bar-cart-row-name">
+                                {item.menuItemName}
+                              </span>
+                              <span className="bar-cart-row-price">
+                                {(item.price * item.quantity).toLocaleString()}{" "}
+                                {settings.currency}
+                              </span>
+                            </div>
+                            <div className="bar-cart-row-qty">
+                              <span>{item.quantity}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setShowWalkInCloseModal(true)}
+                        className="btn btn-primary btn-full"
+                      >
+                        <Printer size={18} /> {t("bar.close_account")}
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>

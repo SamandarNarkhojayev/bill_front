@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 import {
   BarChart3,
   Calendar,
@@ -20,37 +20,42 @@ import {
   Ban,
   X,
   ShieldAlert,
-} from 'lucide-react';
-import { useShallow } from 'zustand/react/shallow';
-import { useStore } from '../store/useStore';
-import { useT } from '../i18n';
-import { printReceipt, printReportReceipt } from '../utils/receipt';
-import { requestCancelAuth } from './cancelAuthController';
-import ModalCloseX from './ModalCloseX';
-import type { SessionRecord, BarOrderItem } from '../types';
+} from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { useStore } from "../store/useStore";
+import { useT } from "../i18n";
+import { printReceipt, printReportReceipt } from "../utils/receipt";
+import {
+  formatPaymentSummary,
+  PAYMENT_METHODS,
+  normalizePaymentBreakdown,
+} from "../utils/payment";
+import { requestCancelAuth } from "./cancelAuthController";
+import ModalCloseX from "./ModalCloseX";
+import type { SessionRecord, BarOrderItem } from "../types";
 
 // Утилита: дата в строку YYYY-MM-DD (локальное время)
 const dateToStr = (d: Date) => {
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
 
 // Утилита: строка → локальный Date
 const strToDate = (s: string) => {
-  if (!s || typeof s !== 'string' || !s.includes('-')) return new Date();
-  const [y, m, d] = s.split('-').map(Number);
+  if (!s || typeof s !== "string" || !s.includes("-")) return new Date();
+  const [y, m, d] = s.split("-").map(Number);
   const parsed = new Date(y, m - 1, d);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
 const safeNumber = (value: unknown, fallback = 0): number => {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 };
 
 const safeDate = (value: unknown): Date | null => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
 };
@@ -60,39 +65,66 @@ const formatMoney = (value: unknown, currency: string): string => {
 };
 
 const ReportsPage: React.FC = () => {
-  const { sessionHistory, settings, currentShift, shiftHistory, addToast, voidHistoryItem, cancelLog } = useStore(useShallow((s) => ({
-    sessionHistory: s.sessionHistory, settings: s.settings, currentShift: s.currentShift, shiftHistory: s.shiftHistory,
-    addToast: s.addToast, voidHistoryItem: s.voidHistoryItem, cancelLog: s.cancelLog,
-  })));
+  const {
+    sessionHistory,
+    settings,
+    currentShift,
+    shiftHistory,
+    addToast,
+    voidHistoryItem,
+    cancelLog,
+  } = useStore(
+    useShallow((s) => ({
+      sessionHistory: s.sessionHistory,
+      settings: s.settings,
+      currentShift: s.currentShift,
+      shiftHistory: s.shiftHistory,
+      addToast: s.addToast,
+      voidHistoryItem: s.voidHistoryItem,
+      cancelLog: s.cancelLog,
+    })),
+  );
   const { t } = useT();
   // Открытая запись для отмены позиций (id записи истории).
   const [voidSessionId, setVoidSessionId] = useState<string | null>(null);
   const [showCancelLog, setShowCancelLog] = useState(false);
   const isSafeWebViewMode = useMemo(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === "undefined") return false;
     try {
       const ua = navigator.userAgent.toLowerCase();
       const embedded = window.self !== window.top;
-      return embedded || ua.includes('vscode') || ua.includes('webview');
+      return embedded || ua.includes("vscode") || ua.includes("webview");
     } catch {
       return true;
     }
   }, []);
   const [selectedDate, setSelectedDate] = useState(dateToStr(new Date()));
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'range' | 'all' | 'shift'>('day');
+  const [viewMode, setViewMode] = useState<
+    "day" | "week" | "range" | "all" | "shift"
+  >("day");
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState(dateToStr(new Date()));
   const [rangeEnd, setRangeEnd] = useState(dateToStr(new Date()));
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
-  const [historyTableFilter, setHistoryTableFilter] = useState<'all' | string>('all');
-  const [historyModeFilter, setHistoryModeFilter] = useState<'all' | 'tariff' | 'time' | 'infinite'>('all');
-  const [historyAmountSort, setHistoryAmountSort] = useState<'default' | 'max' | 'min'>('default');
-  const [historyTimeSort, setHistoryTimeSort] = useState<'default' | 'max' | 'min'>('default');
-  const [historyTableTimeSort, setHistoryTableTimeSort] = useState<'default' | 'max' | 'min'>('default');
+  const [historyTableFilter, setHistoryTableFilter] = useState<"all" | string>(
+    "all",
+  );
+  const [historyModeFilter, setHistoryModeFilter] = useState<
+    "all" | "tariff" | "time" | "infinite"
+  >("all");
+  const [historyAmountSort, setHistoryAmountSort] = useState<
+    "default" | "max" | "min"
+  >("default");
+  const [historyTimeSort, setHistoryTimeSort] = useState<
+    "default" | "max" | "min"
+  >("default");
+  const [historyTableTimeSort, setHistoryTableTimeSort] = useState<
+    "default" | "max" | "min"
+  >("default");
 
   // Активная смена или выбранная из истории
   const activeShift = useMemo(() => {
-    if (viewMode !== 'shift') return null;
+    if (viewMode !== "shift") return null;
     if (selectedShiftId) {
       return shiftHistory.find((s) => s.id === selectedShiftId) || currentShift;
     }
@@ -102,25 +134,30 @@ const ReportsPage: React.FC = () => {
   // Фильтрация по дате
   const filteredSessions = useMemo(() => {
     const normalized = sessionHistory.filter((s) => {
-      if (!s || typeof s !== 'object') return false;
-      const startOk = typeof s.startTime === 'number' && Number.isFinite(s.startTime);
-      const dateOk = typeof s.date === 'string' && s.date.length >= 8;
+      if (!s || typeof s !== "object") return false;
+      const startOk =
+        typeof s.startTime === "number" && Number.isFinite(s.startTime);
+      const dateOk = typeof s.date === "string" && s.date.length >= 8;
       return startOk && dateOk;
     });
 
-    if (viewMode === 'all') return normalized;
-    if (viewMode === 'shift') {
+    if (viewMode === "all") return normalized;
+    if (viewMode === "shift") {
       const shift = activeShift;
       if (!shift) return [];
       const start = shift.startTime;
       const end = shift.endTime || Date.now();
-      return normalized.filter((s) => s.startTime >= start && s.startTime <= end);
+      return normalized.filter(
+        (s) => s.startTime >= start && s.startTime <= end,
+      );
     }
-    if (viewMode === 'day') {
+    if (viewMode === "day") {
       return normalized.filter((s) => s.date === selectedDate);
     }
-    if (viewMode === 'range') {
-      return normalized.filter((s) => s.date >= rangeStart && s.date <= rangeEnd);
+    if (viewMode === "range") {
+      return normalized.filter(
+        (s) => s.date >= rangeStart && s.date <= rangeEnd,
+      );
     }
     // week — понедельник–воскресенье
     const sel = strToDate(selectedDate);
@@ -133,21 +170,29 @@ const ReportsPage: React.FC = () => {
     const wStart = dateToStr(monday);
     const wEnd = dateToStr(sunday);
     return normalized.filter((s) => s.date >= wStart && s.date <= wEnd);
-  }, [sessionHistory, selectedDate, viewMode, rangeStart, rangeEnd, activeShift]);
+  }, [
+    sessionHistory,
+    selectedDate,
+    viewMode,
+    rangeStart,
+    rangeEnd,
+    activeShift,
+  ]);
 
   // Журнал отмён за тот же период, что и сессии.
   const filteredCancelLog = useMemo(() => {
     const list = (cancelLog || []).filter(Boolean);
-    if (viewMode === 'all') return list;
-    if (viewMode === 'shift') {
+    if (viewMode === "all") return list;
+    if (viewMode === "shift") {
       const shift = activeShift;
       if (!shift) return [];
       const start = shift.startTime;
       const end = shift.endTime || Date.now();
       return list.filter((e) => e.timestamp >= start && e.timestamp <= end);
     }
-    if (viewMode === 'day') return list.filter((e) => e.date === selectedDate);
-    if (viewMode === 'range') return list.filter((e) => e.date >= rangeStart && e.date <= rangeEnd);
+    if (viewMode === "day") return list.filter((e) => e.date === selectedDate);
+    if (viewMode === "range")
+      return list.filter((e) => e.date >= rangeStart && e.date <= rangeEnd);
     // week
     const sel = strToDate(selectedDate);
     const day = sel.getDay();
@@ -171,33 +216,61 @@ const ReportsPage: React.FC = () => {
   };
 
   const handleVoidItem = async (record: SessionRecord, item: BarOrderItem) => {
-    const auth = await requestCancelAuth({ itemLabel: `${item.menuItemName} × ${item.quantity}` });
+    const auth = await requestCancelAuth({
+      itemLabel: `${item.menuItemName} × ${item.quantity}`,
+    });
     if (auth) voidHistoryItem(record.id, item.id, auth);
   };
 
   // Живая запись открытого диалога отмены (следит за стором после каждой отмены).
-  const voidRecord = voidSessionId ? sessionHistory.find((r) => r.id === voidSessionId) ?? null : null;
+  const voidRecord = voidSessionId
+    ? (sessionHistory.find((r) => r.id === voidSessionId) ?? null)
+    : null;
 
   // Статистика
   const stats = useMemo(() => {
-    const tableRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.tableCost), 0);
-    const barRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.barCost), 0);
+    const tableRev = filteredSessions.reduce(
+      (sum, s) => sum + safeNumber(s.tableCost),
+      0,
+    );
+    const barRev = filteredSessions.reduce(
+      (sum, s) => sum + safeNumber(s.barCost),
+      0,
+    );
     const totalRev = tableRev + barRev;
-    const serviceRev = filteredSessions.reduce((sum, s) => sum + safeNumber(s.serviceCharge), 0);
-    const totalHours = filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / 60;
-    const avgSession = filteredSessions.length > 0
-      ? Math.round(filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / filteredSessions.length)
-      : 0;
-    const avgCheck = filteredSessions.length > 0
-      ? Math.round(totalRev / filteredSessions.length)
-      : 0;
+    const serviceRev = filteredSessions.reduce(
+      (sum, s) => sum + safeNumber(s.serviceCharge),
+      0,
+    );
+    const totalHours =
+      filteredSessions.reduce((sum, s) => sum + safeNumber(s.duration), 0) / 60;
+    const avgSession =
+      filteredSessions.length > 0
+        ? Math.round(
+            filteredSessions.reduce(
+              (sum, s) => sum + safeNumber(s.duration),
+              0,
+            ) / filteredSessions.length,
+          )
+        : 0;
+    const avgCheck =
+      filteredSessions.length > 0
+        ? Math.round(totalRev / filteredSessions.length)
+        : 0;
 
     // По столам
-    const byTable: Record<string, { sessions: number; revenue: number; hours: number }> = {};
+    const byTable: Record<
+      string,
+      { sessions: number; revenue: number; hours: number }
+    > = {};
     filteredSessions.forEach((s) => {
-      if (!byTable[s.tableName]) byTable[s.tableName] = { sessions: 0, revenue: 0, hours: 0 };
+      if (!byTable[s.tableName])
+        byTable[s.tableName] = { sessions: 0, revenue: 0, hours: 0 };
       byTable[s.tableName].sessions++;
-      byTable[s.tableName].revenue += safeNumber(s.totalCost, safeNumber(s.tableCost) + safeNumber(s.barCost));
+      byTable[s.tableName].revenue += safeNumber(
+        s.totalCost,
+        safeNumber(s.tableCost) + safeNumber(s.barCost),
+      );
       byTable[s.tableName].hours += safeNumber(s.duration) / 60;
     });
 
@@ -213,76 +286,120 @@ const ReportsPage: React.FC = () => {
     // По способу оплаты (старые записи без метода считаем наличными)
     const byPayment = { cash: 0, card: 0, transfer: 0 };
     filteredSessions.forEach((s) => {
-      const amount = safeNumber(s.totalCost, safeNumber(s.tableCost) + safeNumber(s.barCost));
-      const method = s.paymentMethod ?? 'cash';
+      const breakdown = normalizePaymentBreakdown(s.paymentBreakdown);
+      if (breakdown) {
+        PAYMENT_METHODS.forEach((method) => {
+          byPayment[method] += safeNumber(breakdown[method]);
+        });
+        return;
+      }
+      const amount =
+        safeNumber(
+          s.totalCost,
+          safeNumber(s.tableCost) + safeNumber(s.barCost),
+        ) + safeNumber(s.serviceCharge);
+      const method = s.paymentMethod ?? "cash";
       byPayment[method] += amount;
     });
 
-    return { tableRev, barRev, totalRev, serviceRev, totalHours, avgSession, avgCheck, byTable, byHour, byPayment, count: filteredSessions.length };
+    return {
+      tableRev,
+      barRev,
+      totalRev,
+      serviceRev,
+      totalHours,
+      avgSession,
+      avgCheck,
+      byTable,
+      byHour,
+      byPayment,
+      count: filteredSessions.length,
+    };
   }, [filteredSessions]);
 
   const historyTableNames = useMemo(() => {
-    return Array.from(new Set(filteredSessions.map((s) => s.tableName))).sort((a, b) => a.localeCompare(b, 'ru'));
+    return Array.from(new Set(filteredSessions.map((s) => s.tableName))).sort(
+      (a, b) => a.localeCompare(b, "ru"),
+    );
   }, [filteredSessions]);
 
   const historySessions = useMemo(() => {
     let list = filteredSessions.slice();
 
-    if (historyTableFilter !== 'all') {
+    if (historyTableFilter !== "all") {
       list = list.filter((s) => s.tableName === historyTableFilter);
     }
 
-    if (historyModeFilter === 'tariff') {
+    if (historyModeFilter === "tariff") {
       list = list.filter((s) => Boolean(s.tariffName && s.tariffName.trim()));
     }
-    if (historyModeFilter === 'time') {
-      list = list.filter((s) => s.mode === 'time' && !s.tariffName);
+    if (historyModeFilter === "time") {
+      list = list.filter((s) => s.mode === "time" && !s.tariffName);
     }
-    if (historyModeFilter === 'infinite') {
-      list = list.filter((s) => s.mode === 'unlimited' && !s.tariffName);
+    if (historyModeFilter === "infinite") {
+      list = list.filter((s) => s.mode === "unlimited" && !s.tariffName);
     }
 
-    if (historyAmountSort === 'max') {
+    if (historyAmountSort === "max") {
       list.sort((a, b) => safeNumber(a.totalCost) - safeNumber(b.totalCost));
     }
-    if (historyAmountSort === 'min') {
+    if (historyAmountSort === "min") {
       list.sort((a, b) => safeNumber(b.totalCost) - safeNumber(a.totalCost));
     }
 
-    if (historyTimeSort === 'max') {
+    if (historyTimeSort === "max") {
       list.sort((a, b) => safeNumber(a.duration) - safeNumber(b.duration));
     }
-    if (historyTimeSort === 'min') {
+    if (historyTimeSort === "min") {
       list.sort((a, b) => safeNumber(b.duration) - safeNumber(a.duration));
     }
 
     // Фильтр для столов по времени - сначала группируем и находим totals по столам
-    if (historyTableTimeSort !== 'default') {
+    if (historyTableTimeSort !== "default") {
       const tableTimeTotals: Record<string, number> = {};
       list.forEach((s) => {
-        tableTimeTotals[s.tableName] = (tableTimeTotals[s.tableName] || 0) + safeNumber(s.duration);
+        tableTimeTotals[s.tableName] =
+          (tableTimeTotals[s.tableName] || 0) + safeNumber(s.duration);
       });
-      if (historyTableTimeSort === 'max') {
-        list.sort((a, b) => (tableTimeTotals[a.tableName] || 0) - (tableTimeTotals[b.tableName] || 0));
+      if (historyTableTimeSort === "max") {
+        list.sort(
+          (a, b) =>
+            (tableTimeTotals[a.tableName] || 0) -
+            (tableTimeTotals[b.tableName] || 0),
+        );
       }
-      if (historyTableTimeSort === 'min') {
-        list.sort((a, b) => (tableTimeTotals[b.tableName] || 0) - (tableTimeTotals[a.tableName] || 0));
+      if (historyTableTimeSort === "min") {
+        list.sort(
+          (a, b) =>
+            (tableTimeTotals[b.tableName] || 0) -
+            (tableTimeTotals[a.tableName] || 0),
+        );
       }
     }
 
     return list;
-  }, [filteredSessions, historyTableFilter, historyModeFilter, historyAmountSort, historyTimeSort, historyTableTimeSort]);
+  }, [
+    filteredSessions,
+    historyTableFilter,
+    historyModeFilter,
+    historyAmountSort,
+    historyTimeSort,
+    historyTableTimeSort,
+  ]);
 
   // Реверс мемоизируем: historySessions может быть тысячи записей — не аллоцируем
   // перевёрнутую копию на каждый рендер, только при смене самого списка/фильтров.
-  const reversedHistory = useMemo(() => historySessions.slice().reverse(), [historySessions]);
+  const reversedHistory = useMemo(
+    () => historySessions.slice().reverse(),
+    [historySessions],
+  );
 
   const resetHistoryFilters = () => {
-    setHistoryTableFilter('all');
-    setHistoryModeFilter('all');
-    setHistoryAmountSort('default');
-    setHistoryTimeSort('default');
-    setHistoryTableTimeSort('default');
+    setHistoryTableFilter("all");
+    setHistoryModeFilter("all");
+    setHistoryAmountSort("default");
+    setHistoryTimeSort("default");
+    setHistoryTableTimeSort("default");
   };
 
   const maxByHour = useMemo(() => Math.max(...stats.byHour, 1), [stats.byHour]);
@@ -290,45 +407,74 @@ const ReportsPage: React.FC = () => {
   // Экспорт отчёта в CSV
   const exportReport = () => {
     const modeLabel = (m: string, tariffName?: string | null) => {
-      if (tariffName && tariffName.trim()) return t('reports.modeTariff', { name: tariffName });
-      if (m === 'time') return t('reports.modeTime');
-      if (m === 'amount') return t('reports.modeAmount');
-      return t('reports.modeUnlimited');
+      if (tariffName && tariffName.trim())
+        return t("reports.modeTariff", { name: tariffName });
+      if (m === "time") return t("reports.modeTime");
+      if (m === "amount") return t("reports.modeAmount");
+      return t("reports.modeUnlimited");
     };
-    const paymentLabel = (m?: string) => (m === 'card' ? t('payment.card') : m === 'transfer' ? t('payment.transfer') : t('payment.cash'));
-    const header = t('reports.csvTable') + ';' + t('reports.csvMode') + ';' + t('reports.csvStart') + ';' + t('reports.csvEnd') + ';' + t('reports.csvDurationMin') + ';' + t('reports.csvTable') + ' (' + settings.currency + ');' + t('reports.csvBar') + ' (' + settings.currency + ');' + t('reports.csvTotal') + ' (' + settings.currency + ');Оплата';
+    const paymentLabel = (m: "cash" | "card" | "transfer") => t(`payment.${m}`);
+    const header =
+      t("reports.csvTable") +
+      ";" +
+      t("reports.csvMode") +
+      ";" +
+      t("reports.csvStart") +
+      ";" +
+      t("reports.csvEnd") +
+      ";" +
+      t("reports.csvDurationMin") +
+      ";" +
+      t("reports.csvTable") +
+      " (" +
+      settings.currency +
+      ");" +
+      t("reports.csvBar") +
+      " (" +
+      settings.currency +
+      ");" +
+      t("reports.csvTotal") +
+      " (" +
+      settings.currency +
+      ");Оплата";
     const rows = filteredSessions
       .slice()
       .reverse()
       .map((s) => {
-        const start = new Date(s.startTime).toLocaleString('ru-RU');
-        const end = new Date(s.endTime).toLocaleString('ru-RU');
-        return `${s.tableName};${modeLabel(s.mode, s.tariffName)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost};${paymentLabel(s.paymentMethod)}`;
+        const start = new Date(s.startTime).toLocaleString("ru-RU");
+        const end = new Date(s.endTime).toLocaleString("ru-RU");
+        return `${s.tableName};${modeLabel(s.mode, s.tariffName)};${start};${end};${s.duration};${s.tableCost};${s.barCost};${s.totalCost};${formatPaymentSummary(s, paymentLabel, settings.currency)}`;
       });
 
     // Итоги
-    rows.push('');
-    rows.push(`${t('reports.csvTotalGames')}:;${stats.count}`);
-    rows.push(`${t('reports.csvRevenueTables')}:;${stats.tableRev}`);
-    rows.push(`${t('reports.csvRevenueBar')}:;${stats.barRev}`);
-    rows.push(`${t('reports.csvRevenueTotal')}:;${stats.totalRev}`);
-    if (stats.serviceRev > 0) rows.push(`${t('reports.statService')}:;${stats.serviceRev}`);
+    rows.push("");
+    rows.push(`${t("reports.csvTotalGames")}:;${stats.count}`);
+    rows.push(`${t("reports.csvRevenueTables")}:;${stats.tableRev}`);
+    rows.push(`${t("reports.csvRevenueBar")}:;${stats.barRev}`);
+    rows.push(`${t("reports.csvRevenueTotal")}:;${stats.totalRev}`);
+    if (stats.serviceRev > 0)
+      rows.push(`${t("reports.statService")}:;${stats.serviceRev}`);
 
-    const csv = '\uFEFF' + header + '\n' + rows.join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const csv = "\uFEFF" + header + "\n" + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     const now = new Date();
-    const ts = dateToStr(now) + '_' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }).replace(':', '-');
+    const ts =
+      dateToStr(now) +
+      "_" +
+      now
+        .toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+        .replace(":", "-");
     a.href = url;
-    a.download = `${t('reports.fileNameReport')}_${viewMode}_${ts}.csv`;
+    a.download = `${t("reports.fileNameReport")}_${viewMode}_${ts}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const changeDate = (delta: number) => {
     const d = strToDate(selectedDate);
-    if (viewMode === 'week') {
+    if (viewMode === "week") {
       d.setDate(d.getDate() + delta * 7);
     } else {
       d.setDate(d.getDate() + delta);
@@ -337,10 +483,10 @@ const ReportsPage: React.FC = () => {
   };
 
   const formatDate = (dateStr: string) => {
-    return strToDate(dateStr).toLocaleDateString('ru-RU', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'long',
+    return strToDate(dateStr).toLocaleDateString("ru-RU", {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
     });
   };
 
@@ -352,47 +498,60 @@ const ReportsPage: React.FC = () => {
     monday.setDate(sel.getDate() + mondayOffset);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
-    const fmt = (d: Date) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
     return `${fmt(monday)} — ${fmt(sunday)}`;
   };
 
   const formatTime = (timestamp: number) => {
     const d = safeDate(timestamp);
-    if (!d) return '—';
-    return d.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
+    if (!d) return "—";
+    return d.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const getPeriodLabel = () => {
-    if (viewMode === 'day') return formatDate(selectedDate);
-    if (viewMode === 'week') return formatWeekRange();
-    if (viewMode === 'range') return `${formatDate(rangeStart)} — ${formatDate(rangeEnd)}`;
-    if (viewMode === 'all') return t('reports.allTime');
-    if (viewMode === 'shift') {
-      if (!activeShift) return t('reports.shiftNotSelected');
-      const start = new Date(activeShift.startTime).toLocaleString('ru-RU');
-      const end = activeShift.endTime ? new Date(activeShift.endTime).toLocaleString('ru-RU') : t('reports.untilNow');
-      return t('reports.shiftLabel', { name: activeShift.userName, start, end });
+    if (viewMode === "day") return formatDate(selectedDate);
+    if (viewMode === "week") return formatWeekRange();
+    if (viewMode === "range")
+      return `${formatDate(rangeStart)} — ${formatDate(rangeEnd)}`;
+    if (viewMode === "all") return t("reports.allTime");
+    if (viewMode === "shift") {
+      if (!activeShift) return t("reports.shiftNotSelected");
+      const start = new Date(activeShift.startTime).toLocaleString("ru-RU");
+      const end = activeShift.endTime
+        ? new Date(activeShift.endTime).toLocaleString("ru-RU")
+        : t("reports.untilNow");
+      return t("reports.shiftLabel", {
+        name: activeShift.userName,
+        start,
+        end,
+      });
     }
-    return t('reports.period');
+    return t("reports.period");
   };
 
-  const handlePrintSession = async (session: (typeof filteredSessions)[number]) => {
+  const handlePrintSession = async (
+    session: (typeof filteredSessions)[number],
+  ) => {
     try {
-      const detailedBarOrders = session.barOrders && session.barOrders.length > 0
-        ? session.barOrders
-        : session.barCost > 0
-        ? [{
-            id: `hist-${session.id}`,
-            menuItemId: 'history-bar',
-            menuItemName: t('reports.bar'),
-            quantity: 1,
-            price: session.barCost,
-            timestamp: session.endTime,
-          }]
-        : [];
+      const detailedBarOrders =
+        session.barOrders && session.barOrders.length > 0
+          ? session.barOrders
+          : session.barCost > 0
+            ? [
+                {
+                  id: `hist-${session.id}`,
+                  menuItemId: "history-bar",
+                  menuItemName: t("reports.bar"),
+                  quantity: 1,
+                  price: session.barCost,
+                  timestamp: session.endTime,
+                },
+              ]
+            : [];
 
       const ok = await printReceipt({
         clubName: settings.clubName,
@@ -417,10 +576,10 @@ const ReportsPage: React.FC = () => {
         deviceName: settings.receiptPrinterName,
       });
 
-      if (!ok) addToast('error', t('reports.printPrecheckFailed'));
+      if (!ok) addToast("error", t("reports.printPrecheckFailed"));
     } catch (error) {
-      console.error('Print from history failed:', error);
-      addToast('error', t('reports.printPrecheckError'));
+      console.error("Print from history failed:", error);
+      addToast("error", t("reports.printPrecheckError"));
     }
   };
 
@@ -446,7 +605,7 @@ const ReportsPage: React.FC = () => {
       deviceName: settings.receiptPrinterName,
     });
 
-    if (!ok) addToast('error', t('reports.printReportFailed'));
+    if (!ok) addToast("error", t("reports.printReportFailed"));
   };
 
   return (
@@ -454,48 +613,66 @@ const ReportsPage: React.FC = () => {
       <div className="page-header">
         <div className="page-header-left">
           <BarChart3 size={28} className="text-violet-400" />
-          <h2 className="page-title">{t('reports.title')}</h2>
+          <h2 className="page-title">{t("reports.title")}</h2>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
           <div className="page-tabs">
             <button
-              onClick={() => setViewMode('day')}
-              className={`page-tab ${viewMode === 'day' ? 'active' : ''}`}
+              onClick={() => setViewMode("day")}
+              className={`page-tab ${viewMode === "day" ? "active" : ""}`}
             >
-              {t('reports.tabDay')}
+              {t("reports.tabDay")}
             </button>
             <button
-              onClick={() => { setViewMode('shift'); setSelectedShiftId(null); }}
-              className={`page-tab ${viewMode === 'shift' ? 'active' : ''}`}
+              onClick={() => {
+                setViewMode("shift");
+                setSelectedShiftId(null);
+              }}
+              className={`page-tab ${viewMode === "shift" ? "active" : ""}`}
             >
-              <Briefcase size={14} /> {t('reports.tabShift')}
+              <Briefcase size={14} /> {t("reports.tabShift")}
             </button>
             <button
-              onClick={() => setViewMode('week')}
-              className={`page-tab ${viewMode === 'week' ? 'active' : ''}`}
+              onClick={() => setViewMode("week")}
+              className={`page-tab ${viewMode === "week" ? "active" : ""}`}
             >
-              {t('reports.tabWeek')}
+              {t("reports.tabWeek")}
             </button>
             <button
-              onClick={() => setViewMode('range')}
-              className={`page-tab ${viewMode === 'range' ? 'active' : ''}`}
+              onClick={() => setViewMode("range")}
+              className={`page-tab ${viewMode === "range" ? "active" : ""}`}
             >
-              <Filter size={14} /> {t('reports.tabRange')}
+              <Filter size={14} /> {t("reports.tabRange")}
             </button>
             <button
-              onClick={() => setViewMode('all')}
-              className={`page-tab ${viewMode === 'all' ? 'active' : ''}`}
+              onClick={() => setViewMode("all")}
+              className={`page-tab ${viewMode === "all" ? "active" : ""}`}
             >
-              {t('reports.tabAll')}
+              {t("reports.tabAll")}
             </button>
           </div>
           {filteredSessions.length > 0 && !isSafeWebViewMode && (
             <>
-              <button onClick={() => exportReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Download size={14} /> {t('reports.export')}
+              <button
+                onClick={() => exportReport()}
+                className="btn btn-ghost btn-sm"
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Download size={14} /> {t("reports.export")}
               </button>
-              <button onClick={() => handlePrintReport()} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Printer size={14} /> {t('reports.printReport')}
+              <button
+                onClick={() => handlePrintReport()}
+                className="btn btn-ghost btn-sm"
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Printer size={14} /> {t("reports.printReport")}
               </button>
             </>
           )}
@@ -504,29 +681,35 @@ const ReportsPage: React.FC = () => {
 
       {isSafeWebViewMode && (
         <div className="date-nav" style={{ marginBottom: 12 }}>
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>
-            {t('reports.lightModeNotice')}
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>
+            {t("reports.lightModeNotice")}
           </span>
         </div>
       )}
 
       {/* Выбор смены */}
-      {viewMode === 'shift' && (
+      {viewMode === "shift" && (
         <div className="shift-selector">
           <div
             onClick={() => setSelectedShiftId(null)}
-            className={`shift-item ${!selectedShiftId && currentShift ? 'active' : ''}`}
+            className={`shift-item ${!selectedShiftId && currentShift ? "active" : ""}`}
           >
             <div className="shift-item-icon">
               <Briefcase size={16} />
             </div>
             <div className="shift-item-content">
               <div className="shift-item-title">
-                {currentShift?.isActive ? t('reports.currentShift') : t('reports.noActiveShift')}
+                {currentShift?.isActive
+                  ? t("reports.currentShift")
+                  : t("reports.noActiveShift")}
               </div>
               {currentShift?.isActive && (
                 <div className="shift-item-details">
-                  {t('reports.start')}: {new Date(currentShift.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                  {t("reports.start")}:{" "}
+                  {new Date(currentShift.startTime).toLocaleTimeString(
+                    "ru-RU",
+                    { hour: "2-digit", minute: "2-digit" },
+                  )}
                 </div>
               )}
             </div>
@@ -534,24 +717,35 @@ const ReportsPage: React.FC = () => {
           {shiftHistory.slice(0, 10).map((shift) => {
             const start = new Date(shift.startTime);
             const end = shift.endTime ? new Date(shift.endTime) : null;
-            const duration = end ? Math.floor((end.getTime() - start.getTime()) / (1000 * 60)) : null; // в минутах
+            const duration = end
+              ? Math.floor((end.getTime() - start.getTime()) / (1000 * 60))
+              : null; // в минутах
             return (
               <div
                 key={shift.id}
                 onClick={() => setSelectedShiftId(shift.id)}
-                className={`shift-item ${selectedShiftId === shift.id ? 'active' : ''}`}
+                className={`shift-item ${selectedShiftId === shift.id ? "active" : ""}`}
               >
                 <div className="shift-item-icon">
                   <Briefcase size={16} />
                 </div>
                 <div className="shift-item-content">
                   <div className="shift-item-title">
-                    {start.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                    {start.toLocaleDateString("ru-RU", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                    })}
                   </div>
                   <div className="shift-item-details">
-                    {start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                    {end ? ` — ${end.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : ` (${t('reports.active')})`}
-                    {duration && ` (${duration} ${t('reports.min')})`}
+                    {start.toLocaleTimeString("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    {end
+                      ? ` — ${end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
+                      : ` (${t("reports.active")})`}
+                    {duration && ` (${duration} ${t("reports.min")})`}
                   </div>
                   <div className="shift-item-user">{shift.userName}</div>
                 </div>
@@ -562,14 +756,18 @@ const ReportsPage: React.FC = () => {
       )}
 
       {/* Переключение даты */}
-      {(viewMode === 'day' || viewMode === 'week') && (
+      {(viewMode === "day" || viewMode === "week") && (
         <div className="date-nav">
           <button onClick={() => changeDate(-1)} className="date-nav-btn">
             <ChevronLeft size={20} />
           </button>
           <div className="date-nav-current">
             <Calendar size={16} />
-            <span>{viewMode === 'week' ? formatWeekRange() : formatDate(selectedDate)}</span>
+            <span>
+              {viewMode === "week"
+                ? formatWeekRange()
+                : formatDate(selectedDate)}
+            </span>
           </div>
           <button onClick={() => changeDate(1)} className="date-nav-btn">
             <ChevronRight size={20} />
@@ -578,16 +776,18 @@ const ReportsPage: React.FC = () => {
             onClick={() => setSelectedDate(dateToStr(new Date()))}
             className="btn btn-ghost btn-sm"
           >
-            {t('reports.today')}
+            {t("reports.today")}
           </button>
         </div>
       )}
 
       {/* Диапазон дат */}
-      {viewMode === 'range' && (
+      {viewMode === "range" && (
         <div className="date-nav" style={{ gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: 13, opacity: 0.7 }}>{t('reports.rangeFrom')}</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>
+              {t("reports.rangeFrom")}
+            </label>
             <input
               type="date"
               value={rangeStart}
@@ -596,8 +796,10 @@ const ReportsPage: React.FC = () => {
               style={{ width: 160 }}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: 13, opacity: 0.7 }}>{t('reports.rangeTo')}</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>
+              {t("reports.rangeTo")}
+            </label>
             <input
               type="date"
               value={rangeEnd}
@@ -616,7 +818,7 @@ const ReportsPage: React.FC = () => {
             }}
             className="btn btn-ghost btn-sm"
           >
-            {t('reports.last7Days')}
+            {t("reports.last7Days")}
           </button>
           <button
             onClick={() => {
@@ -628,7 +830,7 @@ const ReportsPage: React.FC = () => {
             }}
             className="btn btn-ghost btn-sm"
           >
-            {t('reports.last30Days')}
+            {t("reports.last30Days")}
           </button>
         </div>
       )}
@@ -640,7 +842,7 @@ const ReportsPage: React.FC = () => {
             <DollarSign size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statTotalRevenue')}</p>
+            <p className="report-stat-label">{t("reports.statTotalRevenue")}</p>
             <p className="report-stat-value">
               {formatMoney(stats.totalRev, settings.currency)}
             </p>
@@ -651,7 +853,7 @@ const ReportsPage: React.FC = () => {
             <Clock size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statTables')}</p>
+            <p className="report-stat-label">{t("reports.statTables")}</p>
             <p className="report-stat-value">
               {formatMoney(stats.tableRev, settings.currency)}
             </p>
@@ -662,7 +864,7 @@ const ReportsPage: React.FC = () => {
             <ShoppingBag size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statBar')}</p>
+            <p className="report-stat-label">{t("reports.statBar")}</p>
             <p className="report-stat-value">
               {formatMoney(stats.barRev, settings.currency)}
             </p>
@@ -673,7 +875,7 @@ const ReportsPage: React.FC = () => {
             <Users size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statGames')}</p>
+            <p className="report-stat-label">{t("reports.statGames")}</p>
             <p className="report-stat-value">{stats.count}</p>
           </div>
         </div>
@@ -682,7 +884,7 @@ const ReportsPage: React.FC = () => {
             <TrendingUp size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statAvgCheck')}</p>
+            <p className="report-stat-label">{t("reports.statAvgCheck")}</p>
             <p className="report-stat-value">
               {formatMoney(stats.avgCheck, settings.currency)}
             </p>
@@ -693,8 +895,10 @@ const ReportsPage: React.FC = () => {
             <Clock size={24} />
           </div>
           <div>
-            <p className="report-stat-label">{t('reports.statAvgTime')}</p>
-            <p className="report-stat-value">{stats.avgSession} {t('reports.min')}</p>
+            <p className="report-stat-label">{t("reports.statAvgTime")}</p>
+            <p className="report-stat-value">
+              {stats.avgSession} {t("reports.min")}
+            </p>
           </div>
         </div>
         {stats.serviceRev > 0 && (
@@ -703,7 +907,7 @@ const ReportsPage: React.FC = () => {
               <Percent size={24} />
             </div>
             <div>
-              <p className="report-stat-label">{t('reports.statService')}</p>
+              <p className="report-stat-label">{t("reports.statService")}</p>
               <p className="report-stat-value">
                 {formatMoney(stats.serviceRev, settings.currency)}
               </p>
@@ -717,166 +921,221 @@ const ReportsPage: React.FC = () => {
         <div className="report-payment-item cash">
           <Banknote size={18} />
           <div>
-            <span className="report-payment-label">{t('payment.cash')}</span>
-            <span className="report-payment-value">{formatMoney(stats.byPayment.cash, settings.currency)}</span>
+            <span className="report-payment-label">{t("payment.cash")}</span>
+            <span className="report-payment-value">
+              {formatMoney(stats.byPayment.cash, settings.currency)}
+            </span>
           </div>
         </div>
         <div className="report-payment-item card">
           <CreditCard size={18} />
           <div>
-            <span className="report-payment-label">{t('payment.card')}</span>
-            <span className="report-payment-value">{formatMoney(stats.byPayment.card, settings.currency)}</span>
+            <span className="report-payment-label">{t("payment.card")}</span>
+            <span className="report-payment-value">
+              {formatMoney(stats.byPayment.card, settings.currency)}
+            </span>
           </div>
         </div>
         <div className="report-payment-item transfer">
           <Smartphone size={18} />
           <div>
-            <span className="report-payment-label">{t('payment.transfer')}</span>
-            <span className="report-payment-value">{formatMoney(stats.byPayment.transfer, settings.currency)}</span>
+            <span className="report-payment-label">
+              {t("payment.transfer")}
+            </span>
+            <span className="report-payment-value">
+              {formatMoney(stats.byPayment.transfer, settings.currency)}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Графики */}
       {!isSafeWebViewMode && (
-      <div className="report-charts">
-        {/* По столам */}
-        <div className="report-chart-card">
-          <h3 className="report-chart-title">{t('reports.chartRevenueByTable')}</h3>
-          <div className="report-bar-chart">
-            {Object.entries(stats.byTable).map(([name, data]) => (
-              <div key={name} className="report-bar-row">
-                <span className="report-bar-label">{name}</span>
-                <div className="report-bar-track">
-                  <div
-                    className="report-bar-fill green"
-                    style={{
-                      width: `${stats.totalRev > 0 ? (data.revenue / stats.totalRev) * 100 : 0}%`,
-                    }}
-                  />
+        <div className="report-charts">
+          {/* По столам */}
+          <div className="report-chart-card">
+            <h3 className="report-chart-title">
+              {t("reports.chartRevenueByTable")}
+            </h3>
+            <div className="report-bar-chart">
+              {Object.entries(stats.byTable).map(([name, data]) => (
+                <div key={name} className="report-bar-row">
+                  <span className="report-bar-label">{name}</span>
+                  <div className="report-bar-track">
+                    <div
+                      className="report-bar-fill green"
+                      style={{
+                        width: `${stats.totalRev > 0 ? (data.revenue / stats.totalRev) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="report-bar-value">
+                    {formatMoney(data.revenue, settings.currency)}
+                  </span>
                 </div>
-                <span className="report-bar-value">
-                  {formatMoney(data.revenue, settings.currency)}
-                </span>
-              </div>
-            ))}
-            {Object.keys(stats.byTable).length === 0 && (
-              <p className="text-slate-500 text-sm text-center py-4">{t('reports.noData')}</p>
-            )}
+              ))}
+              {Object.keys(stats.byTable).length === 0 && (
+                <p className="text-slate-500 text-sm text-center py-4">
+                  {t("reports.noData")}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* По часам */}
-        <div className="report-chart-card">
-          <h3 className="report-chart-title">{t('reports.chartLoadByHour')}</h3>
-          <div className="report-hours-chart">
-            {stats.byHour.map((count, hour) => (
-              <div key={hour} className="report-hour-bar">
-                <div
-                  className="report-hour-fill"
-                  style={{ height: `${(count / maxByHour) * 100}%` }}
-                />
-                <span className="report-hour-label">
-                  {hour % 3 === 0 ? `${hour}` : ''}
-                </span>
-              </div>
-            ))}
+          {/* По часам */}
+          <div className="report-chart-card">
+            <h3 className="report-chart-title">
+              {t("reports.chartLoadByHour")}
+            </h3>
+            <div className="report-hours-chart">
+              {stats.byHour.map((count, hour) => (
+                <div key={hour} className="report-hour-bar">
+                  <div
+                    className="report-hour-fill"
+                    style={{ height: `${(count / maxByHour) * 100}%` }}
+                  />
+                  <span className="report-hour-label">
+                    {hour % 3 === 0 ? `${hour}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Таблица сессий */}
       <div className="report-table-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <h3 className="report-chart-title" style={{ marginBottom: 0 }}>{t('reports.historyTitle')}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <h3 className="report-chart-title" style={{ marginBottom: 0 }}>
+            {t("reports.historyTitle")}
+          </h3>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <button
               onClick={() => setShowHistoryFilters((prev) => !prev)}
               className="btn btn-ghost btn-sm"
-              title={t('reports.historyFiltersTitle')}
+              title={t("reports.historyFiltersTitle")}
             >
               <Filter size={14} />
-              {t('reports.filter')}
+              {t("reports.filter")}
             </button>
-            {(historyTableFilter !== 'all' || historyModeFilter !== 'all' || historyAmountSort !== 'default' || historyTimeSort !== 'default' || historyTableTimeSort !== 'default') && (
-              <button onClick={resetHistoryFilters} className="btn btn-ghost btn-sm" title={t('reports.resetFilters')}>
-                {t('reports.resetFilters')}
+            {(historyTableFilter !== "all" ||
+              historyModeFilter !== "all" ||
+              historyAmountSort !== "default" ||
+              historyTimeSort !== "default" ||
+              historyTableTimeSort !== "default") && (
+              <button
+                onClick={resetHistoryFilters}
+                className="btn btn-ghost btn-sm"
+                title={t("reports.resetFilters")}
+              >
+                {t("reports.resetFilters")}
               </button>
             )}
           </div>
         </div>
 
         {showHistoryFilters && (
-          <div className="date-nav" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div
+            className="date-nav"
+            style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}
+          >
             <select
               className="form-input"
               value={historyTableFilter}
               onChange={(e) => setHistoryTableFilter(e.target.value)}
               style={{ width: 180 }}
             >
-              <option value="all">{t('reports.allTables')}</option>
+              <option value="all">{t("reports.allTables")}</option>
               {historyTableNames.map((name) => (
-                <option key={name} value={name}>{name}</option>
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </select>
 
             <select
               className="form-input"
               value={historyAmountSort}
-              onChange={(e) => setHistoryAmountSort(e.target.value as 'default' | 'max' | 'min')}
+              onChange={(e) =>
+                setHistoryAmountSort(
+                  e.target.value as "default" | "max" | "min",
+                )
+              }
               style={{ width: 220 }}
             >
-              <option value="default">{t('reports.amountDefault')}</option>
-              <option value="max">{t('reports.amountMax')}</option>
-              <option value="min">{t('reports.amountMin')}</option>
+              <option value="default">{t("reports.amountDefault")}</option>
+              <option value="max">{t("reports.amountMax")}</option>
+              <option value="min">{t("reports.amountMin")}</option>
             </select>
 
             <select
               className="form-input"
               value={historyTimeSort}
-              onChange={(e) => setHistoryTimeSort(e.target.value as 'default' | 'max' | 'min')}
+              onChange={(e) =>
+                setHistoryTimeSort(e.target.value as "default" | "max" | "min")
+              }
               style={{ width: 220 }}
             >
-              <option value="default">{t('reports.timeDefault')}</option>
-              <option value="max">{t('reports.timeMax')}</option>
-              <option value="min">{t('reports.timeMin')}</option>
+              <option value="default">{t("reports.timeDefault")}</option>
+              <option value="max">{t("reports.timeMax")}</option>
+              <option value="min">{t("reports.timeMin")}</option>
             </select>
 
             <select
               className="form-input"
               value={historyTableTimeSort}
-              onChange={(e) => setHistoryTableTimeSort(e.target.value as 'default' | 'max' | 'min')}
+              onChange={(e) =>
+                setHistoryTableTimeSort(
+                  e.target.value as "default" | "max" | "min",
+                )
+              }
               style={{ width: 240 }}
             >
-              <option value="default">{t('reports.tableTimeDefault')}</option>
-              <option value="max">{t('reports.tableTimeMax')}</option>
-              <option value="min">{t('reports.tableTimeMin')}</option>
+              <option value="default">{t("reports.tableTimeDefault")}</option>
+              <option value="max">{t("reports.tableTimeMax")}</option>
+              <option value="min">{t("reports.tableTimeMin")}</option>
             </select>
 
             <button
-              onClick={() => setHistoryModeFilter('tariff')}
-              className={`btn btn-sm ${historyModeFilter === 'tariff' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setHistoryModeFilter("tariff")}
+              className={`btn btn-sm ${historyModeFilter === "tariff" ? "btn-primary" : "btn-ghost"}`}
             >
-              {t('reports.filterTariff')}
+              {t("reports.filterTariff")}
             </button>
             <button
-              onClick={() => setHistoryModeFilter('time')}
-              className={`btn btn-sm ${historyModeFilter === 'time' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setHistoryModeFilter("time")}
+              className={`btn btn-sm ${historyModeFilter === "time" ? "btn-primary" : "btn-ghost"}`}
             >
-              {t('reports.filterTime')}
+              {t("reports.filterTime")}
             </button>
             <button
-              onClick={() => setHistoryModeFilter('infinite')}
-              className={`btn btn-sm ${historyModeFilter === 'infinite' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setHistoryModeFilter("infinite")}
+              className={`btn btn-sm ${historyModeFilter === "infinite" ? "btn-primary" : "btn-ghost"}`}
             >
-              {t('reports.filterInfinite')}
+              {t("reports.filterInfinite")}
             </button>
             <button
-              onClick={() => setHistoryModeFilter('all')}
-              className={`btn btn-sm ${historyModeFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setHistoryModeFilter("all")}
+              className={`btn btn-sm ${historyModeFilter === "all" ? "btn-primary" : "btn-ghost"}`}
             >
-              {t('reports.filterAllModes')}
+              {t("reports.filterAllModes")}
             </button>
           </div>
         )}
@@ -884,74 +1143,77 @@ const ReportsPage: React.FC = () => {
         {historySessions.length === 0 ? (
           <div className="report-empty">
             <BarChart3 size={48} className="text-slate-600" />
-            <p>{t('reports.emptyFiltered')}</p>
+            <p>{t("reports.emptyFiltered")}</p>
           </div>
         ) : (
           <div className="report-table-wrapper">
             <table className="report-table">
               <thead>
                 <tr>
-                  <th>{t('reports.thTable')}</th>
-                  <th>{t('reports.thMode')}</th>
-                  <th>{t('reports.thStart')}</th>
-                  <th>{t('reports.thEnd')}</th>
-                  <th>{t('reports.thTime')}</th>
-                  <th>{t('reports.thTable')}</th>
-                  <th>{t('reports.thBar')}</th>
-                  <th>{t('reports.thTotal')}</th>
-                  <th>{t('reports.thPrecheck')}</th>
+                  <th>{t("reports.thTable")}</th>
+                  <th>{t("reports.thMode")}</th>
+                  <th>{t("reports.thStart")}</th>
+                  <th>{t("reports.thEnd")}</th>
+                  <th>{t("reports.thTime")}</th>
+                  <th>{t("reports.thTable")}</th>
+                  <th>{t("reports.thBar")}</th>
+                  <th>{t("reports.thTotal")}</th>
+                  <th>{t("reports.thPrecheck")}</th>
                 </tr>
               </thead>
               <tbody>
-                {reversedHistory
-                  .map((session) => (
-                    <tr key={session.id}>
-                      <td>{session.tableName}</td>
-                      <td>
-                        {session.tariffName && session.tariffName.trim()
-                          ? t('reports.modeTariff', { name: session.tariffName })
-                          : session.mode === 'time'
-                            ? t('reports.modeTime')
-                            : session.mode === 'amount'
-                              ? t('reports.modeAmount')
-                              : t('reports.modeUnlimited')}
-                      </td>
-                      <td>{formatTime(session.startTime)}</td>
-                      <td>{formatTime(session.endTime)}</td>
-                      <td>{session.duration} {t('reports.min')}</td>
-                      <td className="text-emerald-400">
-                        {formatMoney(session.tableCost, settings.currency)}
-                      </td>
-                      <td className="text-amber-400">
-                        {formatMoney(session.barCost, settings.currency)}
-                      </td>
-                      <td className="font-bold">
-                        {formatMoney(session.totalCost, settings.currency)}
-                      </td>
-                      <td>
-                        <div className="report-row-actions">
+                {reversedHistory.map((session) => (
+                  <tr key={session.id}>
+                    <td>{session.tableName}</td>
+                    <td>
+                      {session.tariffName && session.tariffName.trim()
+                        ? t("reports.modeTariff", { name: session.tariffName })
+                        : session.mode === "time"
+                          ? t("reports.modeTime")
+                          : session.mode === "amount"
+                            ? t("reports.modeAmount")
+                            : t("reports.modeUnlimited")}
+                    </td>
+                    <td>{formatTime(session.startTime)}</td>
+                    <td>{formatTime(session.endTime)}</td>
+                    <td>
+                      {session.duration} {t("reports.min")}
+                    </td>
+                    <td className="text-emerald-400">
+                      {formatMoney(session.tableCost, settings.currency)}
+                    </td>
+                    <td className="text-amber-400">
+                      {formatMoney(session.barCost, settings.currency)}
+                    </td>
+                    <td className="font-bold">
+                      {formatMoney(session.totalCost, settings.currency)}
+                    </td>
+                    <td>
+                      <div className="report-row-actions">
+                        <button
+                          className="btn btn-ghost btn-sm report-print-btn"
+                          onClick={() => handlePrintSession(session)}
+                          title={t("reports.printPrecheckTitle")}
+                        >
+                          <Printer size={14} />
+                          {t("reports.precheck")}
+                        </button>
+                        {canVoidRecord(session) && (
                           <button
-                            className="btn btn-ghost btn-sm report-print-btn"
-                            onClick={() => handlePrintSession(session)}
-                            title={t('reports.printPrecheckTitle')}
+                            className="btn btn-ghost btn-sm report-void-btn"
+                            onClick={() => setVoidSessionId(session.id)}
+                            title={t("cancel.void_title", {
+                              name: session.tableName,
+                            })}
                           >
-                            <Printer size={14} />
-                            {t('reports.precheck')}
+                            <Ban size={14} />
+                            {t("cancel.void_action")}
                           </button>
-                          {canVoidRecord(session) && (
-                            <button
-                              className="btn btn-ghost btn-sm report-void-btn"
-                              onClick={() => setVoidSessionId(session.id)}
-                              title={t('cancel.void_title', { name: session.tableName })}
-                            >
-                              <Ban size={14} />
-                              {t('cancel.void_action')}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -961,36 +1223,66 @@ const ReportsPage: React.FC = () => {
       {/* ===== Журнал отмён ===== */}
       {filteredCancelLog.length > 0 && (
         <div className="report-section cancel-log-section">
-          <button type="button" className="cancel-log-header" onClick={() => setShowCancelLog((v) => !v)}>
+          <button
+            type="button"
+            className="cancel-log-header"
+            onClick={() => setShowCancelLog((v) => !v)}
+          >
             <span className="cancel-log-title">
               <ShieldAlert size={16} className="text-red-400" />
-              {t('cancel.log_title')}
-              <span className="cancel-log-count">{filteredCancelLog.length}</span>
+              {t("cancel.log_title")}
+              <span className="cancel-log-count">
+                {filteredCancelLog.length}
+              </span>
             </span>
-            <span className="cancel-log-toggle">{showCancelLog ? t('cancel.log_hide') : t('cancel.log_show')}</span>
+            <span className="cancel-log-toggle">
+              {showCancelLog ? t("cancel.log_hide") : t("cancel.log_show")}
+            </span>
           </button>
           {showCancelLog && (
             <div className="report-table-wrapper">
               <table className="report-table">
                 <thead>
                   <tr>
-                    <th>{t('cancel.col_time')}</th>
-                    <th>{t('cancel.col_item')}</th>
-                    <th>{t('cancel.col_amount')}</th>
-                    <th>{t('cancel.col_source')}</th>
-                    <th>{t('cancel.col_reason')}</th>
-                    <th>{t('cancel.col_by')}</th>
+                    <th>{t("cancel.col_time")}</th>
+                    <th>{t("cancel.col_item")}</th>
+                    <th>{t("cancel.col_amount")}</th>
+                    <th>{t("cancel.col_source")}</th>
+                    <th>{t("cancel.col_reason")}</th>
+                    <th>{t("cancel.col_by")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCancelLog.map((e) => (
                     <tr key={e.id}>
-                      <td>{new Date(e.timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                      <td>{e.itemName} × {e.quantity}{e.tableName ? ` · ${e.tableName}` : ''}</td>
-                      <td className="text-amber-400">−{formatMoney(e.amount, settings.currency)}</td>
-                      <td>{t(`cancel.source_${e.source === 'open-table' ? 'open' : e.source === 'quick-sale' ? 'quick' : 'closed'}`)}</td>
+                      <td>
+                        {new Date(e.timestamp).toLocaleString("ru-RU", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td>
+                        {e.itemName} × {e.quantity}
+                        {e.tableName ? ` · ${e.tableName}` : ""}
+                      </td>
+                      <td className="text-amber-400">
+                        −{formatMoney(e.amount, settings.currency)}
+                      </td>
+                      <td>
+                        {t(
+                          `cancel.source_${e.source === "open-table" ? "open" : e.source === "open-walkin" ? "walkin" : e.source === "quick-sale" ? "quick" : "closed"}`,
+                        )}
+                      </td>
                       <td>{e.reason}</td>
-                      <td>{e.cancelledByName}{e.authorizedByName && e.authorizedByName !== e.cancelledByName ? ` (${e.authorizedByName})` : ''}</td>
+                      <td>
+                        {e.cancelledByName}
+                        {e.authorizedByName &&
+                        e.authorizedByName !== e.cancelledByName
+                          ? ` (${e.authorizedByName})`
+                          : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1007,21 +1299,26 @@ const ReportsPage: React.FC = () => {
             <ModalCloseX onClose={() => setVoidSessionId(null)} />
             <h2 className="modal-title">
               <Ban size={20} className="text-red-400" />
-              {t('cancel.void_title', { name: voidRecord.tableName })}
+              {t("cancel.void_title", { name: voidRecord.tableName })}
             </h2>
             <div className="modal-body">
-              <p className="confirm-modal-message">{t('cancel.void_hint')}</p>
+              <p className="confirm-modal-message">{t("cancel.void_hint")}</p>
               {voidRecord.barOrders && voidRecord.barOrders.length > 0 ? (
                 <div className="end-session-orders">
                   {voidRecord.barOrders.map((item) => (
                     <div key={item.id} className="end-session-order-item">
-                      <span>{item.menuItemName} × {item.quantity}</span>
+                      <span>
+                        {item.menuItemName} × {item.quantity}
+                      </span>
                       <span className="end-session-order-right">
-                        <span>{(item.price * item.quantity).toLocaleString()} {settings.currency}</span>
+                        <span>
+                          {(item.price * item.quantity).toLocaleString()}{" "}
+                          {settings.currency}
+                        </span>
                         <button
                           type="button"
                           className="order-cancel-btn"
-                          title={t('cancel.cancel_position')}
+                          title={t("cancel.cancel_position")}
                           onClick={() => handleVoidItem(voidRecord, item)}
                         >
                           <X size={14} />
@@ -1031,11 +1328,18 @@ const ReportsPage: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <p className="confirm-modal-message">{t('cancel.void_empty')}</p>
+                <p className="confirm-modal-message">
+                  {t("cancel.void_empty")}
+                </p>
               )}
             </div>
             <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setVoidSessionId(null)}>{t('common.close')}</button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setVoidSessionId(null)}
+              >
+                {t("common.close")}
+              </button>
             </div>
           </div>
         </div>

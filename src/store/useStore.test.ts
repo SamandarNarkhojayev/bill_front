@@ -4,18 +4,18 @@
 // Проверяют именно бизнес-логику действий (деньги/время), а не персист.
 // Побочные каналы (Telegram/CloudSync) в тестах инертны: Telegram выключен по
 // умолчанию, CloudSync не залогинен; fetch дополнительно застаблен.
-import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import { useStore } from './useStore';
-import type { BilliardTable, BarMenuItem, User } from '../types';
+import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
+import { useStore } from "./useStore";
+import type { BilliardTable, BarMenuItem, User } from "../types";
 
 const T0 = 1_700_000_000_000; // фиксированная «точка отсчёта» для детерминизма
 const HOUR = 3_600_000;
 
 const makeTable = (): BilliardTable => ({
   id: 1,
-  name: 'Стол 1',
+  name: "Стол 1",
   relayNumber: 1,
-  status: 'free',
+  status: "free",
   lightOn: false,
   pricePerHour: 1000,
   priceSchedule: [],
@@ -23,23 +23,23 @@ const makeTable = (): BilliardTable => ({
 });
 
 const makeDrink = (): BarMenuItem => ({
-  id: 'd1',
-  name: 'Кола',
-  categoryId: 'c1',
+  id: "d1",
+  name: "Кола",
+  categoryId: "c1",
   price: 500,
   costPrice: 200,
   available: true,
-  image: '',
+  image: "",
   stock: 10,
-  unit: 'шт',
+  unit: "шт",
 });
 
 const makeUser = (): User => ({
-  id: 'u1',
-  username: 'op',
-  password: 'x',
-  displayName: 'Оператор',
-  role: 'admin',
+  id: "u1",
+  username: "op",
+  password: "x",
+  displayName: "Оператор",
+  role: "admin",
   createdAt: T0,
   createdBy: null,
   isActive: true,
@@ -51,14 +51,19 @@ const setSessionStart = (tableId: number, startTime: number) => {
     tables: s.tables.map((t) =>
       t.id === tableId && t.currentSession
         ? { ...t, currentSession: { ...t.currentSession, startTime } }
-        : t
+        : t,
     ),
   }));
 };
 
 beforeAll(() => {
   // Никаких реальных сетевых вызовов из CloudSync/Telegram.
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, json: () => Promise.resolve({}) })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+    ),
+  );
 });
 
 beforeEach(() => {
@@ -72,59 +77,72 @@ beforeEach(() => {
     toasts: [],
     barMenu: [makeDrink()],
     currentUser: makeUser(),
-    settings: { ...s.settings, autoLightOff: true, soundEnabled: false, defaultPricePerHour: 1000, serviceChargeEnabled: false, serviceChargePercent: 10 },
+    settings: {
+      ...s.settings,
+      autoLightOff: true,
+      soundEnabled: false,
+      defaultPricePerHour: 1000,
+      serviceChargeEnabled: false,
+      serviceChargePercent: 10,
+    },
   }));
 });
 
-describe('startSession', () => {
-  it('занимает стол и создаёт сессию (unlimited)', () => {
-    useStore.getState().startSession(1, 'unlimited');
+describe("startSession", () => {
+  it("занимает стол и создаёт сессию (unlimited)", () => {
+    useStore.getState().startSession(1, "unlimited");
     const table = useStore.getState().tables[0];
-    expect(table.status).toBe('occupied');
+    expect(table.status).toBe("occupied");
     expect(table.lightOn).toBe(true);
     expect(table.currentSession).not.toBeNull();
-    expect(table.currentSession!.mode).toBe('unlimited');
+    expect(table.currentSession!.mode).toBe("unlimited");
     expect(table.currentSession!.plannedDuration).toBeNull();
     expect(table.currentSession!.fixedAmount).toBeNull();
   });
 
-  it('режим «по времени» задаёт plannedDuration в секундах', () => {
-    useStore.getState().startSession(1, 'time', { hours: 1, minutes: 30 });
-    expect(useStore.getState().tables[0].currentSession!.plannedDuration).toBe(90 * 60);
+  it("режим «по времени» задаёт plannedDuration в секундах", () => {
+    useStore.getState().startSession(1, "time", { hours: 1, minutes: 30 });
+    expect(useStore.getState().tables[0].currentSession!.plannedDuration).toBe(
+      90 * 60,
+    );
   });
 
-  it('режим «на сумму» сохраняет fixedAmount', () => {
-    useStore.getState().startSession(1, 'amount', { amount: 5000 });
+  it("режим «на сумму» сохраняет fixedAmount", () => {
+    useStore.getState().startSession(1, "amount", { amount: 5000 });
     const sess = useStore.getState().tables[0].currentSession!;
     expect(sess.fixedAmount).toBe(5000);
-    expect(sess.mode).toBe('amount');
+    expect(sess.mode).toBe("amount");
   });
 
-  it('пакет/тариф сохраняет packagePrice и tariffName', () => {
-    useStore.getState().startSession(1, 'time', { plannedDurationSeconds: 7200, packagePrice: 3000, tariffName: 'Ночь' });
+  it("пакет/тариф сохраняет packagePrice и tariffName", () => {
+    useStore.getState().startSession(1, "time", {
+      plannedDurationSeconds: 7200,
+      packagePrice: 3000,
+      tariffName: "Ночь",
+    });
     const sess = useStore.getState().tables[0].currentSession!;
     expect(sess.packagePrice).toBe(3000);
-    expect(sess.tariffName).toBe('Ночь');
+    expect(sess.tariffName).toBe("Ночь");
     expect(sess.plannedDuration).toBe(7200);
   });
 
-  it('снимает бронь при запуске забронированного стола', () => {
-    useStore.getState().addReservation(1, 'Гость', '+7', T0 + HOUR, '');
+  it("снимает бронь при запуске забронированного стола", () => {
+    useStore.getState().addReservation(1, "Гость", "+7", T0 + HOUR, "");
     expect(useStore.getState().reservations.length).toBe(1);
-    useStore.getState().startSession(1, 'unlimited');
+    useStore.getState().startSession(1, "unlimited");
     expect(useStore.getState().reservations.length).toBe(0);
-    expect(useStore.getState().tables[0].status).toBe('occupied');
+    expect(useStore.getState().tables[0].status).toBe("occupied");
   });
 });
 
-describe('endSession', () => {
-  it('освобождает стол и пишет запись в историю с корректной стоимостью', () => {
-    useStore.getState().startSession(1, 'unlimited');
+describe("endSession", () => {
+  it("освобождает стол и пишет запись в историю с корректной стоимостью", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
-    useStore.getState().endSession(1, T0 + HOUR, 'card'); // ровно 1 час @ 1000/ч
+    useStore.getState().endSession(1, T0 + HOUR, "card"); // ровно 1 час @ 1000/ч
 
     const table = useStore.getState().tables[0];
-    expect(table.status).toBe('free');
+    expect(table.status).toBe("free");
     expect(table.currentSession).toBeNull();
 
     const history = useStore.getState().sessionHistory;
@@ -134,12 +152,25 @@ describe('endSession', () => {
     expect(rec.barCost).toBe(0);
     expect(rec.totalCost).toBe(1000);
     expect(rec.duration).toBe(60);
-    expect(rec.paymentMethod).toBe('card');
+    expect(rec.paymentMethod).toBe("card");
     expect(rec.endTime).toBe(T0 + HOUR); // фиксированный endTime (инвариант чек=отчёт)
   });
 
-  it('endTimeOverride фиксирует момент завершения (сумма чека = сумма отчёта)', () => {
-    useStore.getState().startSession(1, 'unlimited');
+  it("сохраняет разбивку оплаты по нескольким способам", () => {
+    useStore.getState().startSession(1, "unlimited");
+    setSessionStart(1, T0);
+    useStore.getState().endSession(1, T0 + HOUR, {
+      paymentMethod: "card",
+      paymentBreakdown: { cash: 300, card: 700 },
+    });
+
+    const rec = useStore.getState().sessionHistory[0];
+    expect(rec.paymentMethod).toBe("card");
+    expect(rec.paymentBreakdown).toEqual({ cash: 300, card: 700 });
+  });
+
+  it("endTimeOverride фиксирует момент завершения (сумма чека = сумма отчёта)", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     const endTime = T0 + HOUR / 2; // 30 минут → 500
     useStore.getState().endSession(1, endTime);
@@ -149,39 +180,47 @@ describe('endSession', () => {
     expect(rec.duration).toBe(30);
   });
 
-  it('ничего не делает для свободного стола', () => {
+  it("ничего не делает для свободного стола", () => {
     useStore.getState().endSession(1, T0 + HOUR);
     expect(useStore.getState().sessionHistory.length).toBe(0);
   });
 
-  it('пишет сервисный сбор в запись отчёта, когда он включён (totalCost — без сбора)', () => {
-    useStore.setState((s) => ({ settings: { ...s.settings, serviceChargeEnabled: true, serviceChargePercent: 10 } }));
-    useStore.getState().startSession(1, 'unlimited');
+  it("пишет сервисный сбор в запись отчёта, когда он включён (totalCost — без сбора)", () => {
+    useStore.setState((s) => ({
+      settings: {
+        ...s.settings,
+        serviceChargeEnabled: true,
+        serviceChargePercent: 10,
+      },
+    }));
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     useStore.getState().endSession(1, T0 + HOUR); // стол 1000
     const rec = useStore.getState().sessionHistory.at(-1)!;
     expect(rec.serviceCharge).toBe(100); // 10% от 1000
-    expect(rec.totalCost).toBe(1000);    // totalCost остаётся без сбора
+    expect(rec.totalCost).toBe(1000); // totalCost остаётся без сбора
   });
 
-  it('сервисный сбор = 0, когда обслуживание выключено', () => {
-    useStore.getState().startSession(1, 'unlimited');
+  it("сервисный сбор = 0, когда обслуживание выключено", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     useStore.getState().endSession(1, T0 + HOUR);
     expect(useStore.getState().sessionHistory.at(-1)!.serviceCharge).toBe(0);
   });
 });
 
-describe('пауза/возобновление', () => {
-  it('исключает время паузы из длительности и стоимости', () => {
+describe("пауза/возобновление", () => {
+  it("исключает время паузы из длительности и стоимости", () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(T0);
-      useStore.getState().startSession(1, 'unlimited');
+      useStore.getState().startSession(1, "unlimited");
 
       vi.setSystemTime(T0 + 30 * 60_000); // +30 мин игры
       useStore.getState().pauseSession(1);
-      expect(useStore.getState().tables[0].currentSession!.pausedAt).toBe(T0 + 30 * 60_000);
+      expect(useStore.getState().tables[0].currentSession!.pausedAt).toBe(
+        T0 + 30 * 60_000,
+      );
 
       vi.setSystemTime(T0 + 40 * 60_000); // пауза 10 мин
       useStore.getState().resumeSession(1);
@@ -201,9 +240,9 @@ describe('пауза/возобновление', () => {
   });
 });
 
-describe('бар', () => {
-  it('добавляет заказ к столу, списывает склад и учитывает в итоге', () => {
-    useStore.getState().startSession(1, 'unlimited');
+describe("бар", () => {
+  it("добавляет заказ к столу, списывает склад и учитывает в итоге", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     const drink = useStore.getState().barMenu[0];
     useStore.getState().addBarOrderToTable(1, drink, 2, { silent: true });
@@ -219,19 +258,47 @@ describe('бар', () => {
     expect(rec.totalCost).toBe(2000); // 1000 стол + 1000 бар
   });
 
-  it('priceOverride=0 (продукт из пакета тарифа) не добавляет к сумме бара', () => {
-    useStore.getState().startSession(1, 'unlimited');
+  it("priceOverride=0 (продукт из пакета тарифа) не добавляет к сумме бара", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     const drink = useStore.getState().barMenu[0];
-    useStore.getState().addBarOrderToTable(1, drink, 1, { priceOverride: 0, silent: true });
+    useStore
+      .getState()
+      .addBarOrderToTable(1, drink, 1, { priceOverride: 0, silent: true });
     useStore.getState().endSession(1, T0 + HOUR);
     expect(useStore.getState().sessionHistory[0].barCost).toBe(0);
   });
+
+  it("отменяет позицию в открытом заказе без стола и возвращает её на склад", () => {
+    const drink = useStore.getState().barMenu[0];
+    useStore
+      .getState()
+      .createBarOrder(null, [{ menuItem: drink, quantity: 2 }], {
+        label: "Заказ 1",
+      });
+
+    const order = useStore.getState().barOrders[0];
+    expect(order.items).toHaveLength(1);
+    expect(useStore.getState().barMenu[0].stock).toBe(8);
+
+    const ok = useStore
+      .getState()
+      .cancelOpenWalkInItem(order.id, order.items[0].id, {
+        authorizedById: "u1",
+        authorizedByName: "Оператор",
+        reason: "Ошибка официанта",
+      });
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().barOrders).toHaveLength(0);
+    expect(useStore.getState().barMenu[0].stock).toBe(10);
+    expect(useStore.getState().cancelLog[0].source).toBe("open-walkin");
+  });
 });
 
-describe('выручка за день', () => {
-  it('getTodayRevenue и getTodaySessions учитывают завершённые сегодня сессии', () => {
-    useStore.getState().startSession(1, 'unlimited');
+describe("выручка за день", () => {
+  it("getTodayRevenue и getTodaySessions учитывают завершённые сегодня сессии", () => {
+    useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
     const drink = useStore.getState().barMenu[0];
     useStore.getState().addBarOrderToTable(1, drink, 1, { silent: true }); // +500 бар
@@ -245,17 +312,17 @@ describe('выручка за день', () => {
   });
 });
 
-describe('смены', () => {
-  it('startShift открывает смену для текущего пользователя', () => {
+describe("смены", () => {
+  it("startShift открывает смену для текущего пользователя", () => {
     useStore.getState().startShift();
     const shift = useStore.getState().currentShift;
     expect(shift).not.toBeNull();
     expect(shift!.isActive).toBe(true);
-    expect(shift!.userName).toBe('Оператор');
+    expect(shift!.userName).toBe("Оператор");
     expect(shift!.endTime).toBeNull();
   });
 
-  it('endShift закрывает смену и переносит её в историю', () => {
+  it("endShift закрывает смену и переносит её в историю", () => {
     useStore.getState().startShift();
     useStore.getState().endShift();
     expect(useStore.getState().currentShift).toBeNull();
@@ -265,7 +332,7 @@ describe('смены', () => {
     expect(closed.endTime).not.toBeNull();
   });
 
-  it('startShift без пользователя не создаёт смену', () => {
+  it("startShift без пользователя не создаёт смену", () => {
     useStore.setState({ currentUser: null });
     useStore.getState().startShift();
     expect(useStore.getState().currentShift).toBeNull();

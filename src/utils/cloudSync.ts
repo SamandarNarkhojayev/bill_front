@@ -22,24 +22,24 @@
  *   cloudSync.onCommand(fn)                  // регистрирует обработчик команд от веба
  */
 
-import type { BilliardTable, SessionRecord, Reservation } from '../types';
-import { calculatePausedSessionCost } from './pricing';
+import type { BilliardTable, SessionRecord, Reservation } from "../types";
+import { calculatePausedSessionCost } from "./pricing";
 
-const STORAGE_KEY_TOKEN = 'cloudSync.token';
-const STORAGE_KEY_CLUB_ID = 'cloudSync.clubId';
-const STORAGE_KEY_PHONE = 'cloudSync.phone';
-const STORAGE_KEY_API_URL = 'cloudSync.apiUrl';
-const STORAGE_KEY_WS_URL = 'cloudSync.wsUrl';
+const STORAGE_KEY_TOKEN = "cloudSync.token";
+const STORAGE_KEY_CLUB_ID = "cloudSync.clubId";
+const STORAGE_KEY_PHONE = "cloudSync.phone";
+const STORAGE_KEY_API_URL = "cloudSync.apiUrl";
+const STORAGE_KEY_WS_URL = "cloudSync.wsUrl";
 
-const DEFAULT_API_URL = 'https://biliardo.kz/api';
-const DEFAULT_WS_URL = 'wss://biliardo.kz/club-ws';
+const DEFAULT_API_URL = "https://biliardo.kz/api";
+const DEFAULT_WS_URL = "wss://biliardo.kz/club-ws";
 const SYNC_INTERVAL_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const WS_RECONNECT_BASE_MS = 2_000;
 const WS_RECONNECT_MAX_MS = 60_000;
 
-type SessionMode = 'time' | 'amount' | 'unlimited';
-type TableStatusOut = 'free' | 'occupied' | 'reserved' | 'maintenance';
+type SessionMode = "time" | "amount" | "unlimited";
+type TableStatusOut = "free" | "occupied" | "reserved" | "maintenance";
 
 interface TableSessionOut {
   startTime: number;
@@ -113,7 +113,8 @@ interface SessionPayload {
   date: string;
   barOrders?: BarOrderOut[];
   shiftId?: string | null;
-  paymentMethod?: 'cash' | 'card' | 'transfer';
+  paymentMethod?: "cash" | "card" | "transfer";
+  paymentBreakdown?: Partial<Record<"cash" | "card" | "transfer", number>>;
 }
 
 interface AuthResponse {
@@ -134,24 +135,28 @@ interface SyncStatus {
 
 // ===== Команды от веба =====
 export type IncomingCommand =
-  | { type: 'TABLE_TOGGLE_LIGHT'; tableId: number; commandId: string }
+  | { type: "TABLE_TOGGLE_LIGHT"; tableId: number; commandId: string }
   | {
-      type: 'TABLE_START_SESSION'
-      tableId: number
-      commandId: string
+      type: "TABLE_START_SESSION";
+      tableId: number;
+      commandId: string;
       payload?: {
-        mode?: SessionMode
-        hours?: number
-        minutes?: number
-        amount?: number
-        plannedDurationSeconds?: number
-        packagePrice?: number
-        tariffName?: string
-      }
+        mode?: SessionMode;
+        hours?: number;
+        minutes?: number;
+        amount?: number;
+        plannedDurationSeconds?: number;
+        packagePrice?: number;
+        tariffName?: string;
+      };
     }
-  | { type: 'TABLE_END_SESSION'; tableId: number; commandId: string };
+  | { type: "TABLE_END_SESSION"; tableId: number; commandId: string };
 
-type CommandHandler = (cmd: IncomingCommand) => Promise<{ ok: true; newStatus: TableStatusOut } | { ok: false; error: string }>;
+type CommandHandler = (
+  cmd: IncomingCommand,
+) => Promise<
+  { ok: true; newStatus: TableStatusOut } | { ok: false; error: string }
+>;
 
 // ===== Состояние =====
 const listeners = new Set<(status: SyncStatus) => void>();
@@ -188,7 +193,9 @@ function emit(): void {
 try {
   localStorage.removeItem(STORAGE_KEY_API_URL);
   localStorage.removeItem(STORAGE_KEY_WS_URL);
-} catch { /* localStorage недоступен — игнорируем */ }
+} catch {
+  /* localStorage недоступен — игнорируем */
+}
 
 function getApiUrl(): string {
   return DEFAULT_API_URL;
@@ -199,8 +206,12 @@ function getWsUrl(): string {
 }
 
 // Публичные геттеры для UI/диагностики.
-export function getCurrentApiUrl(): string { return getApiUrl(); }
-export function getCurrentWsUrl(): string { return getWsUrl(); }
+export function getCurrentApiUrl(): string {
+  return getApiUrl();
+}
+export function getCurrentWsUrl(): string {
+  return getWsUrl();
+}
 
 function getClubId(): string | null {
   return localStorage.getItem(STORAGE_KEY_CLUB_ID);
@@ -212,13 +223,13 @@ function getToken(): string | null {
 
 function getClubName(): string | null {
   // clubName приходит при login. Если token есть, но clubName потерян — не критично.
-  return localStorage.getItem('cloudSync.clubName');
+  return localStorage.getItem("cloudSync.clubName");
 }
 
 function clearAuth(): void {
   localStorage.removeItem(STORAGE_KEY_TOKEN);
   localStorage.removeItem(STORAGE_KEY_CLUB_ID);
-  localStorage.removeItem('cloudSync.clubName');
+  localStorage.removeItem("cloudSync.clubName");
   lastSyncAt = null;
   lastError = null;
   disconnectWs();
@@ -226,16 +237,19 @@ function clearAuth(): void {
 }
 
 // ===== HTTP помощник =====
-async function request(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<Response> {
+async function request(
+  path: string,
+  init: RequestInit & { auth?: boolean } = {},
+): Promise<Response> {
   const { auth = true, headers, ...rest } = init;
   const finalHeaders = new Headers(headers);
-  if (!finalHeaders.has('Content-Type') && rest.body) {
-    finalHeaders.set('Content-Type', 'application/json');
+  if (!finalHeaders.has("Content-Type") && rest.body) {
+    finalHeaders.set("Content-Type", "application/json");
   }
   if (auth) {
     const token = getToken();
-    if (!token) throw new Error('Not logged in to cloud');
-    finalHeaders.set('Authorization', `Bearer ${token}`);
+    if (!token) throw new Error("Not logged in to cloud");
+    finalHeaders.set("Authorization", `Bearer ${token}`);
   }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -251,30 +265,36 @@ async function request(path: string, init: RequestInit & { auth?: boolean } = {}
 }
 
 // ===== Login =====
-export async function login(phone: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function login(
+  phone: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const res = await request('/club/auth', {
-      method: 'POST',
+    const res = await request("/club/auth", {
+      method: "POST",
       auth: false,
       body: JSON.stringify({ phone, password }),
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { code?: string; message?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        message?: string;
+      };
       const msg = body.message || body.code || `HTTP ${res.status}`;
       lastError = msg;
       emit();
       return { ok: false, error: msg };
     }
-    const data = await res.json() as AuthResponse;
+    const data = (await res.json()) as AuthResponse;
     localStorage.setItem(STORAGE_KEY_TOKEN, data.token);
     localStorage.setItem(STORAGE_KEY_CLUB_ID, data.clubId);
-    localStorage.setItem('cloudSync.clubName', data.clubName);
+    localStorage.setItem("cloudSync.clubName", data.clubName);
     localStorage.setItem(STORAGE_KEY_PHONE, phone);
     lastError = null;
     emit();
     return { ok: true };
   } catch (err) {
-    const msg = (err as Error).message || 'Network error';
+    const msg = (err as Error).message || "Network error";
     lastError = msg;
     emit();
     return { ok: false, error: msg };
@@ -287,7 +307,10 @@ export function logout(): void {
 }
 
 // ===== Маппинг локальных типов → серверный контракт =====
-function mapTables(tables: BilliardTable[], reservations: Reservation[]): TableSnapshotOut[] {
+function mapTables(
+  tables: BilliardTable[],
+  reservations: Reservation[],
+): TableSnapshotOut[] {
   const now = Date.now();
   return tables.map((t) => {
     const session = t.currentSession;
@@ -297,23 +320,35 @@ function mapTables(tables: BilliardTable[], reservations: Reservation[]): TableS
           mode: session.mode,
           plannedDuration: session.plannedDuration,
           tariffName: session.tariffName ?? null,
-          currentTableCost: typeof session.packagePrice === 'number' && Number.isFinite(session.packagePrice)
-            ? Math.round(session.packagePrice)
-            : Math.round(calculatePausedSessionCost(
-                session.startTime, now,
-                t.pricePerHour, t.priceSchedule,
-                session.mode, session.fixedAmount, session.packagePrice,
-                session.pauseIntervals,
-              )),
+          currentTableCost:
+            typeof session.packagePrice === "number" &&
+            Number.isFinite(session.packagePrice)
+              ? Math.round(session.packagePrice)
+              : Math.round(
+                  calculatePausedSessionCost(
+                    session.startTime,
+                    now,
+                    t.pricePerHour,
+                    t.priceSchedule,
+                    session.mode,
+                    session.fixedAmount,
+                    session.packagePrice,
+                    session.pauseIntervals,
+                  ),
+                ),
           currentBarCost: Math.round(
-            session.barOrders.reduce((sum, o) => sum + (o.price * o.quantity || 0), 0),
+            session.barOrders.reduce(
+              (sum, o) => sum + (o.price * o.quantity || 0),
+              0,
+            ),
           ),
           paused: !!session.pausedAt,
         }
       : null;
-    const reservation = t.status === 'reserved'
-      ? reservations.find((r) => r.tableId === t.id) ?? null
-      : null;
+    const reservation =
+      t.status === "reserved"
+        ? (reservations.find((r) => r.tableId === t.id) ?? null)
+        : null;
     return {
       id: t.id,
       name: t.name,
@@ -336,11 +371,14 @@ function mapTables(tables: BilliardTable[], reservations: Reservation[]): TableS
 function todayRevenue(sessionHistory: SessionRecord[]): ClubRevenueOut {
   const today = new Date();
   const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, '0');
-  const d = String(today.getDate()).padStart(2, '0');
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
   const todayStr = `${y}-${m}-${d}`;
   const todaySessions = sessionHistory.filter((s) => s.date === todayStr);
-  const tableSum = todaySessions.reduce((sum, s) => sum + (s.tableCost || 0), 0);
+  const tableSum = todaySessions.reduce(
+    (sum, s) => sum + (s.tableCost || 0),
+    0,
+  );
   const barSum = todaySessions.reduce((sum, s) => sum + (s.barCost || 0), 0);
   return {
     table: tableSum,
@@ -354,7 +392,13 @@ function todayRevenue(sessionHistory: SessionRecord[]): ClubRevenueOut {
  * Регистрирует провайдер, который cloudSync будет вызывать при каждом auto-sync,
  * чтобы получить актуальный snapshot. Обычно подключается из App.tsx с доступом к store.
  */
-export function setSnapshotProvider(fn: () => { tables: BilliardTable[]; sessionHistory: SessionRecord[]; reservations: Reservation[] } | null): void {
+export function setSnapshotProvider(
+  fn: () => {
+    tables: BilliardTable[];
+    sessionHistory: SessionRecord[];
+    reservations: Reservation[];
+  } | null,
+): void {
   snapshotProvider = () => {
     try {
       const s = fn();
@@ -364,47 +408,57 @@ export function setSnapshotProvider(fn: () => { tables: BilliardTable[]; session
         todayRevenue: todayRevenue(s.sessionHistory),
       };
     } catch (err) {
-      console.warn('[cloudSync] snapshotProvider fn threw:', err);
+      console.warn("[cloudSync] snapshotProvider fn threw:", err);
       return null;
     }
   };
-  console.log('[cloudSync] snapshotProvider registered');
+  console.log("[cloudSync] snapshotProvider registered");
 }
 
 // ===== Sync snapshot =====
 export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
   // Все ранние выходы теперь пишут в lastError и emit-ят, чтобы UI показывал причину.
   if (!snapshotProvider) {
-    lastError = 'snapshot provider not set (App.tsx не зарегистрировал)';
+    lastError = "snapshot provider not set (App.tsx не зарегистрировал)";
     emit();
     return { ok: false, error: lastError };
   }
   if (!getToken()) {
-    lastError = 'not logged in';
+    lastError = "not logged in";
     emit();
     return { ok: false, error: lastError };
   }
   const payload = snapshotProvider();
   if (!payload) {
-    lastError = 'snapshot provider вернул null';
+    lastError = "snapshot provider вернул null";
     emit();
     return { ok: false, error: lastError };
   }
 
   const url = `${getApiUrl()}/club/sync`;
   try {
-    const res = await request('/club/sync', {
-      method: 'POST',
+    const res = await request("/club/sync", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       if (res.status === 401) {
         clearAuth();
-        return { ok: false, error: 'token expired — please re-login' };
+        return { ok: false, error: "token expired — please re-login" };
       }
-      const body = await res.json().catch(() => ({})) as { message?: string; code?: string };
-      lastError = `${res.status}: ${body.message || body.code || 'sync failed'}`;
-      console.warn('[cloudSync] sync HTTP error', res.status, 'url:', url, 'body:', body);
+      const body = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        code?: string;
+      };
+      lastError = `${res.status}: ${body.message || body.code || "sync failed"}`;
+      console.warn(
+        "[cloudSync] sync HTTP error",
+        res.status,
+        "url:",
+        url,
+        "body:",
+        body,
+      );
       emit();
       return { ok: false, error: lastError };
     }
@@ -416,8 +470,8 @@ export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
     await flushPendingShifts();
     return { ok: true };
   } catch (err) {
-    lastError = (err as Error).message || 'network error';
-    console.warn('[cloudSync] sync network/fetch error to', url, err);
+    lastError = (err as Error).message || "network error";
+    console.warn("[cloudSync] sync network/fetch error to", url, err);
     emit();
     return { ok: false, error: lastError };
   }
@@ -427,7 +481,9 @@ export function startAutoSync(): void {
   if (syncTimer) return;
   // Первый sync — сразу, потом каждые SYNC_INTERVAL_MS.
   void syncNow();
-  syncTimer = setInterval(() => { void syncNow(); }, SYNC_INTERVAL_MS);
+  syncTimer = setInterval(() => {
+    void syncNow();
+  }, SYNC_INTERVAL_MS);
   // Подключаемся к WS для real-time управления с веба.
   connectWs();
 }
@@ -445,7 +501,9 @@ export function stopAutoSync(): void {
 /** Регистрирует обработчик команд от веба. Возвращает функцию отписки. */
 export function onCommand(handler: CommandHandler): () => void {
   commandHandler = handler;
-  return () => { if (commandHandler === handler) commandHandler = null; };
+  return () => {
+    if (commandHandler === handler) commandHandler = null;
+  };
 }
 
 /**
@@ -458,12 +516,16 @@ export function broadcastSync(): void {
   const payload = snapshotProvider();
   if (!payload) return;
   try {
-    ws.send(JSON.stringify({
-      type: 'SYNC',
-      tables: payload.tables,
-      revenue: payload.todayRevenue,
-    }));
-  } catch { /* ignore */ }
+    ws.send(
+      JSON.stringify({
+        type: "SYNC",
+        tables: payload.tables,
+        revenue: payload.todayRevenue,
+      }),
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 // Коалесцирующий планировщик для «горячего» пути (подписка на каждое изменение столов).
@@ -485,18 +547,22 @@ function connectWs(): void {
   const token = getToken();
   const clubId = getClubId();
   if (!token || !clubId) return;
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (
+    ws &&
+    (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+  )
+    return;
 
   const base = getWsUrl();
   const url = `${base}/club/${clubId}?token=${encodeURIComponent(token)}`;
-  console.log('[cloudSync] WS connecting →', `${base}/club/${clubId}`);
+  console.log("[cloudSync] WS connecting →", `${base}/club/${clubId}`);
 
   let thisWs: WebSocket;
   try {
     thisWs = new WebSocket(url);
     ws = thisWs;
   } catch (err) {
-    console.warn('[cloudSync] WS construct failed:', err);
+    console.warn("[cloudSync] WS construct failed:", err);
     lastError = `WS construct error: ${(err as Error).message}`;
     emit();
     scheduleReconnect();
@@ -509,7 +575,7 @@ function connectWs(): void {
     if (ws !== thisWs) return;
     wsConnected = true;
     wsRetryAttempt = 0;
-    console.log('[cloudSync] WS open ✓');
+    console.log("[cloudSync] WS open ✓");
     emit();
     // Отправляем актуальный snapshot сразу — веб увидит свежее состояние.
     broadcastSync();
@@ -517,19 +583,35 @@ function connectWs(): void {
 
   thisWs.onmessage = async (ev) => {
     let msg: unknown;
-    try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()); }
-    catch { return; }
-    if (!msg || typeof msg !== 'object' || !('type' in msg)) return;
-    const m = msg as { type: string; commandId?: string; tableId?: number; payload?: { mode?: SessionMode }; code?: string };
+    try {
+      msg = JSON.parse(
+        typeof ev.data === "string" ? ev.data : ev.data.toString(),
+      );
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg !== "object" || !("type" in msg)) return;
+    const m = msg as {
+      type: string;
+      commandId?: string;
+      tableId?: number;
+      payload?: { mode?: SessionMode };
+      code?: string;
+    };
 
-    if (m.type === 'TABLE_TOGGLE_LIGHT' || m.type === 'TABLE_START_SESSION' || m.type === 'TABLE_END_SESSION') {
-      if (typeof m.commandId !== 'string' || typeof m.tableId !== 'number') return;
+    if (
+      m.type === "TABLE_TOGGLE_LIGHT" ||
+      m.type === "TABLE_START_SESSION" ||
+      m.type === "TABLE_END_SESSION"
+    ) {
+      if (typeof m.commandId !== "string" || typeof m.tableId !== "number")
+        return;
       if (!commandHandler) {
         sendWs({
-          type: 'COMMAND_ACK',
+          type: "COMMAND_ACK",
           commandId: m.commandId,
           tableId: m.tableId,
-          newStatus: 'free',
+          newStatus: "free",
         });
         return;
       }
@@ -538,13 +620,13 @@ function connectWs(): void {
       // Текущий статус берём из snapshotProvider'а (он отражает локальный store).
       const getCurrentTableStatus = (): TableStatusOut => {
         const snap = snapshotProvider ? snapshotProvider() : null;
-        return snap?.tables.find((t) => t.id === m.tableId)?.status ?? 'free';
+        return snap?.tables.find((t) => t.id === m.tableId)?.status ?? "free";
       };
       try {
         const result = await commandHandler(m as IncomingCommand);
         if (result.ok) {
           sendWs({
-            type: 'COMMAND_ACK',
+            type: "COMMAND_ACK",
             commandId: m.commandId,
             tableId: m.tableId,
             newStatus: result.newStatus,
@@ -552,16 +634,16 @@ function connectWs(): void {
           broadcastSync();
         } else {
           sendWs({
-            type: 'COMMAND_ACK',
+            type: "COMMAND_ACK",
             commandId: m.commandId,
             tableId: m.tableId,
             newStatus: getCurrentTableStatus(),
           });
         }
       } catch (err) {
-        console.warn('[cloudSync] command handler error:', err);
+        console.warn("[cloudSync] command handler error:", err);
         sendWs({
-          type: 'COMMAND_ACK',
+          type: "COMMAND_ACK",
           commandId: m.commandId,
           tableId: m.tableId,
           newStatus: getCurrentTableStatus(),
@@ -569,13 +651,13 @@ function connectWs(): void {
       }
       return;
     }
-    if (m.type === 'ERROR') {
-      console.warn('[cloudSync] WS error:', m.code, m);
+    if (m.type === "ERROR") {
+      console.warn("[cloudSync] WS error:", m.code, m);
     }
   };
 
   thisWs.onerror = (ev) => {
-    console.warn('[cloudSync] WS error event:', ev);
+    console.warn("[cloudSync] WS error event:", ev);
   };
 
   thisWs.onclose = (ev) => {
@@ -590,10 +672,13 @@ function connectWs(): void {
     }
     if (ev.code !== 1000) {
       const reason = ev.reason || `code ${ev.code}`;
-      console.warn('[cloudSync] WS closed:', reason);
+      console.warn("[cloudSync] WS closed:", reason);
       lastError = `WS: ${reason}`;
     } else {
-      console.log('[cloudSync] WS closed normally', wasIntentional ? '(intentional)' : '(server-side)');
+      console.log(
+        "[cloudSync] WS closed normally",
+        wasIntentional ? "(intentional)" : "(server-side)",
+      );
     }
     emit();
     // Не реконнектимся если МЫ сами закрыли (logout, stopAutoSync, HMR unmount).
@@ -606,7 +691,11 @@ function connectWs(): void {
 
 function sendWs(msg: object): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  try { ws.send(JSON.stringify(msg)); } catch { /* ignore */ }
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch {
+    /* ignore */
+  }
 }
 
 function disconnectWs(): void {
@@ -617,7 +706,11 @@ function disconnectWs(): void {
   if (ws) {
     // Помечаем "сами закрываем" — onclose не запустит reconnect.
     wsClosingIntentionally = true;
-    try { ws.close(1000, 'desktop logout'); } catch { /* ignore */ }
+    try {
+      ws.close(1000, "desktop logout");
+    } catch {
+      /* ignore */
+    }
     ws = null;
   }
   wsConnected = false;
@@ -630,7 +723,10 @@ function scheduleReconnect(): void {
   if (!getToken()) return;
   if (wsReconnectTimer) return;
   wsRetryAttempt++;
-  const delay = Math.min(WS_RECONNECT_BASE_MS * Math.pow(2, wsRetryAttempt - 1), WS_RECONNECT_MAX_MS);
+  const delay = Math.min(
+    WS_RECONNECT_BASE_MS * Math.pow(2, wsRetryAttempt - 1),
+    WS_RECONNECT_MAX_MS,
+  );
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null;
     connectWs();
@@ -638,7 +734,10 @@ function scheduleReconnect(): void {
 }
 
 // ===== Push session (по завершении) =====
-function recordToPayload(r: SessionRecord, shiftId: string | null): SessionPayload {
+function recordToPayload(
+  r: SessionRecord,
+  shiftId: string | null,
+): SessionPayload {
   const barOrders: BarOrderOut[] = (r.barOrders ?? []).map((o) => ({
     menuItemName: o.menuItemName,
     quantity: o.quantity,
@@ -660,15 +759,19 @@ function recordToPayload(r: SessionRecord, shiftId: string | null): SessionPaylo
     barOrders: barOrders.length > 0 ? barOrders : undefined,
     shiftId: shiftId ?? undefined,
     paymentMethod: r.paymentMethod ?? undefined,
+    paymentBreakdown: r.paymentBreakdown ?? undefined,
   };
 }
 
-export async function pushSession(record: SessionRecord, shiftId?: string | null): Promise<void> {
+export async function pushSession(
+  record: SessionRecord,
+  shiftId?: string | null,
+): Promise<void> {
   if (!getToken()) return; // не залогинены — нечего слать
   const payload = recordToPayload(record, shiftId ?? null);
   try {
-    const res = await request('/club/session', {
-      method: 'POST',
+    const res = await request("/club/session", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
     if (res.ok || res.status === 409) {
@@ -695,8 +798,8 @@ async function flushPendingSessions(): Promise<void> {
   pendingSessions.length = 0;
   for (const p of toFlush) {
     try {
-      const res = await request('/club/session', {
-        method: 'POST',
+      const res = await request("/club/session", {
+        method: "POST",
         body: JSON.stringify(p),
       });
       if (!res.ok && res.status !== 409 && res.status !== 401) {
@@ -717,8 +820,8 @@ async function flushPendingSessions(): Promise<void> {
 export async function pushShift(payload: ShiftPayload): Promise<void> {
   if (!getToken()) return;
   try {
-    const res = await request('/club/shift', {
-      method: 'POST',
+    const res = await request("/club/shift", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
     if (res.ok) {
@@ -731,11 +834,11 @@ export async function pushShift(payload: ShiftPayload): Promise<void> {
       return;
     }
     // Иначе — буферим до следующего sync (последняя версия по id побеждает).
-    console.warn('[cloudSync] pushShift failed:', res.status);
+    console.warn("[cloudSync] pushShift failed:", res.status);
     pendingShifts.set(payload.id, payload);
     emit();
   } catch (err) {
-    console.warn('[cloudSync] pushShift network error:', err);
+    console.warn("[cloudSync] pushShift network error:", err);
     pendingShifts.set(payload.id, payload);
     emit();
   }
@@ -746,8 +849,8 @@ async function flushPendingShifts(): Promise<void> {
   const toFlush = Array.from(pendingShifts.values());
   for (const p of toFlush) {
     try {
-      const res = await request('/club/shift', {
-        method: 'POST',
+      const res = await request("/club/shift", {
+        method: "POST",
         body: JSON.stringify(p),
       });
       if (res.ok) {
@@ -779,7 +882,9 @@ export function getStatus(): SyncStatus {
 export function subscribe(fn: (status: SyncStatus) => void): () => void {
   listeners.add(fn);
   fn(getStatus());
-  return () => { listeners.delete(fn); };
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 export const cloudSync = {

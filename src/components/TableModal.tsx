@@ -1,58 +1,120 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { X, Plus, Minus, ShoppingCart, Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot, Search, LayoutGrid, UtensilsCrossed } from 'lucide-react';
-import { useShallow } from 'zustand/react/shallow';
-import { useStore } from '../store/useStore';
-import { useT } from '../i18n';
-import type { BarMenuItem } from '../types';
-import { printKitchenTicket } from '../utils/receipt';
-import { getItemDepartment } from '../utils/department';
-import { useModalKeyboard } from '../hooks/useModalKeyboard';
+import React, { useMemo, useRef, useState } from "react";
+import {
+  X,
+  Plus,
+  Minus,
+  ShoppingCart,
+  Coffee,
+  Wine,
+  Sandwich,
+  Wind,
+  Beer,
+  Package,
+  Tag,
+  CircleDot,
+  Search,
+  LayoutGrid,
+  UtensilsCrossed,
+} from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { useStore } from "../store/useStore";
+import { useT } from "../i18n";
+import type { BarMenuItem } from "../types";
+import { printKitchenTicket } from "../utils/receipt";
+import { getItemDepartment } from "../utils/department";
+import { useModalKeyboard } from "../hooks/useModalKeyboard";
 
-const iconMap: Record<string, React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
-  Coffee, Wine, Sandwich, Wind, Beer, Package, Tag, CircleDot,
+const iconMap: Record<
+  string,
+  React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>
+> = {
+  Coffee,
+  Wine,
+  Sandwich,
+  Wind,
+  Beer,
+  Package,
+  Tag,
+  CircleDot,
 };
 const getIconComponent = (iconName: string) => iconMap[iconName] || Package;
 
 const TableModal: React.FC = () => {
-  const { activeModal, modalData, closeModal, barMenu, barCategories, addBarOrderToTable, tables, settings, addToast } =
-    useStore(useShallow((s) => ({
-      activeModal: s.activeModal, modalData: s.modalData, closeModal: s.closeModal,
-      barMenu: s.barMenu, barCategories: s.barCategories, addBarOrderToTable: s.addBarOrderToTable,
-      tables: s.tables, settings: s.settings, addToast: s.addToast,
-    })));
+  const {
+    activeModal,
+    modalData,
+    closeModal,
+    barMenu,
+    barCategories,
+    addBarOrderToTable,
+    createBarOrder,
+    tables,
+    settings,
+    addToast,
+  } = useStore(
+    useShallow((s) => ({
+      activeModal: s.activeModal,
+      modalData: s.modalData,
+      closeModal: s.closeModal,
+      barMenu: s.barMenu,
+      barCategories: s.barCategories,
+      addBarOrderToTable: s.addBarOrderToTable,
+      createBarOrder: s.createBarOrder,
+      tables: s.tables,
+      settings: s.settings,
+      addToast: s.addToast,
+    })),
+  );
   const { t } = useT();
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   // Защита от двойного клика по «Добавить к счёту» (ref обновляется синхронно).
   const submittingRef = useRef(false);
   // 'all' | 'dept:bar' | 'dept:kitchen' | <categoryId>
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [query, setQuery] = useState("");
 
   const sortedCategories = useMemo(
     () => [...barCategories].sort((a, b) => a.sortOrder - b.sortOrder),
-    [barCategories]
+    [barCategories],
   );
 
   const filteredMenu = useMemo(() => {
     const q = query.trim().toLowerCase();
     return barMenu.filter((i) => {
       if (!i.available) return false;
-      if (activeCategory === 'dept:bar' && getItemDepartment(i, barCategories) !== 'bar') return false;
-      else if (activeCategory === 'dept:kitchen' && getItemDepartment(i, barCategories) !== 'kitchen') return false;
-      else if (activeCategory !== 'all' && !activeCategory.startsWith('dept:') && i.categoryId !== activeCategory)
+      if (
+        activeCategory === "dept:bar" &&
+        getItemDepartment(i, barCategories) !== "bar"
+      )
+        return false;
+      else if (
+        activeCategory === "dept:kitchen" &&
+        getItemDepartment(i, barCategories) !== "kitchen"
+      )
+        return false;
+      else if (
+        activeCategory !== "all" &&
+        !activeCategory.startsWith("dept:") &&
+        i.categoryId !== activeCategory
+      )
         return false;
       if (q && !i.name.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [barMenu, barCategories, activeCategory, query]);
 
-  useModalKeyboard({ active: activeModal === 'bar-order' && !!modalData, onEscape: closeModal });
+  useModalKeyboard({
+    active: activeModal === "bar-order" && !!modalData,
+    onEscape: closeModal,
+  });
 
-  if (activeModal !== 'bar-order' || !modalData) return null;
+  if (activeModal !== "bar-order" || !modalData) return null;
 
-  const tableId = modalData.tableId as number;
-  const table = tables.find((t) => t.id === tableId);
-  if (!table) return null;
+  const tableId = modalData.tableId as number | undefined;
+  const walkInLabel = modalData.walkInLabel as string | undefined;
+  const table = tableId != null ? tables.find((t) => t.id === tableId) : null;
+  if (!table && !walkInLabel) return null;
+  const displayName = walkInLabel ?? table!.name;
 
   const addToCart = (item: BarMenuItem) => {
     setCart((prev) => {
@@ -77,7 +139,10 @@ const TableModal: React.FC = () => {
     return sum + (item ? item.price * qty : 0);
   }, 0);
 
-  const cartCount = Array.from(cart.values()).reduce((sum, qty) => sum + qty, 0);
+  const cartCount = Array.from(cart.values()).reduce(
+    (sum, qty) => sum + qty,
+    0,
+  );
 
   const handleSubmit = () => {
     if (submittingRef.current) return;
@@ -88,14 +153,14 @@ const TableModal: React.FC = () => {
       const kitchenItems: { name: string; quantity: number }[] = [];
       cart.forEach((qty, itemId) => {
         const item = barMenu.find((i) => i.id === itemId);
-        if (item && getItemDepartment(item, barCategories) === 'kitchen') {
+        if (item && getItemDepartment(item, barCategories) === "kitchen") {
           kitchenItems.push({ name: item.name, quantity: qty });
         }
       });
       if (kitchenItems.length > 0) {
         void printKitchenTicket({
           clubName: settings.clubName,
-          tableName: table.name,
+          tableName: displayName,
           cashierName: settings.receiptCashierName,
           items: kitchenItems,
           receiptWidthMm: settings.receiptWidthMm,
@@ -103,20 +168,34 @@ const TableModal: React.FC = () => {
           receiptPaddingMm: settings.receiptPaddingMm,
           deviceName: settings.kitchenPrinterName,
         }).then((ok) => {
-          if (!ok) addToast('error', t('bar.kitchen_print_failed'));
+          if (!ok) addToast("error", t("bar.kitchen_print_failed"));
         });
       }
     }
-    cart.forEach((qty, itemId) => {
-      const item = barMenu.find((i) => i.id === itemId);
-      if (item) {
-        addBarOrderToTable(tableId, item, qty);
-      }
-    });
+    if (walkInLabel) {
+      const orderItems: {
+        menuItem: (typeof barMenu)[number];
+        quantity: number;
+      }[] = [];
+      cart.forEach((qty, itemId) => {
+        const item = barMenu.find((i) => i.id === itemId);
+        if (item) orderItems.push({ menuItem: item, quantity: qty });
+      });
+      createBarOrder(null, orderItems, { label: walkInLabel });
+    } else {
+      cart.forEach((qty, itemId) => {
+        const item = barMenu.find((i) => i.id === itemId);
+        if (item) {
+          addBarOrderToTable(tableId!, item, qty);
+        }
+      });
+    }
     setCart(new Map());
     closeModal();
     // Снимаем замок после закрытия модалки (следующее открытие — чистое).
-    setTimeout(() => { submittingRef.current = false; }, 0);
+    setTimeout(() => {
+      submittingRef.current = false;
+    }, 0);
   };
 
   return (
@@ -125,7 +204,7 @@ const TableModal: React.FC = () => {
         <div className="modal-header-bar">
           <h2 className="modal-title">
             <ShoppingCart size={20} className="text-amber-400" />
-            {t('bar.title_bar')} — {table.name}
+            {t("bar.title_bar")} — {displayName}
           </h2>
           <button onClick={closeModal} className="modal-close">
             <X size={20} />
@@ -139,12 +218,16 @@ const TableModal: React.FC = () => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('bar.search_placeholder')}
+            placeholder={t("bar.search_placeholder")}
             className="bar-search-input"
             autoFocus
           />
           {query && (
-            <button onClick={() => setQuery('')} className="bar-search-clear" type="button">
+            <button
+              onClick={() => setQuery("")}
+              className="bar-search-clear"
+              type="button"
+            >
               <X size={14} />
             </button>
           )}
@@ -153,27 +236,27 @@ const TableModal: React.FC = () => {
         {/* Категории: первые быстрые фильтры (Все / Бар / Кухня) выделены */}
         <div className="bar-categories">
           <button
-            onClick={() => setActiveCategory('all')}
-            className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'all' ? 'active' : ''}`}
+            onClick={() => setActiveCategory("all")}
+            className={`bar-category-btn bar-category-btn--primary ${activeCategory === "all" ? "active" : ""}`}
           >
             <LayoutGrid size={14} />
-            <span>{t('bar.filter_all')}</span>
+            <span>{t("bar.filter_all")}</span>
           </button>
           {settings.kitchenSeparate && (
             <>
               <button
-                onClick={() => setActiveCategory('dept:bar')}
-                className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'dept:bar' ? 'active' : ''}`}
+                onClick={() => setActiveCategory("dept:bar")}
+                className={`bar-category-btn bar-category-btn--primary ${activeCategory === "dept:bar" ? "active" : ""}`}
               >
                 <Beer size={14} />
-                <span>{t('bar.filter_bar')}</span>
+                <span>{t("bar.filter_bar")}</span>
               </button>
               <button
-                onClick={() => setActiveCategory('dept:kitchen')}
-                className={`bar-category-btn bar-category-btn--primary ${activeCategory === 'dept:kitchen' ? 'active' : ''}`}
+                onClick={() => setActiveCategory("dept:kitchen")}
+                className={`bar-category-btn bar-category-btn--primary ${activeCategory === "dept:kitchen" ? "active" : ""}`}
               >
                 <UtensilsCrossed size={14} />
-                <span>{t('bar.filter_kitchen')}</span>
+                <span>{t("bar.filter_kitchen")}</span>
               </button>
             </>
           )}
@@ -184,8 +267,16 @@ const TableModal: React.FC = () => {
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
-                className={`bar-category-btn ${activeCategory === cat.id ? 'active' : ''}`}
-                style={activeCategory === cat.id ? { background: `${cat.color}20`, color: cat.color, borderColor: `${cat.color}40` } : {}}
+                className={`bar-category-btn ${activeCategory === cat.id ? "active" : ""}`}
+                style={
+                  activeCategory === cat.id
+                    ? {
+                        background: `${cat.color}20`,
+                        color: cat.color,
+                        borderColor: `${cat.color}40`,
+                      }
+                    : {}
+                }
               >
                 <IconComp size={14} />
                 <span>{cat.name}</span>
@@ -198,70 +289,78 @@ const TableModal: React.FC = () => {
         {filteredMenu.length === 0 ? (
           <div className="bar-menu-empty">
             <Search size={28} />
-            <span>{t('bar.nothing_found')}</span>
+            <span>{t("bar.nothing_found")}</span>
           </div>
         ) : (
-        <div className="bar-menu-grid">
-          {filteredMenu.map((item) => {
-            const inCart = cart.get(item.id) || 0;
-            const cat = barCategories.find((c) => c.id === item.categoryId);
-            const IconComp = cat ? getIconComponent(cat.icon) : Package;
-            const isOutOfStock = item.stock === 0;
-            return (
-              <div
-                key={item.id}
-                className={`bar-menu-item ${inCart > 0 ? 'in-cart' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
-              >
-                <div className="bar-menu-item-icon" style={{ background: cat ? `${cat.color}15` : undefined }}>
-                  {item.image ? (
-                    <img src={item.image} alt={item.name} />
-                  ) : (
-                    <IconComp size={30} style={{ color: cat?.color || '#94a3b8' }} />
-                  )}
-                </div>
-                <div className="bar-menu-item-info">
-                  <span className="bar-menu-item-name">{item.name}</span>
-                  <span className="bar-menu-item-price">
-                    {item.price} {settings.currency}
-                  </span>
-                </div>
-                <div className="bar-menu-item-actions">
-                  {inCart > 0 && (
-                    <>
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="bar-qty-btn minus"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="bar-qty">{inCart}</span>
-                    </>
-                  )}
-                  <button
-                    onClick={() => addToCart(item)}
-                    className="bar-qty-btn plus"
+          <div className="bar-menu-grid">
+            {filteredMenu.map((item) => {
+              const inCart = cart.get(item.id) || 0;
+              const cat = barCategories.find((c) => c.id === item.categoryId);
+              const IconComp = cat ? getIconComponent(cat.icon) : Package;
+              const isOutOfStock = item.stock === 0;
+              return (
+                <div
+                  key={item.id}
+                  className={`bar-menu-item ${inCart > 0 ? "in-cart" : ""} ${isOutOfStock ? "out-of-stock" : ""}`}
+                >
+                  <div
+                    className="bar-menu-item-icon"
+                    style={{ background: cat ? `${cat.color}15` : undefined }}
                   >
-                    <Plus size={14} />
-                  </button>
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} />
+                    ) : (
+                      <IconComp
+                        size={30}
+                        style={{ color: cat?.color || "#94a3b8" }}
+                      />
+                    )}
+                  </div>
+                  <div className="bar-menu-item-info">
+                    <span className="bar-menu-item-name">{item.name}</span>
+                    <span className="bar-menu-item-price">
+                      {item.price} {settings.currency}
+                    </span>
+                  </div>
+                  <div className="bar-menu-item-actions">
+                    {inCart > 0 && (
+                      <>
+                        <button
+                          onClick={() => removeFromCart(item.id)}
+                          className="bar-qty-btn minus"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span className="bar-qty">{inCart}</span>
+                      </>
+                    )}
+                    <button
+                      onClick={() => addToCart(item)}
+                      className="bar-qty-btn plus"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         )}
 
         {/* Корзина и подтверждение */}
         {cartCount > 0 && (
           <div className="bar-cart-footer">
             <div className="bar-cart-info">
-              <span className="bar-cart-count">{t('bar.positions_count', { count: cartCount })}</span>
+              <span className="bar-cart-count">
+                {t("bar.positions_count", { count: cartCount })}
+              </span>
               <span className="bar-cart-total">
                 {cartTotal} {settings.currency}
               </span>
             </div>
             <button onClick={handleSubmit} className="btn btn-amber">
               <ShoppingCart size={16} />
-              {t('bar.add_to_bill')}
+              {t("bar.add_to_bill")}
             </button>
           </div>
         )}

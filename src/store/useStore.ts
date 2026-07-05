@@ -1,19 +1,20 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import type { AppStore } from './types';
-import type { BilliardTable, Reservation } from '../types';
-import { defaultUsers } from './defaults';
-import { createAuthSlice } from './slices/authSlice';
-import { createTablesSlice } from './slices/tablesSlice';
-import { createBarSlice } from './slices/barSlice';
-import { createCancelSlice } from './slices/cancelSlice';
-import { createReportsSlice } from './slices/reportsSlice';
-import { createCatalogSlice } from './slices/catalogSlice';
-import { createSettingsSlice } from './slices/settingsSlice';
-import { createUiSlice } from './slices/uiSlice';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import type { AppStore } from "./types";
+import type { BilliardTable, Reservation } from "../types";
+import { defaultUsers } from "./defaults";
+import { createAuthSlice } from "./slices/authSlice";
+import { createTablesSlice } from "./slices/tablesSlice";
+import { createBarSlice } from "./slices/barSlice";
+import { createCancelSlice } from "./slices/cancelSlice";
+import { createPersonnelSlice } from "./slices/personnelSlice";
+import { createReportsSlice } from "./slices/reportsSlice";
+import { createCatalogSlice } from "./slices/catalogSlice";
+import { createSettingsSlice } from "./slices/settingsSlice";
+import { createUiSlice } from "./slices/uiSlice";
 
-const STORAGE_KEY = 'billiard-club-storage';
-const STORAGE_MIRROR_KEY = 'billiard-club-storage-mirror'; // Резервная копия в localStorage
+const STORAGE_KEY = "billiard-club-storage";
+const STORAGE_MIRROR_KEY = "billiard-club-storage-mirror"; // Резервная копия в localStorage
 const STORAGE_VERSION = 0;
 
 const safeLocalStorageGet = (key: string): string | null => {
@@ -59,16 +60,18 @@ const partializeStore = (state: AppStore) => ({
   inventoryRevisions: state.inventoryRevisions,
   sidebarCollapsed: state.sidebarCollapsed,
   users: state.users,
+  personnel: state.personnel,
   shiftHistory: state.shiftHistory,
   reservations: state.reservations,
   tournaments: state.tournaments,
   tariffs: state.tariffs,
 });
 
-const buildPersistedPayload = (state: AppStore) => JSON.stringify({
-  state: partializeStore(state),
-  version: STORAGE_VERSION,
-});
+const buildPersistedPayload = (state: AppStore) =>
+  JSON.stringify({
+    state: partializeStore(state),
+    version: STORAGE_VERSION,
+  });
 
 async function persistStoreSnapshot(forceFlush = false) {
   if (!_hydrationComplete) {
@@ -86,14 +89,14 @@ async function persistStoreSnapshot(forceFlush = false) {
       return;
     }
   } catch (err) {
-    console.error('[Storage] persist snapshot error:', err);
+    console.error("[Storage] persist snapshot error:", err);
   }
 
   safeLocalStorageSet(STORAGE_KEY, payload);
 }
 
 function registerClosePersistHook() {
-  if (_closeHookRegistered || typeof window === 'undefined') {
+  if (_closeHookRegistered || typeof window === "undefined") {
     return;
   }
 
@@ -102,7 +105,7 @@ function registerClosePersistHook() {
   window.electronAPI?.app?.onBeforeClose?.(() => {
     void persistStoreSnapshot(true).finally(() => {
       window.electronAPI?.app?.confirmCloseReady().catch((err: unknown) => {
-        console.error('[Storage] close confirm error:', err);
+        console.error("[Storage] close confirm error:", err);
       });
     });
   });
@@ -113,18 +116,22 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
     try {
       if (window.electronAPI?.store) {
         const value = await window.electronAPI.store.get(name);
-        console.log('[Storage] getItem:', name, value ? `${value.length} bytes` : 'null');
+        console.log(
+          "[Storage] getItem:",
+          name,
+          value ? `${value.length} bytes` : "null",
+        );
         if (value) return value;
       }
     } catch (err) {
-      console.error('[Storage] getItem error:', err);
+      console.error("[Storage] getItem error:", err);
     }
     // Fallback: сначала пробуем основной ключ в localStorage, потом mirror
     const primary = safeLocalStorageGet(name);
     if (primary) return primary;
     const mirror = safeLocalStorageGet(STORAGE_MIRROR_KEY);
     if (mirror) {
-      console.log('[Storage] Восстановлено из localStorage mirror');
+      console.log("[Storage] Восстановлено из localStorage mirror");
       return mirror;
     }
     return null;
@@ -132,7 +139,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
   setItem: async (name: string, value: string): Promise<void> => {
     // КРИТИЧНО: не писать до завершения гидратации, иначе дефолты затрут данные
     if (!_hydrationComplete) {
-      console.log('[Storage] setItem BLOCKED (hydration not complete)');
+      console.log("[Storage] setItem BLOCKED (hydration not complete)");
       return;
     }
 
@@ -145,7 +152,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
         return;
       }
     } catch (err) {
-      console.error('[Storage] setItem error:', err);
+      console.error("[Storage] setItem error:", err);
     }
     // Fallback на localStorage
     safeLocalStorageSet(name, value);
@@ -157,7 +164,7 @@ const electronFileStorage = createJSONStorage<Partial<AppStore>>(() => ({
         return;
       }
     } catch (err) {
-      console.error('[Storage] removeItem error:', err);
+      console.error("[Storage] removeItem error:", err);
     }
     safeLocalStorageRemove(name);
   },
@@ -173,7 +180,7 @@ function flushStorageToDisk() {
   try {
     if (window.electronAPI?.store?.flush) {
       window.electronAPI.store.flush().catch((err: unknown) => {
-        console.error('[AutoSave] Flush error:', err);
+        console.error("[AutoSave] Flush error:", err);
       });
     }
   } catch {
@@ -202,24 +209,24 @@ function startAutoSave() {
   }, 30_000);
 
   // Flush когда вкладка/окно теряет видимость (пользователь свернул или переключился)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && _hydrationComplete) {
-      console.log('[AutoSave] Visibility hidden — flushing...');
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && _hydrationComplete) {
+      console.log("[AutoSave] Visibility hidden — flushing...");
       void persistStoreSnapshot(true);
     }
   });
 
   // Flush при потере фокуса окна
-  window.addEventListener('blur', () => {
+  window.addEventListener("blur", () => {
     if (_hydrationComplete) {
       void persistStoreSnapshot(true);
     }
   });
 
   // Последний шанс — перед закрытием страницы
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener("beforeunload", () => {
     if (_hydrationComplete) {
-      console.log('[AutoSave] beforeunload — flushing...');
+      console.log("[AutoSave] beforeunload — flushing...");
       void persistStoreSnapshot(true);
       flushStorageToDisk();
     }
@@ -239,6 +246,7 @@ export const useStore = create<AppStore>()(
   persist(
     (...a) => ({
       ...createAuthSlice(...a),
+      ...createPersonnelSlice(...a),
       ...createTablesSlice(...a),
       ...createBarSlice(...a),
       ...createCancelSlice(...a),
@@ -255,7 +263,7 @@ export const useStore = create<AppStore>()(
       merge: (persistedState, currentState) => {
         // Если нет сохранённых данных — используем текущее состояние (дефолтное)
         if (!persistedState) {
-          console.log('[Store] No persisted state found, using defaults');
+          console.log("[Store] No persisted state found, using defaults");
           // Свежая установка уже содержит дефолтные бар + кухню (defaultBarMenu).
           return currentState;
         }
@@ -268,8 +276,10 @@ export const useStore = create<AppStore>()(
           merged.settings = {
             ...currentState.settings,
             ...(persisted.settings || {}),
-            currency: 'тг',
-            tables: (persisted.settings?.tables || currentState.settings.tables).map((table) => ({
+            currency: "тг",
+            tables: (
+              persisted.settings?.tables || currentState.settings.tables
+            ).map((table) => ({
               ...table,
               priceSchedule: table.priceSchedule || [],
             })),
@@ -282,7 +292,7 @@ export const useStore = create<AppStore>()(
           if (Array.isArray(merged.barCategories)) {
             merged.barCategories = merged.barCategories.map((c) => ({
               ...c,
-              department: c.department === 'kitchen' ? 'kitchen' : 'bar',
+              department: c.department === "kitchen" ? "kitchen" : "bar",
             }));
           }
 
@@ -304,7 +314,7 @@ export const useStore = create<AppStore>()(
               id: st.id,
               name: st.name,
               relayNumber: st.relayNumber,
-              status: 'free' as const,
+              status: "free" as const,
               lightOn: false,
               pricePerHour: st.pricePerHour,
               priceSchedule: st.priceSchedule || [],
@@ -316,33 +326,38 @@ export const useStore = create<AppStore>()(
             const now = Date.now();
             // Убираем устаревшие брони (старше 24 часов от reservedFor)
             merged.reservations = persisted.reservations.filter(
-              (r: Reservation) => r.reservedFor + 24 * 60 * 60 * 1000 > now
+              (r: Reservation) => r.reservedFor + 24 * 60 * 60 * 1000 > now,
             );
             merged.reservations.forEach((r: Reservation) => {
-              const table = merged.tables.find((t: BilliardTable) => t.id === r.tableId);
-              if (table && table.status === 'free') {
-                table.status = 'reserved';
+              const table = merged.tables.find(
+                (t: BilliardTable) => t.id === r.tableId,
+              );
+              if (table && table.status === "free") {
+                table.status = "reserved";
               }
             });
           }
-          console.log('[Store] Rehydrated from persistent storage');
+          console.log("[Store] Rehydrated from persistent storage");
           return merged as AppStore;
         } catch (err) {
-          console.error('[Store] Merge error, using defaults:', err);
+          console.error("[Store] Merge error, using defaults:", err);
           return currentState;
         }
       },
       onRehydrateStorage: () => {
-        console.log('[Store] Starting rehydration...');
+        console.log("[Store] Starting rehydration...");
         return (state, error) => {
           if (error) {
-            console.error('[Store] Rehydration error:', error);
+            console.error("[Store] Rehydration error:", error);
           } else {
-            console.log('[Store] Rehydration complete, sessions:', state?.sessionHistory?.length ?? 0);
+            console.log(
+              "[Store] Rehydration complete, sessions:",
+              state?.sessionHistory?.length ?? 0,
+            );
           }
           // Разрешаем запись ТОЛЬКО после завершения гидратации
           _hydrationComplete = true;
-          console.log('[Store] Hydration flag set — writes enabled');
+          console.log("[Store] Hydration flag set — writes enabled");
           // Сразу сохраняем результат миграции (бэкфилл отдела категорий),
           // чтобы он не потерялся при аварийном завершении до первого автосейва.
           void persistStoreSnapshot(true);
@@ -351,8 +366,8 @@ export const useStore = create<AppStore>()(
           startAutoSave();
         };
       },
-    }
-  )
+    },
+  ),
 );
 
 registerClosePersistHook();

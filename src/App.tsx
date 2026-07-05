@@ -10,6 +10,7 @@ import BarPage from "./components/BarPage";
 const ReportsPage = lazy(() => import("./components/ReportsPage"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const UsersPage = lazy(() => import("./components/UsersPage"));
+const PersonnelPage = lazy(() => import("./components/PersonnelPage"));
 const TournamentPage = lazy(() => import("./components/TournamentPage"));
 const TariffsPage = lazy(() => import("./components/TariffsPage"));
 const KnowledgePage = lazy(() => import("./components/KnowledgePage"));
@@ -26,6 +27,7 @@ import {
   calculatePausedSessionCost,
 } from "./utils/pricing";
 import { printSessionReceipt } from "./utils/receipt";
+import { formatPaymentSummary } from "./utils/payment";
 import cloudSync from "./utils/cloudSync";
 import telegram, { type BotShiftInfo } from "./utils/telegram";
 import type {
@@ -234,13 +236,22 @@ telegram.setExportProvider(() => {
     .sort((a, b) => a.startTime - b.startTime);
   if (rows.length === 0) return null;
   const cur = s.settings.currency;
-  const pay = (m?: string) =>
-    m === "card" ? "Карта" : m === "transfer" ? "Перевод" : "Наличные";
+  const pay = (record: Shift extends never ? never : (typeof rows)[number]) =>
+    formatPaymentSummary(
+      record,
+      (method) =>
+        method === "card"
+          ? "Карта"
+          : method === "transfer"
+            ? "Перевод"
+            : "Наличные",
+      cur,
+    );
   const header = `Стол;Начало;Конец;Минут;Стол (${cur});Бар (${cur});Итого (${cur});Оплата`;
   const body = rows.map((x) => {
     const start = new Date(x.startTime).toLocaleString("ru-RU");
     const end = new Date(x.endTime).toLocaleString("ru-RU");
-    return `${x.tableName};${start};${end};${x.duration};${x.tableCost};${x.barCost};${x.totalCost};${pay(x.paymentMethod)}`;
+    return `${x.tableName};${start};${end};${x.duration};${x.tableCost};${x.barCost};${x.totalCost};${pay(x)}`;
   });
   const filename = `biliardo_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}.csv`;
   return { filename, csv: [header, ...body].join("\n") };
@@ -266,6 +277,7 @@ function App() {
   const confirmEndShiftAndLogout = useStore((s) => s.confirmEndShiftAndLogout);
   const canManageUsers =
     currentUser?.role === "admin" || currentUser?.role === "developer";
+  const canManagePersonnel = canManageUsers;
   const canAccessTournamentAndTariffPages =
     currentUser?.role === "admin" || currentUser?.role === "developer";
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -582,6 +594,12 @@ function App() {
         return <SettingsPage />;
       case "users":
         return canManageUsers ? <UsersPage /> : <Dashboard />;
+      case "personnel":
+        return canManagePersonnel && settings.personnelEnabled ? (
+          <PersonnelPage />
+        ) : (
+          <Dashboard />
+        );
       default:
         return <Dashboard />;
       case "tournaments":

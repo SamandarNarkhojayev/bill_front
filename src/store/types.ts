@@ -13,27 +13,49 @@ import type {
   AppSettings,
   PageType,
   SessionMode,
+  PaymentInput,
   PaymentMethod,
   ToastMessage,
   User,
+  PersonnelMember,
   UserRole,
   Shift,
   Reservation,
   Tournament,
   Tariff,
-} from '../types';
+} from "../types";
 
 export interface AppStore {
   // Авторизация
   isAuthenticated: boolean;
   currentUser: User | null;
   users: User[];
+  personnel: PersonnelMember[];
   login: (username: string, password: string) => boolean;
   logout: () => void;
-  addUser: (username: string, password: string, displayName: string, role: UserRole) => boolean;
-  updateUser: (id: string, updates: Partial<Pick<User, 'displayName' | 'role' | 'isActive'>>) => void;
+  addUser: (
+    username: string,
+    password: string,
+    displayName: string,
+    role: UserRole,
+  ) => boolean;
+  updateUser: (
+    id: string,
+    updates: Partial<Pick<User, "displayName" | "role" | "isActive">>,
+  ) => void;
   changeUserPassword: (id: string, newPassword: string) => void;
   removeUser: (id: string) => void;
+  addPersonnelMember: (name: string, roleLabel: string) => void;
+  updatePersonnelMember: (
+    id: string,
+    updates: Partial<Pick<PersonnelMember, "name" | "roleLabel" | "isActive">>,
+  ) => void;
+  removePersonnelMember: (id: string) => void;
+  assignPersonnelToTable: (tableId: number, personnelId: string | null) => void;
+  assignPersonnelToBarOrder: (
+    orderId: string,
+    personnelId: string | null,
+  ) => void;
 
   // Смены
   currentShift: Shift | null;
@@ -44,36 +66,80 @@ export interface AppStore {
 
   currentPage: PageType;
   setCurrentPage: (page: PageType) => void;
+  walkInAccountIntent: {
+    label: string;
+    action: "add" | "close";
+  } | null;
+  openWalkInAccount: (
+    label: string,
+    page: PageType,
+    action: "add" | "close",
+  ) => void;
+  clearWalkInAccountIntent: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 
   tables: BilliardTable[];
-  startSession: (tableId: number, mode: SessionMode, options?: { hours?: number; minutes?: number; amount?: number; plannedDurationSeconds?: number; packagePrice?: number; tariffName?: string }) => void;
-  endSession: (tableId: number, endTimeOverride?: number, paymentMethod?: PaymentMethod) => void;
+  startSession: (
+    tableId: number,
+    mode: SessionMode,
+    options?: {
+      hours?: number;
+      minutes?: number;
+      amount?: number;
+      plannedDurationSeconds?: number;
+      packagePrice?: number;
+      tariffName?: string;
+    },
+  ) => void;
+  endSession: (
+    tableId: number,
+    endTimeOverride?: number,
+    payment?: PaymentInput,
+  ) => void;
   pauseSession: (tableId: number) => void;
   resumeSession: (tableId: number) => void;
   toggleLight: (tableId: number) => void;
   setLightState: (tableId: number, on: boolean) => void;
   updateTableFromRelay: (relayNumber: number, state: boolean) => void;
-  syncTablesFromArduino: (relayCount: number, relays: { number: number; pin: number; state: boolean }[]) => void;
+  syncTablesFromArduino: (
+    relayCount: number,
+    relays: { number: number; pin: number; state: boolean }[],
+  ) => void;
   restoreLightsToArduino: () => void;
 
   barMenu: BarMenuItem[];
   barCategories: BarCategoryConfig[];
   barOrders: BarOrder[];
   inventoryRevisions: InventoryRevision[];
-  addMenuItem: (item: Omit<BarMenuItem, 'id'>) => void;
+  addMenuItem: (item: Omit<BarMenuItem, "id">) => void;
   updateMenuItem: (id: string, item: Partial<BarMenuItem>) => void;
   removeMenuItem: (id: string) => void;
-  addBarCategory: (cat: Omit<BarCategoryConfig, 'id'>) => void;
+  addBarCategory: (cat: Omit<BarCategoryConfig, "id">) => void;
   updateBarCategory: (id: string, cat: Partial<BarCategoryConfig>) => void;
   removeBarCategory: (id: string) => void;
-  addBarOrderToTable: (tableId: number, menuItem: BarMenuItem, quantity: number, options?: { priceOverride?: number; silent?: boolean }) => void;
-  createBarOrder: (tableId: number | null, items: { menuItem: BarMenuItem; quantity: number }[]) => void;
-  sellFromBar: (items: { menuItem: BarMenuItem; quantity: number }[], paymentMethod?: PaymentMethod) => void;
+  addBarOrderToTable: (
+    tableId: number,
+    menuItem: BarMenuItem,
+    quantity: number,
+    options?: { priceOverride?: number; silent?: boolean },
+  ) => void;
+  createBarOrder: (
+    tableId: number | null,
+    items: { menuItem: BarMenuItem; quantity: number }[],
+    options?: { label?: string },
+  ) => void;
+  finalizeBarOrder: (orderId: string, payment?: PaymentInput) => void;
+  sellFromBar: (
+    items: { menuItem: BarMenuItem; quantity: number }[],
+    paymentMethod?: PaymentMethod,
+  ) => void;
   updateStock: (menuItemId: string, delta: number) => void;
   setStock: (menuItemId: string, qty: number) => void;
-  createRevision: (items: Omit<InventoryRevisionItem, 'difference'>[], notes: string) => void;
+  createRevision: (
+    items: Omit<InventoryRevisionItem, "difference">[],
+    notes: string,
+  ) => void;
 
   sessionHistory: SessionRecord[];
   completedOrders: BarOrder[];
@@ -84,14 +150,33 @@ export interface AppStore {
   // Отмена позиций (защищено паролем + причина, всё пишется в журнал)
   cancelLog: CancelLogEntry[];
   // Отмена позиции в открытом столе (живая сессия). true — отменено.
-  cancelOpenTableItem: (tableId: number, orderItemId: string, meta: CancelAuthMeta) => boolean;
+  cancelOpenTableItem: (
+    tableId: number,
+    orderItemId: string,
+    meta: CancelAuthMeta,
+  ) => boolean;
+  cancelOpenWalkInItem: (
+    orderId: string,
+    orderItemId: string,
+    meta: CancelAuthMeta,
+  ) => boolean;
   // Отмена позиции в закрытой записи (быстрая продажа / закрытый стол).
   // Разрешено только в рамках текущей смены/дня; иначе false.
-  voidHistoryItem: (recordId: string, orderItemId: string, meta: CancelAuthMeta) => boolean;
+  voidHistoryItem: (
+    recordId: string,
+    orderItemId: string,
+    meta: CancelAuthMeta,
+  ) => boolean;
 
   // Бронирование
   reservations: Reservation[];
-  addReservation: (tableId: number, customerName: string, customerPhone: string, reservedFor: number, notes: string) => void;
+  addReservation: (
+    tableId: number,
+    customerName: string,
+    customerPhone: string,
+    reservedFor: number,
+    notes: string,
+  ) => void;
   cancelReservation: (reservationId: string) => void;
 
   // Турниры
@@ -110,7 +195,11 @@ export interface AppStore {
   updateSettings: (settings: Partial<AppSettings>) => void;
 
   toasts: ToastMessage[];
-  addToast: (type: ToastMessage['type'], message: string, duration?: number) => void;
+  addToast: (
+    type: ToastMessage["type"],
+    message: string,
+    duration?: number,
+  ) => void;
   removeToast: (id: string) => void;
 
   activeModal: string | null;

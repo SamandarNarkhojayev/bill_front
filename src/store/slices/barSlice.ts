@@ -11,6 +11,11 @@ import { defaultBarMenu, defaultBarCategories } from "../defaults";
 import { playOrderSound } from "../../utils/sounds";
 import { translate } from "../../i18n/translate";
 import telegram from "../../utils/telegram";
+import {
+  getEffectivePaymentMethod,
+  normalizePaymentBreakdown,
+  toPaymentDetails,
+} from "../../utils/payment";
 
 export const createBarSlice: StateCreator<
   AppStore,
@@ -30,6 +35,7 @@ export const createBarSlice: StateCreator<
     | "removeBarCategory"
     | "addBarOrderToTable"
     | "createBarOrder"
+    | "finalizeBarOrder"
     | "sellFromBar"
     | "updateStock"
     | "setStock"
@@ -183,23 +189,85 @@ export const createBarSlice: StateCreator<
     }
   },
 
-  createBarOrder: (tableId, items) => {
+  createBarOrder: (tableId, items, options = {}) => {
+    const now = Date.now();
+    const orderItems: BarOrder["items"] = items.map((i) => ({
+      id: generateId(),
+      menuItemId: i.menuItem.id,
+      menuItemName: i.menuItem.name,
+      quantity: i.quantity,
+      price: i.menuItem.price,
+      timestamp: now,
+    }));
+    const addedCost = orderItems.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
+
+    if (tableId == null) {
+      items.forEach((i) => {
+        if (i.menuItem.stock > 0) {
+          set((state) => ({
+            barMenu: state.barMenu.map((m) =>
+              m.id === i.menuItem.id && m.stock > 0
+                ? { ...m, stock: Math.max(0, m.stock - i.quantity) }
+                : m,
+            ),
+          }));
+        }
+      });
+
+      set((state) => {
+        const existingOrder =
+          options.label == null
+            ? null
+            : state.barOrders.find(
+                (order) =>
+                  order.tableId == null &&
+                  !order.isPaid &&
+                  order.label === options.label,
+              );
+
+        if (!existingOrder) {
+          const order: BarOrder = {
+            id: generateId(),
+            tableId: null,
+            label: options.label,
+            items: orderItems,
+            totalCost: addedCost,
+            timestamp: now,
+            isPaid: false,
+          };
+          return { barOrders: [...state.barOrders, order] };
+        }
+
+        return {
+          barOrders: state.barOrders.map((order) =>
+            order.id === existingOrder.id
+              ? {
+                  ...order,
+                  items: [...order.items, ...orderItems],
+                  totalCost: order.totalCost + addedCost,
+                  timestamp: now,
+                }
+              : order,
+          ),
+        };
+      });
+
+      if (get().settings.soundEnabled) {
+        playOrderSound();
+      }
+      telegram.checkLowStock(get().barMenu, get().settings.clubName);
+      return;
+    }
+
     const order: BarOrder = {
       id: generateId(),
       tableId,
-      items: items.map((i) => ({
-        id: generateId(),
-        menuItemId: i.menuItem.id,
-        menuItemName: i.menuItem.name,
-        quantity: i.quantity,
-        price: i.menuItem.price,
-        timestamp: Date.now(),
-      })),
-      totalCost: items.reduce(
-        (sum, i) => sum + i.menuItem.price * i.quantity,
-        0,
-      ),
-      timestamp: Date.now(),
+      items: orderItems,
+      totalCost: addedCost,
+      timestamp: now,
       isPaid: false,
     };
 
@@ -207,11 +275,65 @@ export const createBarSlice: StateCreator<
       barOrders: [...state.barOrders, order],
     }));
 
-    if (tableId) {
-      items.forEach((i) => {
-        get().addBarOrderToTable(tableId, i.menuItem, i.quantity);
-      });
-    }
+    items.forEach((i) => {
+      get().addBarOrderToTable(tableId, i.menuItem, i.quantity);
+    });
+  },
+
+  finalizeBarOrder: (orderId, payment = "cash") => {
+    const order = get().barOrders.find(
+      (item) => item.id === orderId && !item.isPaid,
+    );
+    if (!order) return;
+
+    const paymentDetails = toPaymentDetails(payment);
+    const paymentMethod = getEffectivePaymentMethod(paymentDetails);
+    const paymentBreakdown = normalizePaymentBreakdown(
+      paymentDetails.paymentBreakdown,
+    );
+
+    const svc = get().settings;
+    const serviceCharge = svc.serviceChargeEnabled
+      ? Math.round((order.totalCost * svc.serviceChargePercent) / 100)
+      : 0;
+
+    const completedOrder: BarOrder = {
+      ...order,
+      isPaid: true,
+      timestamp: Date.now(),
+    };
+
+    const record: SessionRecord = {
+      id: order.id,
+      tableId: 0,
+      tableName: order.label?.trim() || "Бар (продажа)",
+      mode: "unlimited",
+      startTime: order.timestamp,
+      endTime: Date.now(),
+      duration: 0,
+      tableCost: 0,
+      barOrders: order.items.map((item) => ({ ...item })),
+      barCost: order.totalCost,
+      totalCost: order.totalCost,
+      serviceCharge,
+      date: localDateStr(),
+      paymentMethod,
+      paymentBreakdown,
+    };
+
+    set((state) => ({
+      barOrders: state.barOrders.filter((item) => item.id !== orderId),
+      completedOrders: [...state.completedOrders, completedOrder],
+      sessionHistory: [...state.sessionHistory, record],
+    }));
+
+    get().addToast(
+      "success",
+      translate(get().settings.language, "bar.sold_toast", {
+        sum: order.totalCost.toLocaleString(),
+        currency: get().settings.currency,
+      }),
+    );
   },
 
   sellFromBar: (items, paymentMethod = "cash") => {

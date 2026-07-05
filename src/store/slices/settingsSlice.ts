@@ -15,7 +15,8 @@ export const createSettingsSlice: StateCreator<
     const hasProtectedChanges =
       Object.prototype.hasOwnProperty.call(updates, "tables") ||
       Object.prototype.hasOwnProperty.call(updates, "kitchenSeparate") ||
-      Object.prototype.hasOwnProperty.call(updates, "autoPrintKitchenTicket");
+      Object.prototype.hasOwnProperty.call(updates, "autoPrintKitchenTicket") ||
+      Object.prototype.hasOwnProperty.call(updates, "personnelEnabled");
 
     if (hasProtectedChanges && role !== "admin" && role !== "developer") {
       get().addToast(
