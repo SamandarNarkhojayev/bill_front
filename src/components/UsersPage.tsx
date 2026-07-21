@@ -194,7 +194,11 @@ const UsersPage: React.FC = () => {
                   >
                     <option value="admin">{t('users.roleAdmin')}</option>
                     <option value="user">{t('users.roleUser')}</option>
-                    <option value="developer">{t('users.roleDeveloper')}</option>
+                    {/* Роль developer (высший доступ) может назначать только сам
+                        developer — иначе админ поднимает выше собственного уровня. */}
+                    {currentUser?.role === 'developer' && (
+                      <option value="developer">{t('users.roleDeveloper')}</option>
+                    )}
                   </select>
                 ) : (
                   <span className={`user-role-badge role-${user.role}`}>
@@ -330,7 +334,9 @@ const UsersPage: React.FC = () => {
                 <select className="login-input" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
                   <option value="admin">{t('users.roleAdministrator')}</option>
                   <option value="user">{t('users.roleUser')}</option>
-                  <option value="developer">{t('users.roleDeveloper')}</option>
+                  {currentUser?.role === 'developer' && (
+                    <option value="developer">{t('users.roleDeveloper')}</option>
+                  )}
                 </select>
               </div>
             </div>

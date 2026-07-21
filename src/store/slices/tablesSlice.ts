@@ -50,6 +50,9 @@ export const createTablesSlice: StateCreator<
       tariffName,
     } = options;
     const table = get().tables.find((t) => t.id === tableId);
+    // Защита от двойного тапа «Начать»: если у стола уже идёт сессия — не
+    // перезаписываем её (иначе сбросился бы таймер и появились два тоста).
+    if (table?.currentSession) return;
     const pricePerHour =
       table?.pricePerHour || get().settings.defaultPricePerHour;
     const priceSchedule = table?.priceSchedule || [];
@@ -199,12 +202,11 @@ export const createTablesSlice: StateCreator<
     );
 
     // Сервисный сбор фиксируем в записи на момент закрытия (для отчётов). Формула та
-    // же, что в computeSessionCharges/чеке. totalCost остаётся без сбора (сбор — отдельная строка).
+    // же, что в computeSessionCharges/чеке: сбор берём ТОЛЬКО с бара/кухни (barCost),
+    // стол в базу не входит. totalCost остаётся без сбора (сбор — отдельная строка).
     const svcSettings = get().settings;
     const serviceCharge = svcSettings.serviceChargeEnabled
-      ? Math.round(
-          ((tableCost + barCost) * svcSettings.serviceChargePercent) / 100,
-        )
+      ? Math.round((barCost * svcSettings.serviceChargePercent) / 100)
       : 0;
 
     const record: SessionRecord = {

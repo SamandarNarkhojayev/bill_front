@@ -1280,7 +1280,7 @@ const TournamentPage: React.FC = () => {
   const getStatusColor = (status: TournamentStatus) => {
     switch (status) {
       case 'draft':
-        return '#94a3b8';
+        return 'var(--text-secondary)';
       case 'active':
         return '#10b981';
       case 'completed':
@@ -1288,7 +1288,7 @@ const TournamentPage: React.FC = () => {
       case 'cancelled':
         return '#ef4444';
       default:
-        return '#94a3b8';
+        return 'var(--text-secondary)';
     }
   };
 
@@ -1382,7 +1382,7 @@ const TournamentPage: React.FC = () => {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
                   <Users size={14} />
                   <span>
                     {t('tournaments.participantsLabel')}: {tournament.participants.length > 0
@@ -1390,7 +1390,7 @@ const TournamentPage: React.FC = () => {
                       : tournament.participantCount}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
                   <Users size={14} />
                   <span>
                     {t('tournaments.participantsModeLabel')}: {tournament.participantCountMode === 'min'
@@ -1400,15 +1400,15 @@ const TournamentPage: React.FC = () => {
                         : t('tournaments.modeFixed')}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
                   <SettingsIcon size={14} />
                   <span>{t('tournaments.startLabel')}: {formatDateTime(tournament.scheduledStartTime)}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
                   <Grid size={14} />
                   <span>{t('tournaments.tablesLabel')}: {tournament.tableIds.length}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
                   <SettingsIcon size={14} />
                   <span>{getBracketTypeName(tournament.bracketType)}</span>
                 </div>
@@ -1487,7 +1487,7 @@ const TournamentPage: React.FC = () => {
                     background: 'rgba(16,185,129,0.06)',
                     border: '1px solid rgba(16,185,129,0.15)',
                     fontSize: 12,
-                    color: '#94a3b8',
+                    color: 'var(--text-secondary)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
@@ -1653,7 +1653,7 @@ const TournamentPage: React.FC = () => {
                         borderRadius: 8,
                         border: `2px solid ${selectedTableIds.includes(table.id) ? '#10b981' : 'rgba(255, 255, 255, 0.1)'}`,
                         background: selectedTableIds.includes(table.id) ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.02)',
-                        color: selectedTableIds.includes(table.id) ? '#10b981' : '#94a3b8',
+                        color: selectedTableIds.includes(table.id) ? '#10b981' : 'var(--text-secondary)',
                         fontSize: 13,
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -1856,7 +1856,7 @@ const TournamentPage: React.FC = () => {
                         {t('tournaments.roundOf', { current: cr, total: totalRounds })}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#94a3b8' }}>
+                    <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
                       <span>⚡ {t('tournaments.inProgressLabel')}: <b style={{ color: '#fbbf24' }}>{inProgress}</b></span>
                       <span>✅ {t('tournaments.doneLabel')}: <b style={{ color: '#10b981' }}>{crDone}</b>/{crTotal}</span>
                     </div>
@@ -1880,7 +1880,7 @@ const TournamentPage: React.FC = () => {
               {selectedTournament.status === 'draft' && (
                 <div style={{
                   fontSize: 12,
-                  color: '#94a3b8',
+                  color: 'var(--text-secondary)',
                   lineHeight: 1.6,
                   padding: '10px 14px',
                   borderRadius: 10,
@@ -2005,7 +2005,7 @@ const TournamentPage: React.FC = () => {
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => handleSwapInsidePair(pairIndex)}
-                              style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: '#94a3b8' }}
+                              style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: 'var(--text-secondary)' }}
                             >
                               ⇅ {t('tournaments.swapInside')}
                             </button>
@@ -2013,7 +2013,7 @@ const TournamentPage: React.FC = () => {
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => handleSwapPairs(pairIndex)}
-                              style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: '#94a3b8' }}
+                              style={{ flex: 1, borderRadius: 0, fontSize: 10, padding: '5px 6px', color: 'var(--text-secondary)' }}
                             >
                               ⇄ {t('tournaments.swapPairs')}
                             </button>
@@ -2083,7 +2083,7 @@ const TournamentPage: React.FC = () => {
                                       >
                                         <div className="bracket-match-number" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                           <span>{isFinal ? `★ ${t('tournaments.roundFinal')}` : t('tournaments.matchLabel', { number: match.matchNumber })}</span>
-                                          {isByeMatch && <span style={{ fontSize: 9, color: '#94a3b8', fontStyle: 'italic' }}>BYE</span>}
+                                          {isByeMatch && <span style={{ fontSize: 9, color: 'var(--text-secondary)', fontStyle: 'italic' }}>BYE</span>}
                                           {match.tableNumber && isActive && (
                                             <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '1px 6px', borderRadius: 4 }}>
                                               {t('tournaments.tableHash', { number: match.tableNumber })}
@@ -2179,7 +2179,7 @@ const TournamentPage: React.FC = () => {
                               >
                                 <div className="bracket-grid-match-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span>{t('tournaments.matchHash', { number: match.matchNumber })}</span>
-                                  {isByeMatch && <span style={{ fontSize: 9, color: '#94a3b8' }}>BYE</span>}
+                                  {isByeMatch && <span style={{ fontSize: 9, color: 'var(--text-secondary)' }}>BYE</span>}
                                   {match.tableId && isActive && (
                                     <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '1px 6px', borderRadius: 4 }}>
                                       {t('tournaments.tableLabel', { number: match.tableId })}
@@ -2362,7 +2362,7 @@ const TournamentPage: React.FC = () => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: '#94a3b8',
+                                color: 'var(--text-secondary)',
                                 background: 'rgba(255,255,255,0.03)',
                               }}
                             >
@@ -2478,7 +2478,7 @@ const TournamentPage: React.FC = () => {
               <button onClick={() => setActiveMatch(null)} className="modal-close-btn">×</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <div style={{ textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
+              <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
                 {t('tournaments.matchHash', { number: activeMatch.matchNumber })}
                 {activeMatch.tableId ? ` • ${t('tournaments.tableLabel', { number: activeMatch.tableId })}` : ''}
               </div>

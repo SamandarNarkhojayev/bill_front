@@ -623,7 +623,7 @@ const TariffsPage: React.FC = () => {
                   >
                     {t("tariffs.bulkAddInterval")}
                   </span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                     {t("tariffs.bulkAddHint")}
                   </span>
                 </div>
@@ -805,7 +805,7 @@ const TariffsPage: React.FC = () => {
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#94a3b8",
+                          color: "var(--text-secondary)",
                           padding: "3px 8px",
                           borderRadius: 999,
                           background: "rgba(148, 163, 184, 0.08)",
@@ -1016,7 +1016,7 @@ const TariffsPage: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
-                      color: "#94a3b8",
+                      color: "var(--text-secondary)",
                     }}
                   >
                     <Clock size={14} />
@@ -1030,7 +1030,7 @@ const TariffsPage: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
-                      color: "#94a3b8",
+                      color: "var(--text-secondary)",
                     }}
                   >
                     <Package size={14} />
@@ -1281,7 +1281,7 @@ const TariffsPage: React.FC = () => {
                           : "rgba(255, 255, 255, 0.02)",
                         color: selectedTableIds.includes(table.id)
                           ? "#a78bfa"
-                          : "#94a3b8",
+                          : "var(--text-secondary)",
                         fontSize: 13,
                         fontWeight: 500,
                         cursor: "pointer",

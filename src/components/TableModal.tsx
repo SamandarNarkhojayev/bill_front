@@ -312,7 +312,7 @@ const TableModal: React.FC = () => {
                     ) : (
                       <IconComp
                         size={30}
-                        style={{ color: cat?.color || "#94a3b8" }}
+                        style={{ color: cat?.color || "var(--text-secondary)" }}
                       />
                     )}
                   </div>

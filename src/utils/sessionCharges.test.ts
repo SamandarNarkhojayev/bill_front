@@ -68,12 +68,19 @@ describe('computeSessionCharges', () => {
     expect(r.grandTotal).toBe(3500);
   });
 
-  it('сервисный сбор 10% от суммы', () => {
+  it('сервисный сбор 10% ТОЛЬКО с бара (стол в базу не входит)', () => {
     const session = makeSession({ barOrders: [makeBarItem(1000, 1)] });
     const r = computeSessionCharges(makeTable(), session, settings({ serviceChargeEnabled: true, serviceChargePercent: 10 }), BASE + HOUR);
     expect(r.subtotal).toBe(3000);          // 2000 стол + 1000 бар
-    expect(r.serviceCharge).toBe(300);
-    expect(r.grandTotal).toBe(3300);
+    expect(r.serviceCharge).toBe(100);      // 10% от 1000 (бар), стол не облагается
+    expect(r.grandTotal).toBe(3100);        // 3000 + 100
+  });
+
+  it('сервисный сбор без бара = 0 (только стол)', () => {
+    const r = computeSessionCharges(makeTable(), makeSession(), settings({ serviceChargeEnabled: true, serviceChargePercent: 10 }), BASE + 2 * HOUR);
+    expect(r.tableCost).toBe(4000);
+    expect(r.serviceCharge).toBe(0);        // нет бара → нет сбора
+    expect(r.grandTotal).toBe(4000);
   });
 
   it('ИНВАРИАНТ чек=отчёт: один и тот же endTime даёт идентичный результат', () => {

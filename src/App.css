@@ -11,6 +11,19 @@
   padding: 0;
 }
 
+/* ===== ТОКЕН ВТОРИЧНОГО ТЕКСТА =====
+   Раньше вторичный текст был захардкожен #94a3b8 (slate-400). В тёмной теме это
+   ок (≈6.5:1), но в СВЕТЛОЙ на фоне #f1f5f9/белом даёт всего 2.56:1 — нечитаемо,
+   а светлой темой пользуются многие. Один токен решает обе темы разом; он же
+   чинит 4 ранее НЕопределённых var(--text-secondary) в файле. */
+:root {
+  --text-secondary: #94a3b8;
+}
+[data-theme="light"],
+.theme-light {
+  --text-secondary: #475569; /* на светлом фоне ≈ 7.5:1 */
+}
+
 /* ===== APP LAYOUT ===== */
 .app {
   display: flex;
@@ -130,7 +143,7 @@
   border: none;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 12px;
@@ -170,14 +183,29 @@
   transition: opacity 0.2s ease;
 }
 
-.sidebar.collapsed .sidebar-nav-label,
-.sidebar.collapsed .sidebar-badge {
+.sidebar.collapsed .sidebar-nav-label {
   opacity: 0;
   width: 0;
   overflow: hidden;
 }
 
+/* Бейдж занятости («3/8») НЕ прячем в свёрнутом режиме — раньше он исчезал именно
+   когда админ сворачивает меню ради места, теряя контроль занятости. Показываем
+   компактным счётчиком поверх иконки «Столы». */
+.sidebar.collapsed .sidebar-badge {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  margin: 0;
+  width: auto;
+  opacity: 1;
+  overflow: visible;
+  font-size: 9px;
+  padding: 1px 4px;
+}
+
 .sidebar.collapsed .sidebar-nav-item {
+  position: relative;
   justify-content: center;
   align-items: center;
   gap: 0;
@@ -257,7 +285,7 @@
   border: none;
   border-radius: 12px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 13px;
@@ -345,7 +373,9 @@
 .sidebar-version {
   text-align: center;
   font-size: 11px;
-  color: #334155;
+  /* Было #334155 (≈1.7:1 в тёмной) / #cbd5e1 (≈1.4:1 в светлой) — практически
+     невидимо. Токен даёт читаемый вторичный текст в обеих темах. */
+  color: var(--text-secondary);
   margin-top: 10px;
 }
 
@@ -405,7 +435,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -485,7 +515,7 @@
 .walkin-section-subtitle {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .walkin-section-badge {
@@ -532,7 +562,7 @@
 .walkin-card-meta {
   margin-top: 4px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .walkin-card-total {
@@ -556,7 +586,7 @@
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .walkin-card-actions {
@@ -601,7 +631,7 @@
 
 .walkin-modal-subtitle {
   margin: -10px 0 16px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
@@ -913,7 +943,9 @@
   color: #10b981;
 }
 .status-free {
-  color: #64748b;
+  /* #64748b давал 3.49:1 — свободные столы (их ищут глазами) были самыми бледными.
+     #94a3b8 = 6.49:1. */
+  color: var(--text-secondary);
 }
 .status-reserved {
   color: #f59e0b;
@@ -1005,7 +1037,7 @@
 }
 
 .personnel-assign-label {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1111,17 +1143,23 @@
   gap: 6px;
   font-size: 16px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .table-card-hint {
   font-size: 12px;
-  color: #475569;
+  /* #475569 давал 2.19:1. #94a3b8 = 6.49:1. */
+  color: var(--text-secondary);
 }
 
 .table-card-actions {
   display: flex;
   gap: 8px;
+}
+
+/* Комфортная тач-цель пальцем для Начать/Бар/Пауза/Стоп (высота была ~36px). */
+.table-card-actions .btn {
+  min-height: 44px;
 }
 
 /* Кнопки в карточке стола: ужимаются по ширине карточки, иконка не сжимается,
@@ -1146,6 +1184,26 @@
   padding-right: 12px;
 }
 
+/* Деструктивный «Стоп» отделён от безопасных действий (Бар/Пауза): узкий,
+   прижат вправо небольшим зазором — снижает риск случайного нажатия. */
+.table-card-actions .btn.table-stop-btn {
+  margin-left: 4px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.table-card-actions .btn.table-stop-btn::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.table-stop-btn {
+  position: relative;
+}
+
 /* ===== BUTTONS ===== */
 .btn {
   display: inline-flex;
@@ -1168,7 +1226,7 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
 }
@@ -1179,7 +1237,8 @@
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  /* Затемнили: белый на #ef4444 давал 3.76:1. На #dc2626 = 4.83:1 (норма 4.5:1). */
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
 }
@@ -1191,7 +1250,9 @@
 
 .btn-amber {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: white;
+  /* Тёмный текст вместо белого: белый на #f59e0b давал 2.15:1 (худшее в системе),
+     #1c1300 = 8.56:1. Это главная кнопка продажи бара. */
+  color: #1c1300;
   box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
 }
 
@@ -1202,7 +1263,7 @@
 
 .btn-ghost {
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1295,7 +1356,7 @@
   border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.06);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   z-index: 30;
   transition: all 0.15s ease;
@@ -1325,7 +1386,7 @@
   border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1373,7 +1434,7 @@
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 6px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1510,7 +1571,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -1559,6 +1620,7 @@
 
 .end-session-actions {
   align-items: center;
+  flex-wrap: wrap;
   padding-top: 12px;
   margin-top: 2px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -1609,7 +1671,7 @@
   border: none;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.06);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .bar-search-clear:hover {
@@ -1622,7 +1684,7 @@
   color: #0f172a;
 }
 [data-theme="light"] .bar-search-input::placeholder {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .bar-categories {
@@ -1684,7 +1746,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -1872,7 +1934,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -1942,7 +2004,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -2025,8 +2087,10 @@
 }
 .bar-product-price {
   font-size: 14px;
-  color: #64748b;
-  font-weight: 600;
+  /* Цена — ключевая цифра для кассира — была бледнее названия (#64748b, 3.5:1).
+     #e2e8f0 = 13:1: делаем самый важный элемент карточки самым читаемым. */
+  color: #e2e8f0;
+  font-weight: 700;
 }
 
 .bar-product-qty-badge {
@@ -2062,8 +2126,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  /* Частые кнопки +/− за смену — увеличены для пальца на POS (были 26px). */
+  width: 32px;
+  height: 32px;
   border-radius: 7px;
   border: none;
   cursor: pointer;
@@ -2084,8 +2149,9 @@
   background: rgba(239, 68, 68, 0.35);
 }
 .bar-qty-btn-v2.sm {
-  width: 22px;
-  height: 22px;
+  /* Было 22px — ниже жёсткого минимума WCAG 2.2 (24px). Теперь 28px. */
+  width: 28px;
+  height: 28px;
 }
 
 .bar-qty-v2 {
@@ -2118,7 +2184,7 @@
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 12px;
 }
 
@@ -2228,7 +2294,7 @@
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 10px;
 }
 .bar-cart-total-value {
@@ -2363,7 +2429,7 @@
 }
 .bar-add-img-upload:hover {
   border-color: rgba(255, 255, 255, 0.2);
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .bar-add-img-upload img {
   width: 100%;
@@ -2835,7 +2901,7 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -2897,7 +2963,7 @@
   height: 28px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .shift-item.active .shift-item-icon {
@@ -2923,7 +2989,7 @@
 
 .shift-item-details {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 2px;
 }
 
@@ -2974,7 +3040,7 @@
 }
 
 [data-theme="light"] .shift-item-user {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 /* Light theme for header shift */
@@ -2989,7 +3055,7 @@
 
 [data-theme="light"] .header-shift-revenue {
   background: rgba(217, 119, 6, 0.1);
-  color: #d97706;
+  color: #b45309;
 }
 
 /* Light theme for shift history */
@@ -3007,7 +3073,7 @@
 }
 
 [data-theme="light"] .shift-history-duration {
-  color: #059669;
+  color: #047857;
 }
 
 .report-stats {
@@ -3120,7 +3186,7 @@
 
 .report-bar-label {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   min-width: 80px;
 }
 
@@ -3225,7 +3291,7 @@
 .report-table td {
   padding: 12px 14px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
@@ -3302,12 +3368,13 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .settings-hint {
-  font-size: 10px;
-  color: #475569;
+  /* Было 10px/#475569 (2.36:1) — это описания опасных тумблеров. Теперь 12px/6.96:1. */
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .settings-toggle-field {
@@ -3319,9 +3386,10 @@
 
 .toggle {
   position: relative;
-  width: 38px;
-  height: 20px;
-  border-radius: 10px;
+  /* Было 38×20 — высота 20px ниже минимума WCAG 2.2 (24px). Теперь 52×28. */
+  width: 52px;
+  height: 28px;
+  border-radius: 14px;
   border: none;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -3329,18 +3397,20 @@
 }
 
 .toggle.on {
-  background: #10b981;
+  background: #059669;
 }
 
 .toggle.off {
+  /* Рамка, чтобы OFF-состояние читалось в колонке тумблеров, а не сливалось. */
   background: #334155;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .toggle-dot {
   position: absolute;
   top: 2px;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: white;
   transition: all 0.3s ease;
@@ -3348,7 +3418,7 @@
 }
 
 .toggle.on .toggle-dot {
-  left: 20px;
+  left: 26px;
 }
 
 .toggle.off .toggle-dot {
@@ -3410,7 +3480,7 @@
 
 .settings-info {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .settings-info strong {
@@ -3480,7 +3550,7 @@
 
 .main-content .text-gray-700,
 .main-content .text-gray-600 {
-  color: #94a3b8 !important;
+  color: var(--text-secondary) !important;
 }
 
 .main-content .border-gray-300 {
@@ -3516,7 +3586,7 @@
 [data-theme="light"] .main-content select,
 [data-theme="light"] .main-content input[type="text"] {
   background: #ffffff !important;
-  border-color: #94a3b8 !important;
+  border-color: var(--text-secondary) !important;
   color: #0f172a !important;
 }
 
@@ -3542,7 +3612,7 @@
   color: #a78bfa;
 }
 .text-slate-400 {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .text-slate-500 {
   color: #64748b;
@@ -3769,7 +3839,7 @@
   border: 2px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.25s ease;
   text-align: center;
@@ -3838,7 +3908,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -3893,7 +3963,7 @@
   height: 40px;
   border: none;
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 18px;
   font-weight: 600;
@@ -3938,7 +4008,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -3959,7 +4029,7 @@
 
 .unlimited-text {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
   line-height: 1.6;
 }
@@ -4041,7 +4111,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -4107,7 +4177,7 @@
 [data-theme="light"] .bar-tab.active {
   background: #fff7ed;
   border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #d97706;
+  color: #b45309;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
@@ -4142,7 +4212,7 @@
 [data-theme="light"] .bar-cat-chip.active {
   background: #fff7ed;
   border-color: rgba(245, 158, 11, 0.4);
-  color: #d97706;
+  color: #b45309;
 }
 
 [data-theme="light"] .bar-product-card {
@@ -4186,7 +4256,7 @@
 }
 
 [data-theme="light"] .sidebar-subtitle {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .sidebar-nav-item {
@@ -4200,16 +4270,15 @@
 
 [data-theme="light"] .sidebar-nav-item.active {
   background: rgba(16, 185, 129, 0.08);
-  color: #059669;
+  color: #047857;
 }
 
 [data-theme="light"] .sidebar-footer {
   border-top-color: rgba(0, 0, 0, 0.06);
 }
 
-[data-theme="light"] .sidebar-version {
-  color: #cbd5e1;
-}
+/* Оверрайд убран: базовый var(--text-secondary) сам даёт читаемый цвет в светлой
+   теме (#cbd5e1 здесь давал ≈1.4:1). */
 
 [data-theme="light"] .theme-toggle-btn {
   border-color: rgba(0, 0, 0, 0.1);
@@ -4303,7 +4372,7 @@
 [data-theme="light"] .report-stat-label,
 [data-theme="light"] .end-session-label,
 [data-theme="light"] .time-input-label {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .session-player,
@@ -4336,7 +4405,7 @@
 }
 
 [data-theme="light"] .modal-input::placeholder {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .modal-input:hover {
@@ -4405,7 +4474,7 @@
 }
 
 [data-theme="light"] .form-input::placeholder {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-weight: 400;
 }
 
@@ -4543,7 +4612,7 @@
   color: #1e293b;
 }
 [data-theme="light"] .bar-menu-row-price {
-  color: #d97706;
+  color: #b45309;
 }
 [data-theme="light"] .bar-menu-row-cost {
   color: #64748b;
@@ -4593,7 +4662,7 @@
 
 /* Reports table */
 [data-theme="light"] .report-table th {
-  color: #94a3b8;
+  color: var(--text-secondary);
   border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
@@ -4870,7 +4939,7 @@
 .login-label {
   font-size: 13px;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .login-input {
@@ -4919,7 +4988,7 @@
 }
 
 .login-password-toggle:hover {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 /* Login select */
@@ -4997,7 +5066,7 @@
   padding: 14px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
   color: white;
   font-size: 15px;
   font-weight: 600;
@@ -5151,7 +5220,7 @@
   border: none;
   background: transparent;
   border-radius: 8px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -5266,7 +5335,7 @@
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   transition: all 0.15s ease;
 }
 .sidebar-cfg-pin.on {
@@ -5315,7 +5384,7 @@
 /* ===== База знаний ===== */
 .kb-subtitle {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 .kb-search {
@@ -5421,7 +5490,7 @@
 }
 .kb-article-summary {
   font-size: 14px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 .kb-section {
@@ -5504,7 +5573,7 @@
 }
 .whatsnew-version {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 .whatsnew-body {
@@ -5614,7 +5683,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .header-time {
@@ -5823,7 +5892,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -5936,7 +6005,7 @@
 
 .user-detail-value {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .user-role-badge {
@@ -6152,7 +6221,7 @@
   border: none;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -6191,7 +6260,7 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
   color: white;
 }
 
@@ -6207,7 +6276,7 @@
 
 .btn-secondary {
   background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .btn-secondary:hover {
@@ -6651,7 +6720,7 @@
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
   backdrop-filter: blur(10px);
@@ -6692,7 +6761,7 @@
 .update-modal-version {
   text-align: center;
   font-size: 14px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 24px;
 }
 
@@ -6740,7 +6809,7 @@
 
 .update-modal-description {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
   margin-bottom: 24px;
   line-height: 1.6;
@@ -6898,7 +6967,7 @@
 
 .logout-confirm-description {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
   margin-bottom: 24px;
   line-height: 1.6;
@@ -6911,7 +6980,7 @@
 }
 
 .logout-confirm-btn {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
   border: none;
   color: white;
   transition: all 0.2s ease;
@@ -7405,16 +7474,16 @@
 }
 
 [data-theme="light"] .bracket-match-player.is-tbd {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .bracket-match-seed {
-  color: #94a3b8;
+  color: var(--text-secondary);
   background: rgba(0, 0, 0, 0.04);
 }
 
 [data-theme="light"] .bracket-match-number {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .bracket-round-title {
@@ -7452,7 +7521,7 @@
 }
 
 [data-theme="light"] .bracket-grid-match-player.is-tbd {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 /* ===== Облачная синхронизация ===== */
@@ -7537,7 +7606,7 @@
 .cloud-card-text {
   font-size: 13px;
   line-height: 1.55;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -7551,7 +7620,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .cloud-stat strong {
   color: #e2e8f0;
@@ -7602,7 +7671,7 @@
 .cloud-field-label {
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .cloud-field .form-input {
   width: 100%;
@@ -7655,9 +7724,10 @@
   gap: 14px;
   padding: 16px;
   border-radius: 14px;
+  /* Градиент был повреждён: внутрь значения были вклеены посторонние селекторы,
+     из-за чего фон не рендерился. Восстановлен. */
   background: linear-gradient(
-    .tables-grid.view-list .table-card-content {gap: 14px;}
-      .tables-grid.view-list .table-card-header {min-width: 130px;} 135deg,
+    135deg,
     rgba(42, 171, 238, 0.16),
     rgba(34, 158, 217, 0.06)
   );
@@ -7670,20 +7740,6 @@
   flex: 1 1 calc(50% - 6px);
 }
 .tg-hero-icon {
-  .tables-grid.view-list .table-card-content {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 14px 14px 14px 18px;
-  }
-  .tables-grid.view-list .table-card-header,
-  .tables-grid.view-list .table-card-session,
-  .tables-grid.view-list .table-card-empty {
-    width: 100%;
-    min-width: 0;
-  }
-  .tables-grid.view-list .table-card-session {
-    gap: 10px;
-  }
   width: 48px;
   height: 48px;
   flex-shrink: 0;
@@ -7691,13 +7747,31 @@
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  .tables-grid.view-list .personnel-assign-select {
-    width: 100%;
-    max-width: 100%;
-  }
   color: #fff;
   background: linear-gradient(135deg, #2aabee, #229ed9);
   box-shadow: 0 6px 16px rgba(34, 158, 217, 0.35);
+}
+
+/* Раскладка вида «Список»: карточка в столбик на всю ширину. Эти правила раньше
+   были ошибочно вложены в .tg-hero-icon и в градиент .tg-hero — и не срабатывали. */
+.tables-grid.view-list .table-card-content {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 14px 14px 14px 18px;
+}
+.tables-grid.view-list .table-card-header,
+.tables-grid.view-list .table-card-session,
+.tables-grid.view-list .table-card-empty {
+  width: 100%;
+  min-width: 0;
+}
+.tables-grid.view-list .table-card-session {
+  gap: 10px;
+}
+.tables-grid.view-list .personnel-assign-select {
+  width: 100%;
+  max-width: 100%;
 }
 .tg-hero-title {
   margin: 0;
@@ -7708,7 +7782,7 @@
 .tg-hero-sub {
   margin: 2px 0 0;
   font-size: 12.5px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .tg-pill {
@@ -7739,7 +7813,7 @@
   background: rgba(251, 191, 36, 0.13);
 }
 .tg-pill.off {
-  color: #94a3b8;
+  color: var(--text-secondary);
   background: rgba(148, 163, 184, 0.13);
 }
 @keyframes tg-pulse {
@@ -7774,7 +7848,7 @@
 }
 .tg-master-sub {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-top: 1px;
 }
 .tg-ic-on {
@@ -7822,7 +7896,7 @@
 }
 .tg-step-text {
   font-size: 12.5px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin: 0 0 8px;
   line-height: 1.5;
 }
@@ -7865,7 +7939,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 .tg-events {
@@ -7902,7 +7976,7 @@
 }
 .tg-event-hint {
   font-size: 11.5px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-top: 1px;
 }
 
@@ -7919,7 +7993,7 @@
 .tg-param-label {
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .tg-param .form-input {
   max-width: 180px;
@@ -7937,7 +8011,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11.5px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .tg-hero-title,
@@ -7968,7 +8042,7 @@
 .payment-method-label {
   font-size: 13px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .payment-method-options {
   display: flex;
@@ -8067,7 +8141,7 @@
 }
 .payment-split-currency {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   min-width: 44px;
   text-align: left;
 }
@@ -8155,7 +8229,7 @@
 }
 .report-payment-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .report-payment-value {
   font-size: 17px;
@@ -8197,8 +8271,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  /* Деструктив (отмена позиции) вплотную к цене — было ровно 24px, легко промахнуться.
+     Увеличено до 32px для пальца на POS. */
+  width: 32px;
+  height: 32px;
   border-radius: 7px;
   border: 1px solid rgba(239, 68, 68, 0.25);
   background: rgba(239, 68, 68, 0.1);
@@ -8229,7 +8305,7 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 .cancel-auth-input {
@@ -8327,7 +8403,7 @@
 }
 .cancel-log-toggle {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 [data-theme="light"] .cancel-auth-input {
@@ -8342,5 +8418,64 @@
 }
 [data-theme="light"] .cancel-log-header {
   background: rgba(239, 68, 68, 0.06);
+  color: #1e293b;
+}
+
+/* ===== Быстрый ввод сплит-оплаты (кнопки «В остаток» и «50/50») ===== */
+.payment-split-fill {
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.payment-split-fill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.payment-split-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.payment-split-half {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 14px;
+  min-height: 36px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.payment-split-half:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Итог оплат в Отчётах — визуально выделен как строка сверки с кассой. */
+.report-payment-item.report-payments-total {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 6px;
+  padding-top: 10px;
+  font-weight: 700;
+}
+.report-payment-item.report-payments-total .report-payment-value {
+  color: #e2e8f0;
+}
+
+/* Сумма отмен в заголовке журнала. */
+.cancel-log-sum {
+  font-weight: 700;
+  font-size: 13px;
+}
+[data-theme="light"] .report-payment-item.report-payments-total .report-payment-value {
   color: #1e293b;
 }

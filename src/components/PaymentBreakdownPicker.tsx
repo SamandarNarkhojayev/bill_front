@@ -3,6 +3,7 @@ import { Banknote, CreditCard, Smartphone } from "lucide-react";
 import { useT } from "../i18n";
 import type { PaymentDetails, PaymentMethod } from "../types";
 import NumberInput from "./NumberInput";
+import { formatMoney } from "../utils/format";
 import {
   PAYMENT_METHODS,
   createEmptyPaymentBreakdown,
@@ -36,6 +37,7 @@ const PaymentBreakdownPicker: React.FC<PaymentBreakdownPickerProps> = ({
   const [splitAmounts, setSplitAmounts] = useState<
     Record<PaymentMethod, number>
   >(createEmptyPaymentBreakdown());
+  const [touched, setTouched] = useState(false);
 
   const allocated = useMemo(
     () => getPaymentBreakdownTotal(splitAmounts),
@@ -70,15 +72,14 @@ const PaymentBreakdownPicker: React.FC<PaymentBreakdownPickerProps> = ({
 
   const handleModeChange = (nextMode: "single" | "split") => {
     setMode(nextMode);
-    if (nextMode === "split" && allocated === 0) {
-      setSplitAmounts({
-        ...createEmptyPaymentBreakdown(),
-        [paymentMethod]: total,
-      });
-    }
+    // В сплит входим с нулями. Раньше первый способ предзаполнялся на весь total,
+    // из-за чего сразу светилась ошибка «нужно ≥2 способа» и навязывался порядок
+    // ввода (карта не принимала сумму, пока не уменьшишь наличные). Теперь — чисто.
+    setTouched(false);
   };
 
   const handleSplitChange = (method: PaymentMethod, value: number) => {
+    setTouched(true);
     setSplitAmounts((prev) => {
       const othersTotal = PAYMENT_METHODS.reduce(
         (sum, current) =>
@@ -90,6 +91,27 @@ const PaymentBreakdownPicker: React.FC<PaymentBreakdownPickerProps> = ({
         ...prev,
         [method]: Math.min(Math.max(0, value), maxAllowed),
       };
+    });
+  };
+
+  // Занести весь остаток в выбранный способ одним тапом — вместо ручного набора.
+  const fillRemaining = (method: PaymentMethod) => {
+    if (remaining <= 0) return;
+    setTouched(true);
+    setSplitAmounts((prev) => ({
+      ...prev,
+      [method]: Math.max(0, prev[method] ?? 0) + remaining,
+    }));
+  };
+
+  // Быстрое деление 50/50 между наличными и картой.
+  const splitHalf = () => {
+    setTouched(true);
+    const half = Math.floor(total / 2);
+    setSplitAmounts({
+      ...createEmptyPaymentBreakdown(),
+      cash: half,
+      card: total - half,
     });
   };
 
@@ -152,22 +174,49 @@ const PaymentBreakdownPicker: React.FC<PaymentBreakdownPickerProps> = ({
                     disabled={busy}
                   />
                   <span className="payment-split-currency">{currency}</span>
+                  <button
+                    type="button"
+                    className="payment-split-fill"
+                    onClick={() => fillRemaining(method)}
+                    disabled={busy || remaining <= 0}
+                    title={t("payment.fill_remaining")}
+                  >
+                    {t("payment.fill_remaining")}
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
+          <div className="payment-split-actions">
+            <button
+              type="button"
+              className="payment-split-half"
+              onClick={splitHalf}
+              disabled={busy}
+            >
+              {t("payment.split_half")}
+            </button>
+          </div>
+
           <div className="payment-split-summary">
             <span>
-              {t("payment.allocated")}: {allocated.toLocaleString()} {currency}
+              {t("payment.allocated")}: {formatMoney(allocated)} {currency}
             </span>
             <span className={remaining === 0 ? "ok" : "warn"}>
-              {t("payment.remaining")}: {remaining.toLocaleString()} {currency}
+              {t("payment.remaining")}: {formatMoney(remaining)} {currency}
             </span>
           </div>
 
-          {!isValid && (
-            <p className="payment-split-error">{t("payment.split_invalid")}</p>
+          {touched && !isValid && (
+            <p className="payment-split-error">
+              {remaining > 0
+                ? t("payment.split_remaining", {
+                    remaining: formatMoney(remaining),
+                    currency,
+                  })
+                : t("payment.split_need_two")}
+            </p>
           )}
         </>
       )}

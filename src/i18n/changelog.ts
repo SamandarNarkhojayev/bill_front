@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 // Если перевод для языка отсутствует — модалка покажет русский вариант.
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '7.11.0',
+    date: '2026-07-21',
+    highlights: {
+      ru: [
+        'Улучшения стабильности и исправления.',
+      ],
+      kk: [],
+      uz: [],
+      en: [],
+    },
+  },
+  {
     version: '7.10.0',
     date: '2026-07-05',
     highlights: {

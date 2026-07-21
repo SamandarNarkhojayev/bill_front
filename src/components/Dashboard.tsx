@@ -10,6 +10,7 @@ import {
   Play,
   Pause,
   Square,
+  Check,
   Plus,
   Clock,
   ShoppingBag,
@@ -55,6 +56,7 @@ import {
   printKitchenTicket,
 } from "../utils/receipt";
 import { computeSessionCharges } from "../utils/sessionCharges";
+import { formatMoney } from "../utils/format";
 import { getItemDepartment } from "../utils/department";
 import { useModalKeyboard } from "../hooks/useModalKeyboard";
 import {
@@ -382,14 +384,14 @@ const TableCard = React.memo(function TableCard({
             <div className="session-info-row">
               <DollarSign size={14} className="text-emerald-400" />
               <span className="session-cost">
-                {currentCost.toLocaleString()} {currency}
+                {formatMoney(currentCost)} {currency}
               </span>
             </div>
             {barTotal > 0 && (
               <div className="session-info-row">
                 <ShoppingBag size={14} className="text-amber-400" />
                 <span className="session-bar-cost">
-                  Бар: {barTotal.toLocaleString()} {currency}
+                  {t("dashboard.bar_cost")}: {formatMoney(barTotal)} {currency}
                 </span>
               </div>
             )}
@@ -405,7 +407,8 @@ const TableCard = React.memo(function TableCard({
             <div className="session-total">
               <TrendingUp size={14} />
               <span>
-                Итого: {(currentCost + barTotal).toLocaleString()} {currency}
+                {t("common.total")}: {formatMoney(currentCost + barTotal)}{" "}
+                {currency}
               </span>
             </div>
           </div>
@@ -449,13 +452,17 @@ const TableCard = React.memo(function TableCard({
           <div className="table-card-empty">
             <div className="table-card-price">
               <Zap size={14} />
-              {activePricePerHour.toLocaleString()} {currency}/час
+              {formatMoney(activePricePerHour)} {currency}
+              {t("common.perHour")}
             </div>
-            <p className="table-card-hint">
-              {table.priceSchedule.length > 0
-                ? t("dashboard.schedule_active")
-                : t("dashboard.ready")}
-            </p>
+            {/* «Готов к игре» убрано: дублировало статус «Свободен» и было почти
+                нечитаемо (#475569, 2.2:1). Подсказку показываем только когда она
+                несёт новое — активна цена по времени суток. */}
+            {table.priceSchedule.length > 0 && (
+              <p className="table-card-hint">
+                {t("dashboard.schedule_active")}
+              </p>
+            )}
           </div>
         )}
 
@@ -468,13 +475,14 @@ const TableCard = React.memo(function TableCard({
                 style={{ flex: 2 }}
               >
                 <Play size={16} />
-                <span>{t("dashboard.start")}</span>
+                <span>{t("dashboard.start_short")}</span>
               </button>
               <button
                 onClick={() => onReserve(table.id)}
                 className="btn btn-ghost btn-icon-only"
                 style={{ flex: "0 0 auto" }}
                 title={t("dashboard.reserve")}
+                aria-label={t("dashboard.reserve")}
               >
                 <CalendarClock size={16} />
               </button>
@@ -525,10 +533,13 @@ const TableCard = React.memo(function TableCard({
                   <span>{t("dashboard.pause")}</span>
                 </button>
               )}
+              {/* Деструктивное действие отделено и компактнее — чтобы не нажать
+                  «Стоп» вместо «Пауза»/«Бар». Ряд остаётся с иконкой + подписью. */}
               <button
                 onClick={() => onStop(table.id)}
-                className="btn btn-danger"
-                style={{ flex: 1 }}
+                className="btn btn-danger table-stop-btn"
+                style={{ flex: "0 0 auto" }}
+                title={t("dashboard.stop")}
               >
                 <Square size={16} />
                 <span>{t("dashboard.stop")}</span>
@@ -609,7 +620,7 @@ const WalkInCard = React.memo(function WalkInCard({
           <div className="session-total">
             <TrendingUp size={14} />
             <span>
-              {t("common.total")}: {order.totalCost.toLocaleString()} {currency}
+              {t("common.total")}: {formatMoney(order.totalCost)} {currency}
             </span>
           </div>
         </div>
@@ -714,6 +725,7 @@ const Dashboard: React.FC = () => {
     barOrders,
     finalizeBarOrder,
     createBarOrder,
+    addToast,
   } = useStore(
     useShallow((s) => ({
       tables: s.tables,
@@ -740,6 +752,7 @@ const Dashboard: React.FC = () => {
       barOrders: s.barOrders,
       finalizeBarOrder: s.finalizeBarOrder,
       createBarOrder: s.createBarOrder,
+      addToast: s.addToast,
       sessionHistory: s.sessionHistory,
     })),
   );
@@ -838,7 +851,9 @@ const Dashboard: React.FC = () => {
 
   const handleStart = useCallback((tableId: number) => {
     setSelectedTable(tableId);
-    setSelectedMode(null);
+    // Предвыбираем «По времени» с дефолтом 1 ч — это ~90% стартов. Раньше режим
+    // был null и «Начать» блокировалась до лишнего тапа по режиму на КАЖДЫЙ старт.
+    setSelectedMode("time");
     setTimeHours(1);
     setTimeMinutes(0);
     setFixedAmount(5000);
@@ -928,7 +943,10 @@ const Dashboard: React.FC = () => {
       const endTime = Date.now();
 
       if (shouldPrint || settings.autoPrintReceipt) {
-        await printSessionReceipt({ table, session, settings, endTime });
+        const ok = await printSessionReceipt({ table, session, settings, endTime });
+        // Раньше результат печати игнорировался: при сбое принтера стол
+        // закрывался «молча», кассир не знал, что чек не вышел. Теперь — тост.
+        if (!ok) addToast("error", t("dashboard.receipt_failed"));
       }
 
       endSession(selectedTable, endTime, payment);
@@ -939,6 +957,21 @@ const Dashboard: React.FC = () => {
       setIsClosing(false);
     }
   };
+
+  // Печать предварительного счёта (пречека) БЕЗ закрытия стола: гость получает счёт
+  // на руки, стол/сессия продолжают идти. Закрытие — отдельным действием после оплаты.
+  const handlePrintPreliminary = useCallback(async () => {
+    if (!selectedTable) return;
+    const table = tables.find((t) => t.id === selectedTable);
+    if (!table || !table.currentSession) return;
+    const ok = await printSessionReceipt({
+      table,
+      session: table.currentSession,
+      settings,
+      endTime: Date.now(),
+    });
+    addToast(ok ? "success" : "error", ok ? t("dashboard.preliminary_printed") : t("dashboard.preliminary_failed"));
+  }, [selectedTable, tables, settings, addToast, t]);
 
   const handleOpenBar = useCallback(
     (tableId: number) => {
@@ -1009,12 +1042,19 @@ const Dashboard: React.FC = () => {
             receiptFontSize: settings.receiptFontSize,
             receiptPaddingMm: settings.receiptPaddingMm,
           });
-          await window.electronAPI?.printer?.printReceipt(
-            html,
-            settings.receiptWidthMm,
-            settings.silentPrint,
-            settings.receiptPrinterName,
-          );
+          // Печать в отдельном try/catch: раньше реджект принтера выбрасывал из
+          // всего try и finalizeBarOrder не вызывался — заказ оставался открытым,
+          // деньги не проведены, ошибки не видно. Теперь заказ закрывается всегда.
+          try {
+            await window.electronAPI?.printer?.printReceipt(
+              html,
+              settings.receiptWidthMm,
+              settings.silentPrint,
+              settings.receiptPrinterName,
+            );
+          } catch {
+            addToast("error", t("bar.receipt_failed"));
+          }
         }
 
         finalizeBarOrder(selectedWalkInOrder.id, payment);
@@ -1026,8 +1066,50 @@ const Dashboard: React.FC = () => {
         setIsClosingWalkIn(false);
       }
     },
-    [finalizeBarOrder, selectedWalkInOrder, settings, t],
+    [finalizeBarOrder, selectedWalkInOrder, settings, t, addToast],
   );
+
+  // Печать счёта гостю для заказа без стола БЕЗ его закрытия (аналог пречека у столов):
+  // гость получает счёт на руки, заказ остаётся открытым, оплата — отдельным действием.
+  const handlePrintWalkInPreliminary = useCallback(async () => {
+    if (!selectedWalkInOrder) return;
+    const serviceCharge = settings.serviceChargeEnabled
+      ? Math.round(
+          (selectedWalkInOrder.totalCost * settings.serviceChargePercent) / 100,
+        )
+      : 0;
+    const html = generateBarSaleReceiptHTML({
+      clubName: settings.clubName,
+      receiptCompanyName: settings.receiptCompanyName,
+      receiptCity: settings.receiptCity,
+      receiptPhone: settings.receiptPhone,
+      receiptCashierName: settings.receiptCashierName,
+      items: selectedWalkInOrder.items.map((item) => ({
+        name: item.menuItemName,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      totalCost: selectedWalkInOrder.totalCost,
+      serviceCharge,
+      serviceChargePercent: settings.serviceChargePercent,
+      currency: settings.currency,
+      tableName: selectedWalkInOrder.label || t("bar.no_table"),
+      receiptWidthMm: settings.receiptWidthMm,
+      receiptFontSize: settings.receiptFontSize,
+      receiptPaddingMm: settings.receiptPaddingMm,
+    });
+    try {
+      await window.electronAPI?.printer?.printReceipt(
+        html,
+        settings.receiptWidthMm,
+        settings.silentPrint,
+        settings.receiptPrinterName,
+      );
+      addToast("success", t("dashboard.preliminary_printed"));
+    } catch {
+      addToast("error", t("dashboard.preliminary_failed"));
+    }
+  }, [selectedWalkInOrder, settings, t, addToast]);
 
   useEffect(() => {
     if (!selectedWalkInOrderId) return;
@@ -1044,7 +1126,9 @@ const Dashboard: React.FC = () => {
   const handleCancelWalkInItem = useCallback(
     async (order: BarOrder, item: BarOrderItem) => {
       const auth = await requestCancelAuth({
-        itemLabel: `${item.menuItemName} × ${item.quantity}`,
+        itemLabel: `${item.menuItemName} × ${item.quantity} — ${formatMoney(
+          item.price * item.quantity,
+        )} ${settings.currency}`,
       });
       if (!auth) return;
 
@@ -1053,7 +1137,7 @@ const Dashboard: React.FC = () => {
         setShowWalkInItemsModal(false);
       }
     },
-    [cancelOpenWalkInItem],
+    [cancelOpenWalkInItem, requestCancelAuth, settings.currency],
   );
 
   const handleReserve = useCallback((tableId: number) => {
@@ -1127,7 +1211,7 @@ const Dashboard: React.FC = () => {
           <div>
             <p className="stat-label">{t("dashboard.revenue_total")}</p>
             <p className="stat-value">
-              {revenue.total.toLocaleString()} {settings.currency}
+              {formatMoney(revenue.total)} {settings.currency}
             </p>
           </div>
         </div>
@@ -1138,7 +1222,7 @@ const Dashboard: React.FC = () => {
           <div>
             <p className="stat-label">{t("dashboard.revenue_table")}</p>
             <p className="stat-value">
-              {revenue.table.toLocaleString()} {settings.currency}
+              {formatMoney(revenue.table)} {settings.currency}
             </p>
           </div>
         </div>
@@ -1149,7 +1233,7 @@ const Dashboard: React.FC = () => {
           <div>
             <p className="stat-label">{t("dashboard.revenue_bar")}</p>
             <p className="stat-value">
-              {revenue.bar.toLocaleString()} {settings.currency}
+              {formatMoney(revenue.bar)} {settings.currency}
             </p>
           </div>
         </div>
@@ -1283,10 +1367,10 @@ const Dashboard: React.FC = () => {
             </h2>
 
             <p className="modal-hint" style={{ marginBottom: "16px" }}>
-              Сейчас: {selectedTableCurrentRate.toLocaleString()}{" "}
+              Сейчас: {formatMoney(selectedTableCurrentRate)}{" "}
               {settings.currency}/час
               {selectedTableData.priceSchedule.length > 0 &&
-                ` · вне интервалов ${selectedTableData.pricePerHour.toLocaleString()} ${settings.currency}/час`}
+                ` · вне интервалов ${formatMoney(selectedTableData.pricePerHour)} ${settings.currency}/час`}
             </p>
 
             {/* Выбор режима */}
@@ -1405,7 +1489,7 @@ const Dashboard: React.FC = () => {
                           >
                             {tariff.name}
                           </span>
-                          <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                             {tariff.startTime}–{tariff.endTime} ·{" "}
                             {tariff.durationHours} ч
                             {tariff.menuProducts.length > 0 &&
@@ -1419,7 +1503,7 @@ const Dashboard: React.FC = () => {
                             color: "#a78bfa",
                           }}
                         >
-                          {tariff.price.toLocaleString()} {settings.currency}
+                          {formatMoney(tariff.price)} {settings.currency}
                         </span>
                       </button>
                     ))}
@@ -1492,7 +1576,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 {(timeHours > 0 || timeMinutes > 0) && (
                   <div className="time-estimate">
-                    Стоимость: {timeEstimateCost.toLocaleString()}{" "}
+                    Стоимость: {formatMoney(timeEstimateCost)}{" "}
                     {settings.currency}
                   </div>
                 )}
@@ -1510,7 +1594,7 @@ const Dashboard: React.FC = () => {
                       onClick={() => setFixedAmount(a)}
                       className={`amount-preset-btn ${fixedAmount === a ? "active" : ""}`}
                     >
-                      {a.toLocaleString()} {settings.currency}
+                      {formatMoney(a)} {settings.currency}
                     </button>
                   ))}
                 </div>
@@ -1564,13 +1648,13 @@ const Dashboard: React.FC = () => {
                   <span
                     style={{ fontSize: 16, fontWeight: 700, color: "#a78bfa" }}
                   >
-                    {selectedTariff.price.toLocaleString()} {settings.currency}
+                    {formatMoney(selectedTariff.price)} {settings.currency}
                   </span>
                 </div>
                 <div
                   style={{
                     fontSize: 12,
-                    color: "#94a3b8",
+                    color: "var(--text-secondary)",
                     display: "flex",
                     flexDirection: "column",
                     gap: 4,
@@ -1627,6 +1711,7 @@ const Dashboard: React.FC = () => {
             table={selectedTableData}
             onConfirm={handleConfirmEnd}
             onCancel={() => setShowEndModal(false)}
+            onPrintPreliminary={handlePrintPreliminary}
             autoPrintEnabled={settings.autoPrintReceipt}
             busy={isClosing}
           />
@@ -1639,6 +1724,7 @@ const Dashboard: React.FC = () => {
         <WalkInCloseModal
           order={selectedWalkInOrder}
           onConfirm={handleConfirmWalkInClose}
+          onPrintPreliminary={handlePrintWalkInPreliminary}
           onCancel={() => setShowWalkInCloseModal(false)}
           onCancelItem={(item) =>
             handleCancelWalkInItem(selectedWalkInOrder, item)
@@ -1759,9 +1845,10 @@ const EndSessionModal: React.FC<{
   table: BilliardTable;
   onConfirm: (shouldPrint?: boolean, payment?: PaymentDetails) => void;
   onCancel: () => void;
+  onPrintPreliminary: () => Promise<void>;
   autoPrintEnabled: boolean;
   busy?: boolean;
-}> = ({ table, onConfirm, onCancel, autoPrintEnabled, busy }) => {
+}> = ({ table, onConfirm, onCancel, onPrintPreliminary, autoPrintEnabled, busy }) => {
   const settings = useStore((s) => s.settings);
   const cancelOpenTableItem = useStore((s) => s.cancelOpenTableItem);
   const { t } = useT();
@@ -1769,20 +1856,34 @@ const EndSessionModal: React.FC<{
     paymentMethod: "cash",
   });
   const [isPaymentValid, setIsPaymentValid] = useState(true);
+  const [printingPreliminary, setPrintingPreliminary] = useState(false);
+
+  const handlePreliminary = async () => {
+    if (printingPreliminary || busy) return;
+    setPrintingPreliminary(true);
+    try {
+      await onPrintPreliminary();
+    } finally {
+      setPrintingPreliminary(false);
+    }
+  };
 
   // Отмена ошибочно пробитой позиции прямо на чекауте (защищено паролем + причина).
   const handleCancelBarItem = async (item: BarOrderItem) => {
     const auth = await requestCancelAuth({
-      itemLabel: `${item.menuItemName} × ${item.quantity}`,
+      itemLabel: `${item.menuItemName} × ${item.quantity} — ${formatMoney(
+        item.price * item.quantity,
+      )} ${settings.currency}`,
     });
     if (auth) cancelOpenTableItem(table.id, item.id, auth);
   };
-  // Escape — отмена, Enter — завершить с выбранным способом оплаты (защита от busy —
-  // повторный вызов отсекает closingRef в Dashboard).
+  // Escape — отмена. Enter — ОСНОВНОЕ действие ряда: «Оплатить и закрыть с чеком»
+  // (гость получает чек). Раньше Enter молча закрывал БЕЗ печати, не совпадая с
+  // визуально главной кнопкой. Печатаем через onConfirm(true), либо через автопринт.
   useModalKeyboard({
     onEscape: onCancel,
     onEnter: () => {
-      if (!busy && isPaymentValid) onConfirm(false, payment);
+      if (!busy && isPaymentValid) onConfirm(!autoPrintEnabled, payment);
     },
   });
   const session = table.currentSession!;
@@ -1826,15 +1927,15 @@ const EndSessionModal: React.FC<{
               </span>
             </div>
             <div className="end-session-item">
-              <span className="end-session-label">За стол</span>
+              <span className="end-session-label">{t("dashboard.table_cost")}</span>
               <span className="end-session-value text-emerald-400">
-                {tableCost.toLocaleString()} {settings.currency}
+                {formatMoney(tableCost)} {settings.currency}
               </span>
             </div>
             <div className="end-session-item">
-              <span className="end-session-label">За бар</span>
+              <span className="end-session-label">{t("dashboard.bar_cost")}</span>
               <span className="end-session-value text-amber-400">
-                {barCost.toLocaleString()} {settings.currency}
+                {formatMoney(barCost)} {settings.currency}
               </span>
             </div>
           </div>
@@ -1842,7 +1943,7 @@ const EndSessionModal: React.FC<{
           {session.barOrders.length > 0 && (
             <div className="end-session-orders">
               <h4 className="end-session-orders-title">
-                Заказы бара · {session.barOrders.length}
+                {t("dashboard.bar_orders")} · {session.barOrders.length}
               </h4>
               {session.barOrders.map((item) => (
                 <div key={item.id} className="end-session-order-item">
@@ -1851,7 +1952,7 @@ const EndSessionModal: React.FC<{
                   </span>
                   <span className="end-session-order-right">
                     <span>
-                      {(item.price * item.quantity).toLocaleString()}{" "}
+                      {formatMoney(item.price * item.quantity)}{" "}
                       {settings.currency}
                     </span>
                     <button
@@ -1872,17 +1973,17 @@ const EndSessionModal: React.FC<{
           {serviceCharge > 0 && (
             <div className="end-session-grid" style={{ marginTop: 4 }}>
               <div className="end-session-item">
-                <span className="end-session-label">Сумма</span>
+                <span className="end-session-label">{t("dashboard.subtotal")}</span>
                 <span className="end-session-value">
-                  {(tableCost + barCost).toLocaleString()} {settings.currency}
+                  {formatMoney(tableCost + barCost)} {settings.currency}
                 </span>
               </div>
               <div className="end-session-item">
                 <span className="end-session-label">
-                  Обслуживание ({settings.serviceChargePercent}%)
+                  {t("dashboard.service_cost")} ({settings.serviceChargePercent}%)
                 </span>
                 <span className="end-session-value text-amber-400">
-                  +{serviceCharge.toLocaleString()} {settings.currency}
+                  +{formatMoney(serviceCharge)} {settings.currency}
                 </span>
               </div>
             </div>
@@ -1900,50 +2001,58 @@ const EndSessionModal: React.FC<{
           />
 
           <div className="end-session-total">
-            <span>ИТОГО К ОПЛАТЕ</span>
+            <span>{t("dashboard.grand_total")}</span>
             <span>
-              {grandTotal.toLocaleString()} {settings.currency}
+              {formatMoney(grandTotal)} {settings.currency}
             </span>
-          </div>
-
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: 12,
-              padding: "8px 0",
-              borderTop: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
-            <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600 }}>
-              Фискальный документ НЕ сформирован
-            </p>
-            <p style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
-              Для получения фискального документа используйте ККМ
-            </p>
           </div>
         </div>
         <div className="modal-actions end-session-actions">
           <button onClick={onCancel} className="btn btn-ghost" disabled={busy}>
             {t("common.back")}
           </button>
-          {!autoPrintEnabled && (
+          <button
+            onClick={handlePreliminary}
+            className="btn btn-ghost"
+            disabled={busy || printingPreliminary}
+            title={t("dashboard.end_preliminary_hint")}
+          >
+            <Printer size={16} />
+            {t("dashboard.end_preliminary")}
+          </button>
+          {autoPrintEnabled ? (
+            // Автопринт включён: закрытие всё равно печатает чек → одна зелёная
+            // подтверждающая кнопка с честной подписью «Оплатить и закрыть».
             <button
-              onClick={() => onConfirm(true, payment)}
+              onClick={() => onConfirm(false, payment)}
               className="btn btn-primary"
               disabled={busy || !isPaymentValid}
             >
-              <Printer size={16} />
-              {t("dashboard.end_print")}
+              <Check size={16} />
+              {t("dashboard.end_pay_close")}
             </button>
+          ) : (
+            <>
+              {/* Второстепенное действие — закрыть без чека (приглушённая ghost). */}
+              <button
+                onClick={() => onConfirm(false, payment)}
+                className="btn btn-ghost"
+                disabled={busy || !isPaymentValid}
+              >
+                {t("dashboard.end_close")}
+              </button>
+              {/* ОСНОВНОЕ — оплатить и закрыть С чеком (зелёная primary). Раньше
+                  штатное закрытие было красным btn-danger, как удаление. */}
+              <button
+                onClick={() => onConfirm(true, payment)}
+                className="btn btn-primary"
+                disabled={busy || !isPaymentValid}
+              >
+                <Printer size={16} />
+                {t("dashboard.end_print")}
+              </button>
+            </>
           )}
-          <button
-            onClick={() => onConfirm(false, payment)}
-            className="btn btn-danger"
-            disabled={busy || !isPaymentValid}
-          >
-            <Square size={16} />
-            {t("dashboard.end_close")}
-          </button>
         </div>
       </div>
     </div>
@@ -1953,23 +2062,35 @@ const EndSessionModal: React.FC<{
 const WalkInCloseModal: React.FC<{
   order: BarOrder;
   onConfirm: (shouldPrint?: boolean, payment?: PaymentDetails) => void;
+  onPrintPreliminary: () => Promise<void>;
   onCancel: () => void;
   onCancelItem: (item: BarOrderItem) => void;
   busy?: boolean;
-}> = ({ order, onConfirm, onCancel, onCancelItem, busy }) => {
+}> = ({ order, onConfirm, onPrintPreliminary, onCancel, onCancelItem, busy }) => {
   const settings = useStore((s) => s.settings);
   const { t } = useT();
   const [payment, setPayment] = useState<PaymentDetails>({
     paymentMethod: "cash",
   });
   const [isPaymentValid, setIsPaymentValid] = useState(true);
+  const [printingPreliminary, setPrintingPreliminary] = useState(false);
 
   useModalKeyboard({
     onEscape: onCancel,
     onEnter: () => {
-      if (!busy && isPaymentValid) onConfirm(false, payment);
+      if (!busy && isPaymentValid) onConfirm(true, payment);
     },
   });
+
+  const handlePreliminary = async () => {
+    if (printingPreliminary || busy) return;
+    setPrintingPreliminary(true);
+    try {
+      await onPrintPreliminary();
+    } finally {
+      setPrintingPreliminary(false);
+    }
+  };
 
   const serviceCharge = settings.serviceChargeEnabled
     ? Math.round((order.totalCost * settings.serviceChargePercent) / 100)
@@ -2010,7 +2131,7 @@ const WalkInCloseModal: React.FC<{
                 {t("dashboard.bar_cost")}
               </span>
               <span className="end-session-value text-amber-400">
-                {order.totalCost.toLocaleString()} {settings.currency}
+                {formatMoney(order.totalCost)} {settings.currency}
               </span>
             </div>
             <div className="end-session-item">
@@ -2040,7 +2161,7 @@ const WalkInCloseModal: React.FC<{
                 </span>
                 <span className="end-session-order-right">
                   <span>
-                    {(item.price * item.quantity).toLocaleString()}{" "}
+                    {formatMoney(item.price * item.quantity)}{" "}
                     {settings.currency}
                   </span>
                   <button
@@ -2060,17 +2181,20 @@ const WalkInCloseModal: React.FC<{
           {serviceCharge > 0 && (
             <div className="end-session-grid" style={{ marginTop: 4 }}>
               <div className="end-session-item">
-                <span className="end-session-label">Сумма</span>
+                <span className="end-session-label">
+                  {t("dashboard.subtotal")}
+                </span>
                 <span className="end-session-value">
-                  {order.totalCost.toLocaleString()} {settings.currency}
+                  {formatMoney(order.totalCost)} {settings.currency}
                 </span>
               </div>
               <div className="end-session-item">
                 <span className="end-session-label">
-                  Обслуживание ({settings.serviceChargePercent}%)
+                  {t("dashboard.service_cost")} ({settings.serviceChargePercent}
+                  %)
                 </span>
                 <span className="end-session-value text-amber-400">
-                  +{serviceCharge.toLocaleString()} {settings.currency}
+                  +{formatMoney(serviceCharge)} {settings.currency}
                 </span>
               </div>
             </div>
@@ -2087,9 +2211,9 @@ const WalkInCloseModal: React.FC<{
           />
 
           <div className="end-session-total">
-            <span>ИТОГО К ОПЛАТЕ</span>
+            <span>{t("dashboard.grand_total")}</span>
             <span>
-              {grandTotal.toLocaleString()} {settings.currency}
+              {formatMoney(grandTotal)} {settings.currency}
             </span>
           </div>
         </div>
@@ -2097,6 +2221,25 @@ const WalkInCloseModal: React.FC<{
           <button onClick={onCancel} className="btn btn-ghost" disabled={busy}>
             {t("common.back")}
           </button>
+          {/* Счёт гостю: печатает счёт, но НЕ закрывает заказ. */}
+          <button
+            onClick={handlePreliminary}
+            className="btn btn-ghost"
+            disabled={busy || printingPreliminary}
+            title={t("dashboard.end_preliminary_hint")}
+          >
+            <Printer size={16} />
+            {t("dashboard.end_preliminary")}
+          </button>
+          {/* Второстепенное — закрыть без чека (приглушённая), было красной btn-danger. */}
+          <button
+            onClick={() => onConfirm(false, payment)}
+            className="btn btn-ghost"
+            disabled={busy || !isPaymentValid}
+          >
+            {t("dashboard.end_close")}
+          </button>
+          {/* Основное — оплатить и закрыть с чеком (зелёная). */}
           <button
             onClick={() => onConfirm(true, payment)}
             className="btn btn-primary"
@@ -2104,14 +2247,6 @@ const WalkInCloseModal: React.FC<{
           >
             <Printer size={16} />
             {t("dashboard.end_print")}
-          </button>
-          <button
-            onClick={() => onConfirm(false, payment)}
-            className="btn btn-danger"
-            disabled={busy || !isPaymentValid}
-          >
-            <Square size={16} />
-            {t("dashboard.end_close")}
           </button>
         </div>
       </div>
@@ -2151,7 +2286,7 @@ const WalkInItemsModal: React.FC<{
                   </span>
                   <span className="end-session-order-right">
                     <span>
-                      {(item.price * item.quantity).toLocaleString()} {currency}
+                      {formatMoney(item.price * item.quantity)} {currency}
                     </span>
                     <button
                       type="button"

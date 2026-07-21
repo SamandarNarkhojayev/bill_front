@@ -35,8 +35,10 @@ export function computeSessionCharges(
   );
   const barCost = session.barOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const subtotal = tableCost + barCost;
+  // Сервисный сбор начисляется ТОЛЬКО на бар и кухню (barCost). Стол (игровое время)
+  // в базу сбора не входит — за бильярдные столы процент не берём.
   const serviceCharge = settings.serviceChargeEnabled
-    ? Math.round((subtotal * settings.serviceChargePercent) / 100)
+    ? Math.round((barCost * settings.serviceChargePercent) / 100)
     : 0;
   return {
     durationMinutes,

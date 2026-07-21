@@ -25,7 +25,7 @@ import {
   Wind,
   Beer,
   CircleDot,
-  GripVertical,
+  Store,
   Tag,
   Printer,
   ChefHat,
@@ -37,6 +37,8 @@ import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
 import { useT } from "../i18n";
 import { requestCancelAuth } from "./cancelAuthController";
+import { showConfirm } from "./confirmController";
+import { formatMoney } from "../utils/format";
 import type {
   BarMenuItem,
   BarCategoryConfig,
@@ -118,7 +120,7 @@ const ItemImage = memo<{
     >
       <IconComp
         size={size === "lg" ? 28 : size === "md" ? 22 : 16}
-        style={{ color: category?.color || "#94a3b8" }}
+        style={{ color: category?.color || "var(--text-secondary)" }}
       />
     </div>
   );
@@ -162,7 +164,7 @@ const ProductCard = memo<ProductCardProps>(
         <div className="bar-product-info">
           <span className="bar-product-name">{item.name}</span>
           <span className="bar-product-price">
-            {item.price.toLocaleString()} {currency}
+            {formatMoney(item.price)} {currency}
           </span>
         </div>
         <StockBadge item={item} />
@@ -321,7 +323,9 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
 
   // Модальное окно подтверждения печати чека
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [showWalkInCloseModal, setShowWalkInCloseModal] = useState(false);
+  const [printingWalkInBill, setPrintingWalkInBill] = useState(false);
   // Защита от двойного клика по продаже (печать/без печати) — синхронный замок.
   const sellingRef = useRef(false);
   // Способ оплаты для прямой продажи (shopMode)
@@ -582,6 +586,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
   const handlePrintAndSell = async () => {
     if (sellingRef.current) return;
     sellingRef.current = true;
+    setSelling(true); // визуальный busy на кнопках модалки печати
     // Собираем позиции для чека
     const receiptItems: { name: string; quantity: number; price: number }[] =
       [];
@@ -625,9 +630,13 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
       );
     } catch (err) {
       console.error("Bar receipt print error:", err);
+      // Раньше сбой печати уходил только в консоль — кассир был уверен, что чек
+      // напечатан. Продажу проводим (деньги приняты), но об ошибке печати говорим.
+      addToast("error", t("bar.receipt_failed"));
     }
     setShowPrintModal(false);
     executeQuickOrder();
+    setSelling(false);
     setTimeout(() => {
       sellingRef.current = false;
     }, 0);
@@ -636,8 +645,10 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
   const handleSellWithoutPrint = () => {
     if (sellingRef.current) return;
     sellingRef.current = true;
+    setSelling(true);
     setShowPrintModal(false);
     executeQuickOrder();
+    setSelling(false);
     setTimeout(() => {
       sellingRef.current = false;
     }, 0);
@@ -722,13 +733,60 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
     }, 0);
   };
 
+  // Счёт гостю: печатает счёт заказа без стола, но НЕ закрывает и не проводит оплату.
+  const handlePrintWalkInPreliminary = async () => {
+    if (printingWalkInBill || !selectedWalkInOrder) return;
+    setPrintingWalkInBill(true);
+    const serviceCharge = settings.serviceChargeEnabled
+      ? Math.round(
+          (selectedWalkInOrder.totalCost * settings.serviceChargePercent) / 100,
+        )
+      : 0;
+    try {
+      const html = generateBarSaleReceiptHTML({
+        clubName: settings.clubName,
+        receiptCompanyName: settings.receiptCompanyName,
+        receiptCity: settings.receiptCity,
+        receiptPhone: settings.receiptPhone,
+        receiptCashierName: settings.receiptCashierName,
+        items: selectedWalkInOrder.items.map((item) => ({
+          name: item.menuItemName,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        totalCost: selectedWalkInOrder.totalCost,
+        serviceCharge,
+        serviceChargePercent: settings.serviceChargePercent,
+        currency: settings.currency,
+        tableName: selectedWalkInAccount,
+        receiptWidthMm: settings.receiptWidthMm,
+        receiptFontSize: settings.receiptFontSize,
+        receiptPaddingMm: settings.receiptPaddingMm,
+      });
+      await window.electronAPI?.printer?.printReceipt(
+        html,
+        settings.receiptWidthMm,
+        settings.silentPrint,
+        settings.receiptPrinterName,
+      );
+      addToast("success", t("dashboard.preliminary_printed"));
+    } catch (err) {
+      console.error("Walk-in preliminary print error:", err);
+      addToast("error", t("dashboard.preliminary_failed"));
+    } finally {
+      setPrintingWalkInBill(false);
+    }
+  };
+
   const handleCancelWalkInOrderItem = async (itemId: string) => {
     if (!selectedWalkInOrder) return;
     const item = selectedWalkInOrder.items.find((entry) => entry.id === itemId);
     if (!item) return;
 
     const auth = await requestCancelAuth({
-      itemLabel: `${item.menuItemName} × ${item.quantity}`,
+      itemLabel: `${item.menuItemName} × ${item.quantity} — ${formatMoney(
+        item.price * item.quantity,
+      )} ${settings.currency}`,
     });
     if (!auth) return;
 
@@ -772,7 +830,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
 
   const handleAddItem = () => {
     if (!canManageCatalog) return;
-    if (!newItem.name || !newItem.price) return;
+    // Раньше при пустом названии/цене кнопка молча ничего не делала — теперь тост.
+    if (!newItem.name || !newItem.price) {
+      addToast("warning", t("bar.fill_required"));
+      return;
+    }
     const targetCategoryId = newItem.categoryId || sortedCategories[0]?.id;
     // Нельзя добавить позицию без категории — иначе не попадёт в нужный отдел
     if (!targetCategoryId) return;
@@ -825,7 +887,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                 {shopMode ? t("bar.sale_of_bar") : t("bar.add_to_table_bill")}:
               </p>
               <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
-                {quickCartTotal.toLocaleString()} {settings.currency}
+                {formatMoney(quickCartTotal)} {settings.currency}
               </p>
               {shopMode && (
                 <div
@@ -875,12 +937,17 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
               <button
                 onClick={handleSellWithoutPrint}
                 className="btn btn-ghost"
+                disabled={selling}
               >
-                {t("dashboard.end_close")}
+                {t("bar.sell_without_receipt")}
               </button>
-              <button onClick={handlePrintAndSell} className="btn btn-primary">
+              <button
+                onClick={handlePrintAndSell}
+                className="btn btn-primary"
+                disabled={selling}
+              >
                 <Printer size={16} />
-                {t("bar.print_precheck")}
+                {selling ? t("common.loading") : t("bar.print_precheck")}
               </button>
             </div>
           </div>
@@ -914,16 +981,16 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                 {t("bar.sale_of_bar")}:
               </p>
               <p style={{ fontWeight: 600, fontSize: 18, marginTop: 6 }}>
-                {(
+                {formatMoney(
                   selectedWalkInOrder.totalCost +
-                  (settings.serviceChargeEnabled
-                    ? Math.round(
-                        (selectedWalkInOrder.totalCost *
-                          settings.serviceChargePercent) /
-                          100,
-                      )
-                    : 0)
-                ).toLocaleString()}{" "}
+                    (settings.serviceChargeEnabled
+                      ? Math.round(
+                          (selectedWalkInOrder.totalCost *
+                            settings.serviceChargePercent) /
+                            100,
+                        )
+                      : 0),
+                )}{" "}
                 {settings.currency}
               </p>
               <div
@@ -941,7 +1008,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                     </span>
                     <span className="end-session-order-right">
                       <span>
-                        {(item.price * item.quantity).toLocaleString()}{" "}
+                        {formatMoney(item.price * item.quantity)}{" "}
                         {settings.currency}
                       </span>
                       <button
@@ -977,6 +1044,18 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
               />
             </div>
             <div className="modal-actions">
+              {/* Счёт гостю — печатает счёт, но НЕ закрывает заказ (оплата не нужна). */}
+              <button
+                onClick={handlePrintWalkInPreliminary}
+                className="btn btn-ghost"
+                disabled={
+                  printingWalkInBill || selectedWalkInOrder.items.length === 0
+                }
+                title={t("dashboard.end_preliminary_hint")}
+              >
+                <Printer size={16} />
+                {t("dashboard.end_preliminary")}
+              </button>
               <button
                 onClick={handleCloseWalkInAccountWithoutPrint}
                 className="btn btn-ghost"
@@ -990,7 +1069,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                 disabled={!isWalkInPaymentValid}
               >
                 <Printer size={16} />
-                {t("bar.print_precheck")}
+                {t("dashboard.end_print")}
               </button>
             </div>
           </div>
@@ -1026,8 +1105,9 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск..."
+              placeholder={t("bar.search_placeholder")}
               className="search-input-v2"
+              autoFocus
             />
           </div>
           <div className="bar-cat-chips">
@@ -1067,23 +1147,30 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
       {activeTab === "quick-order" && (
         <div className="bar-order-layout">
           <div className="bar-menu-grid-v2">
-            {availableMenu.map((item) => (
-              <ProductCard
-                key={item.id}
-                item={item}
-                qty={quickCart.get(item.id) || 0}
-                category={categoryById.get(item.categoryId)}
-                currency={settings.currency}
-                onAdd={addToQuickCart}
-                onRemove={removeFromQuickCart}
-              />
-            ))}
+            {availableMenu.length === 0 ? (
+              <div className="bar-menu-empty">
+                <Search size={28} />
+                <span>{t("bar.nothing_found")}</span>
+              </div>
+            ) : (
+              availableMenu.map((item) => (
+                <ProductCard
+                  key={item.id}
+                  item={item}
+                  qty={quickCart.get(item.id) || 0}
+                  category={categoryById.get(item.categoryId)}
+                  currency={settings.currency}
+                  onAdd={addToQuickCart}
+                  onRemove={removeFromQuickCart}
+                />
+              ))
+            )}
           </div>
 
           <div className="bar-order-sidebar">
             <div className="bar-sidebar-section">
               <h3 className="bar-sidebar-title">
-                <GripVertical size={16} /> {t("bar.sell_mode")}
+                <Store size={16} /> {t("bar.sell_mode")}
               </h3>
               <div className="bar-table-list" style={{ marginBottom: 8 }}>
                 <button
@@ -1202,7 +1289,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                           </span>
                           <span className="bar-table-btn-mode">
                             {accountOrder
-                              ? `${accountOrder.items.length} поз. • ${accountOrder.totalCost.toLocaleString()} ${settings.currency}`
+                              ? `${accountOrder.items.length} поз. • ${formatMoney(accountOrder.totalCost)} ${settings.currency}`
                               : t("bar.account_empty")}
                           </span>
                         </button>
@@ -1231,7 +1318,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                       >
                         <span>{selectedWalkInAccount}</span>
                         <span className="bar-cart-total-value">
-                          {selectedWalkInOrder.totalCost.toLocaleString()}{" "}
+                          {formatMoney(selectedWalkInOrder.totalCost)}{" "}
                           {settings.currency}
                         </span>
                       </div>
@@ -1246,7 +1333,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                                 {item.menuItemName}
                               </span>
                               <span className="bar-cart-row-price">
-                                {(item.price * item.quantity).toLocaleString()}{" "}
+                                {formatMoney(item.price * item.quantity)}{" "}
                                 {settings.currency}
                               </span>
                             </div>
@@ -1283,7 +1370,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                               {item.name}
                             </span>
                             <span className="bar-cart-row-price">
-                              {(item.price * qty).toLocaleString()}{" "}
+                              {formatMoney(item.price * qty)}{" "}
                               {settings.currency}
                             </span>
                           </div>
@@ -1315,7 +1402,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                         Обслуживание ({settings.serviceChargePercent}%)
                       </span>
                       <span>
-                        {quickServiceCharge.toLocaleString()}{" "}
+                        {formatMoney(quickServiceCharge)}{" "}
                         {settings.currency}
                       </span>
                     </div>
@@ -1323,14 +1410,14 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                   <div className="bar-cart-total-row">
                     <span>{t("common.total")}</span>
                     <span className="bar-cart-total-value">
-                      {(quickCartTotal + quickServiceCharge).toLocaleString()}{" "}
+                      {formatMoney(quickCartTotal + quickServiceCharge)}{" "}
                       {settings.currency}
                     </span>
                   </div>
                   <button
                     onClick={handleQuickOrder}
                     disabled={!shopMode && !selectedTable}
-                    className={`btn ${shopMode ? "btn-amber" : "btn-amber"} btn-full bar-cart-submit`}
+                    className={`btn ${shopMode ? "btn-primary" : "btn-amber"} btn-full bar-cart-submit`}
                   >
                     <ShoppingCart size={18} />{" "}
                     {shopMode ? t("bar.add_to_account") : t("bar.add_to_bill")}
@@ -1343,7 +1430,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                       >
                         <span>{selectedWalkInAccount}</span>
                         <span className="bar-cart-total-value">
-                          {selectedWalkInOrder.totalCost.toLocaleString()}{" "}
+                          {formatMoney(selectedWalkInOrder.totalCost)}{" "}
                           {settings.currency}
                         </span>
                       </div>
@@ -1358,7 +1445,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                                 {item.menuItemName}
                               </span>
                               <span className="bar-cart-row-price">
-                                {(item.price * item.quantity).toLocaleString()}{" "}
+                                {formatMoney(item.price * item.quantity)}{" "}
                                 {settings.currency}
                               </span>
                             </div>
@@ -1518,6 +1605,12 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
           )}
 
           <div className="bar-menu-list-v2">
+            {filteredMenu.length === 0 && (
+              <div className="bar-menu-empty">
+                <Search size={28} />
+                <span>{t("bar.nothing_found")}</span>
+              </div>
+            )}
             {filteredMenu.map((item) => {
               const cat = categoryById.get(item.categoryId);
               if (editingItem === item.id) {
@@ -1674,11 +1767,11 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                   </div>
                   <div className="bar-menu-row-prices">
                     <span className="bar-menu-row-price">
-                      {item.price.toLocaleString()} {settings.currency}
+                      {formatMoney(item.price)} {settings.currency}
                     </span>
                     {item.costPrice > 0 && (
                       <span className="bar-menu-row-cost">
-                        Себест. {item.costPrice.toLocaleString()}
+                        Себест. {formatMoney(item.costPrice)}
                       </span>
                     )}
                   </div>
@@ -1698,7 +1791,18 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                       <Edit3 size={15} />
                     </button>
                     <button
-                      onClick={() => removeMenuItem(item.id)}
+                      onClick={async () => {
+                        // Раньше позиция меню удалялась одним касанием, без спроса.
+                        if (
+                          await showConfirm({
+                            title: t("bar.delete_item"),
+                            message: item.name,
+                            confirmText: t("common.delete"),
+                            danger: true,
+                          })
+                        )
+                          removeMenuItem(item.id);
+                      }}
                       className="btn btn-ghost btn-icon text-red-400"
                     >
                       <Trash2 size={15} />
@@ -1877,7 +1981,7 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                   <div className="bar-cat-card-info">
                     <span className="bar-cat-card-name">{cat.name}</span>
                     <span className="bar-cat-card-count">
-                      {itemCount} позиций
+                      {t("bar.positions_count", { count: itemCount })}
                     </span>
                   </div>
                   <div className="bar-cat-card-actions">
@@ -1891,7 +1995,21 @@ const BarPage: React.FC<BarPageProps> = ({ department = "combined" }) => {
                       <Edit3 size={15} />
                     </button>
                     <button
-                      onClick={() => removeBarCategory(cat.id)}
+                      onClick={async () => {
+                        // Удаление категории с позициями осиротит их — спрашиваем,
+                        // предупреждая о числе позиций внутри.
+                        if (
+                          await showConfirm({
+                            title: t("bar.delete_category"),
+                            message: `${cat.name} · ${t("bar.positions_count", {
+                              count: itemCount,
+                            })}`,
+                            confirmText: t("common.delete"),
+                            danger: true,
+                          })
+                        )
+                          removeBarCategory(cat.id);
+                      }}
                       className="btn btn-ghost btn-icon text-red-400"
                     >
                       <Trash2 size={15} />

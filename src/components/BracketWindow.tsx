@@ -141,7 +141,7 @@ const BracketWindow: React.FC = () => {
                                   {t('tournaments.tableHash', { number: match.tableNumber })}
                                 </span>
                               ) : isBye ? (
-                                <span style={{ fontSize: 9, color: '#94a3b8', fontStyle: 'italic' }}>BYE</span>
+                                <span style={{ fontSize: 9, color: 'var(--text-secondary)', fontStyle: 'italic' }}>BYE</span>
                               ) : null}
                             </div>
                             <div className={`bracket-match-player${!match.participant1 ? ' is-tbd' : ''}${win1 ? ' is-winner' : ''}`}>

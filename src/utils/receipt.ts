@@ -299,7 +299,7 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
         <span class="row-value">${(tableCost + barCost).toLocaleString()} ${currency}</span>
       </div>
       <div class="row">
-        <span class="row-label">Обслуживание (${serviceChargePercent}%):</span>
+        <span class="row-label">Обслуживание (${serviceChargePercent}% с бара):</span>
         <span class="row-value">${serviceCharge.toLocaleString()} ${currency}</span>
       </div>` : ''}
       <div class="total-row">

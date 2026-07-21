@@ -61,7 +61,9 @@ const safeDate = (value: unknown): Date | null => {
 };
 
 const formatMoney = (value: unknown, currency: string): string => {
-  return `${safeNumber(value).toLocaleString()} ${currency}`;
+  // Локаль 'ru-RU' зафиксирована, чтобы разделитель разрядов на экране совпадал
+  // с чеком (receipt.ts тоже печатает в ru-RU). Раньше бралась системная локаль.
+  return `${safeNumber(value).toLocaleString("ru-RU")} ${currency}`;
 };
 
 const ReportsPage: React.FC = () => {
@@ -116,9 +118,6 @@ const ReportsPage: React.FC = () => {
     "default" | "max" | "min"
   >("default");
   const [historyTimeSort, setHistoryTimeSort] = useState<
-    "default" | "max" | "min"
-  >("default");
-  const [historyTableTimeSort, setHistoryTableTimeSort] = useState<
     "default" | "max" | "min"
   >("default");
 
@@ -217,7 +216,10 @@ const ReportsPage: React.FC = () => {
 
   const handleVoidItem = async (record: SessionRecord, item: BarOrderItem) => {
     const auth = await requestCancelAuth({
-      itemLabel: `${item.menuItemName} × ${item.quantity}`,
+      itemLabel: `${item.menuItemName} × ${item.quantity} — ${formatMoney(
+        item.price * item.quantity,
+        settings.currency,
+      )}`,
     });
     if (auth) voidHistoryItem(record.id, item.id, auth);
   };
@@ -302,6 +304,10 @@ const ReportsPage: React.FC = () => {
       byPayment[method] += amount;
     });
 
+    // Сумма фактических оплат (нал+карта+перевод). Она включает обслуживание,
+    // поэтому равна выручке + сервисный сбор. Нужна для сверки с кассой.
+    const paymentsTotal = byPayment.cash + byPayment.card + byPayment.transfer;
+
     return {
       tableRev,
       barRev,
@@ -313,6 +319,7 @@ const ReportsPage: React.FC = () => {
       byTable,
       byHour,
       byPayment,
+      paymentsTotal,
       count: filteredSessions.length,
     };
   }, [filteredSessions]);
@@ -354,29 +361,6 @@ const ReportsPage: React.FC = () => {
       list.sort((a, b) => safeNumber(b.duration) - safeNumber(a.duration));
     }
 
-    // Фильтр для столов по времени - сначала группируем и находим totals по столам
-    if (historyTableTimeSort !== "default") {
-      const tableTimeTotals: Record<string, number> = {};
-      list.forEach((s) => {
-        tableTimeTotals[s.tableName] =
-          (tableTimeTotals[s.tableName] || 0) + safeNumber(s.duration);
-      });
-      if (historyTableTimeSort === "max") {
-        list.sort(
-          (a, b) =>
-            (tableTimeTotals[a.tableName] || 0) -
-            (tableTimeTotals[b.tableName] || 0),
-        );
-      }
-      if (historyTableTimeSort === "min") {
-        list.sort(
-          (a, b) =>
-            (tableTimeTotals[b.tableName] || 0) -
-            (tableTimeTotals[a.tableName] || 0),
-        );
-      }
-    }
-
     return list;
   }, [
     filteredSessions,
@@ -384,7 +368,6 @@ const ReportsPage: React.FC = () => {
     historyModeFilter,
     historyAmountSort,
     historyTimeSort,
-    historyTableTimeSort,
   ]);
 
   // Реверс мемоизируем: historySessions может быть тысячи записей — не аллоцируем
@@ -399,7 +382,6 @@ const ReportsPage: React.FC = () => {
     setHistoryModeFilter("all");
     setHistoryAmountSort("default");
     setHistoryTimeSort("default");
-    setHistoryTableTimeSort("default");
   };
 
   const maxByHour = useMemo(() => Math.max(...stats.byHour, 1), [stats.byHour]);
@@ -425,7 +407,7 @@ const ReportsPage: React.FC = () => {
       ";" +
       t("reports.csvDurationMin") +
       ";" +
-      t("reports.csvTable") +
+      t("reports.csvTableCost") +
       " (" +
       settings.currency +
       ");" +
@@ -669,7 +651,7 @@ const ReportsPage: React.FC = () => {
               </button>
               <button
                 onClick={() => handlePrintReport()}
-                className="btn btn-ghost btn-sm"
+                className="btn btn-primary btn-sm"
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
               >
                 <Printer size={14} /> {t("reports.printReport")}
@@ -681,7 +663,7 @@ const ReportsPage: React.FC = () => {
 
       {isSafeWebViewMode && (
         <div className="date-nav" style={{ marginBottom: 12 }}>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
             {t("reports.lightModeNotice")}
           </span>
         </div>
@@ -947,6 +929,19 @@ const ReportsPage: React.FC = () => {
             </span>
           </div>
         </div>
+        {/* Итог оплат — с ним владелец сверяет кассу. Он включает обслуживание,
+            поэтому = «Выручка (стол+бар)» + «Обслуживание». Раньше строки не было
+            и касса не сходилась с «Общей выручкой» ровно на сервисный сбор. */}
+        <div className="report-payment-item report-payments-total">
+          <div>
+            <span className="report-payment-label">
+              {t("reports.paymentsTotal")}
+            </span>
+            <span className="report-payment-value">
+              {formatMoney(stats.paymentsTotal, settings.currency)}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Графики */}
@@ -1038,8 +1033,7 @@ const ReportsPage: React.FC = () => {
             {(historyTableFilter !== "all" ||
               historyModeFilter !== "all" ||
               historyAmountSort !== "default" ||
-              historyTimeSort !== "default" ||
-              historyTableTimeSort !== "default") && (
+              historyTimeSort !== "default") && (
               <button
                 onClick={resetHistoryFilters}
                 className="btn btn-ghost btn-sm"
@@ -1073,11 +1067,14 @@ const ReportsPage: React.FC = () => {
             <select
               className="form-input"
               value={historyAmountSort}
-              onChange={(e) =>
-                setHistoryAmountSort(
-                  e.target.value as "default" | "max" | "min",
-                )
-              }
+              onChange={(e) => {
+                const v = e.target.value as "default" | "max" | "min";
+                setHistoryAmountSort(v);
+                // Сортировки взаимоисключающие: раньше три list.sort шли подряд и
+                // перетирали друг друга — работала только последняя. Теперь выбор
+                // одной сбрасывает другую, и порядок соответствует подписи.
+                if (v !== "default") setHistoryTimeSort("default");
+              }}
               style={{ width: 220 }}
             >
               <option value="default">{t("reports.amountDefault")}</option>
@@ -1088,29 +1085,16 @@ const ReportsPage: React.FC = () => {
             <select
               className="form-input"
               value={historyTimeSort}
-              onChange={(e) =>
-                setHistoryTimeSort(e.target.value as "default" | "max" | "min")
-              }
+              onChange={(e) => {
+                const v = e.target.value as "default" | "max" | "min";
+                setHistoryTimeSort(v);
+                if (v !== "default") setHistoryAmountSort("default");
+              }}
               style={{ width: 220 }}
             >
               <option value="default">{t("reports.timeDefault")}</option>
               <option value="max">{t("reports.timeMax")}</option>
               <option value="min">{t("reports.timeMin")}</option>
-            </select>
-
-            <select
-              className="form-input"
-              value={historyTableTimeSort}
-              onChange={(e) =>
-                setHistoryTableTimeSort(
-                  e.target.value as "default" | "max" | "min",
-                )
-              }
-              style={{ width: 240 }}
-            >
-              <option value="default">{t("reports.tableTimeDefault")}</option>
-              <option value="max">{t("reports.tableTimeMax")}</option>
-              <option value="min">{t("reports.tableTimeMin")}</option>
             </select>
 
             <button
@@ -1155,7 +1139,7 @@ const ReportsPage: React.FC = () => {
                   <th>{t("reports.thStart")}</th>
                   <th>{t("reports.thEnd")}</th>
                   <th>{t("reports.thTime")}</th>
-                  <th>{t("reports.thTable")}</th>
+                  <th>{t("reports.thTableCost")}</th>
                   <th>{t("reports.thBar")}</th>
                   <th>{t("reports.thTotal")}</th>
                   <th>{t("reports.thPrecheck")}</th>
@@ -1234,6 +1218,17 @@ const ReportsPage: React.FC = () => {
               <span className="cancel-log-count">
                 {filteredCancelLog.length}
               </span>
+              {/* Сумма отмен видна сразу, не раскрывая журнал — для контроля объёма. */}
+              <span className="cancel-log-sum text-amber-400">
+                −
+                {formatMoney(
+                  filteredCancelLog.reduce(
+                    (s, e) => s + safeNumber(e.amount),
+                    0,
+                  ),
+                  settings.currency,
+                )}
+              </span>
             </span>
             <span className="cancel-log-toggle">
               {showCancelLog ? t("cancel.log_hide") : t("cancel.log_show")}
@@ -1286,6 +1281,22 @@ const ReportsPage: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2}>{t("reports.cancelsSum")}</td>
+                    <td className="text-amber-400">
+                      −
+                      {formatMoney(
+                        filteredCancelLog.reduce(
+                          (s, e) => s + safeNumber(e.amount),
+                          0,
+                        ),
+                        settings.currency,
+                      )}
+                    </td>
+                    <td colSpan={3}></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}

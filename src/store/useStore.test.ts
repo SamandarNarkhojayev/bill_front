@@ -185,7 +185,7 @@ describe("endSession", () => {
     expect(useStore.getState().sessionHistory.length).toBe(0);
   });
 
-  it("пишет сервисный сбор в запись отчёта, когда он включён (totalCost — без сбора)", () => {
+  it("пишет сервисный сбор в запись отчёта (только с бара; стол не облагается)", () => {
     useStore.setState((s) => ({
       settings: {
         ...s.settings,
@@ -195,10 +195,12 @@ describe("endSession", () => {
     }));
     useStore.getState().startSession(1, "unlimited");
     setSessionStart(1, T0);
-    useStore.getState().endSession(1, T0 + HOUR); // стол 1000
+    const drink = useStore.getState().barMenu[0];
+    useStore.getState().addBarOrderToTable(1, drink, 2, { silent: true }); // бар 1000
+    useStore.getState().endSession(1, T0 + HOUR); // стол 1000 + бар 1000
     const rec = useStore.getState().sessionHistory.at(-1)!;
-    expect(rec.serviceCharge).toBe(100); // 10% от 1000
-    expect(rec.totalCost).toBe(1000); // totalCost остаётся без сбора
+    expect(rec.serviceCharge).toBe(100); // 10% от 1000 (бар), стол в базу не входит
+    expect(rec.totalCost).toBe(2000); // totalCost (стол+бар) — без сбора
   });
 
   it("сервисный сбор = 0, когда обслуживание выключено", () => {

@@ -443,6 +443,21 @@ const SettingsPage: React.FC = () => {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  // Мгновенное применение переключателя: пишем и в черновик, и сразу в стор.
+  // Раньше тумблеры жили только в localSettings и требовали кнопки «Сохранить» —
+  // пользователь щёлкал тумблер и уходил, теряя изменение без предупреждения.
+  // (Язык/закрепление меню и так применялись мгновенно — приводим к единому поведению.)
+  const applySettings = (patch: Partial<typeof settings>) => {
+    setLocalSettings((prev) => ({ ...prev, ...patch }));
+    updateSettings(patch);
+    if (
+      patch.kitchenSeparate === false &&
+      currentPage === "kitchen"
+    ) {
+      setCurrentPage("bar");
+    }
+  };
+
   const handleFactoryReset = async () => {
     if (!canDeleteData) {
       return;
@@ -634,7 +649,7 @@ const SettingsPage: React.FC = () => {
           <div className="settings-section">
             <h3 className="settings-section-title">
               <Building2 size={18} />
-              Основные
+              {t("settings.section_general")}
             </h3>
             <div className="settings-fields">
               <div className="settings-field">
@@ -858,10 +873,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      soundEnabled: !prev.soundEnabled,
-                    }))
+                    applySettings({ soundEnabled: !localSettings.soundEnabled })
                   }
                   className={`toggle ${localSettings.soundEnabled ? "on" : "off"}`}
                 >
@@ -880,10 +892,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      autoPrintReceipt: !prev.autoPrintReceipt,
-                    }))
+                    applySettings({ autoPrintReceipt: !localSettings.autoPrintReceipt })
                   }
                   className={`toggle ${localSettings.autoPrintReceipt ? "on" : "off"}`}
                 >
@@ -904,10 +913,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      silentPrint: !prev.silentPrint,
-                    }))
+                    applySettings({ silentPrint: !localSettings.silentPrint })
                   }
                   className={`toggle ${localSettings.silentPrint ? "on" : "off"}`}
                 >
@@ -928,10 +934,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      kitchenSeparate: !prev.kitchenSeparate,
-                    }))
+                    applySettings({ kitchenSeparate: !localSettings.kitchenSeparate })
                   }
                   className={`toggle ${localSettings.kitchenSeparate ? "on" : "off"}`}
                 >
@@ -950,10 +953,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      autoPrintKitchenTicket: !prev.autoPrintKitchenTicket,
-                    }))
+                    applySettings({ autoPrintKitchenTicket: !localSettings.autoPrintKitchenTicket })
                   }
                   className={`toggle ${localSettings.autoPrintKitchenTicket ? "on" : "off"}`}
                 >
@@ -972,10 +972,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      personnelEnabled: !prev.personnelEnabled,
-                    }))
+                    applySettings({ personnelEnabled: !localSettings.personnelEnabled })
                   }
                   className={`toggle ${localSettings.personnelEnabled ? "on" : "off"}`}
                 >
@@ -1007,10 +1004,7 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <button
                   onClick={() =>
-                    setLocalSettings((prev) => ({
-                      ...prev,
-                      serviceChargeEnabled: !prev.serviceChargeEnabled,
-                    }))
+                    applySettings({ serviceChargeEnabled: !localSettings.serviceChargeEnabled })
                   }
                   className={`toggle ${localSettings.serviceChargeEnabled ? "on" : "off"}`}
                 >
@@ -1052,7 +1046,7 @@ const SettingsPage: React.FC = () => {
                       className="form-input form-input-sm"
                       style={{ width: 70, textAlign: "center" }}
                     />
-                    <span style={{ fontSize: 12, color: "#94a3b8" }}>%</span>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>%</span>
                   </div>
                 </div>
               )}
@@ -1086,7 +1080,7 @@ const SettingsPage: React.FC = () => {
                     className="form-input form-input-sm"
                     style={{ width: 70, textAlign: "center" }}
                   />
-                  <span style={{ fontSize: 12, color: "#94a3b8" }}>мм</span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>мм</span>
                 </div>
                 <p className="settings-hint">
                   Стандарт: 58мм (узкий) или 80мм (широкий)
@@ -1122,7 +1116,7 @@ const SettingsPage: React.FC = () => {
                     className="form-input form-input-sm"
                     style={{ width: 70, textAlign: "center" }}
                   />
-                  <span style={{ fontSize: 12, color: "#94a3b8" }}>px</span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>px</span>
                 </div>
               </div>
               <div className="settings-field">
@@ -1155,7 +1149,7 @@ const SettingsPage: React.FC = () => {
                     className="form-input form-input-sm"
                     style={{ width: 70, textAlign: "center" }}
                   />
-                  <span style={{ fontSize: 12, color: "#94a3b8" }}>мм</span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>мм</span>
                 </div>
               </div>
             </div>
@@ -1332,7 +1326,7 @@ const SettingsPage: React.FC = () => {
                     ? "#22c55e"
                     : backupStatus.startsWith("❌")
                       ? "#ef4444"
-                      : "#94a3b8",
+                      : "var(--text-secondary)",
                 }}
               >
                 {backupStatus}
@@ -1400,11 +1394,11 @@ const SettingsPage: React.FC = () => {
             {showBackupList && (
               <div style={{ marginTop: 8 }}>
                 {backupLoading ? (
-                  <p style={{ fontSize: 12, color: "#94a3b8" }}>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                     Загрузка списка бэкапов...
                   </p>
                 ) : backupList.length === 0 ? (
-                  <p style={{ fontSize: 12, color: "#94a3b8" }}>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                     Нет доступных бэкапов
                   </p>
                 ) : (
@@ -1603,7 +1597,7 @@ const SettingsPage: React.FC = () => {
                     ? "#22c55e"
                     : portStatus.startsWith("❌")
                       ? "#ef4444"
-                      : "#94a3b8",
+                      : "var(--text-secondary)",
                 }}
               >
                 {portStatus}
@@ -1732,7 +1726,7 @@ const SettingsPage: React.FC = () => {
                         ? "#22c55e"
                         : updateStatus.startsWith("❌")
                           ? "#ef4444"
-                          : "#94a3b8",
+                          : "var(--text-secondary)",
                     }}
                   >
                     {updateStatus}

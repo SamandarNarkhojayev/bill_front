@@ -139,6 +139,10 @@ const Sidebar: React.FC = () => {
     <button
       key={item.id}
       onClick={() => setCurrentPage(item.id)}
+      // title/aria-label: в свёрнутом и узком режиме подписи скрыты, а на тач-POS
+      // нет hover — без этого иконки Турниры/Тарифы/Персонал не опознать.
+      title={t(item.labelKey)}
+      aria-label={t(item.labelKey)}
       className={`sidebar-nav-item ${currentPage === item.id ? "active" : ""}`}
     >
       <span className="sidebar-nav-icon">{item.icon}</span>
@@ -159,7 +163,8 @@ const Sidebar: React.FC = () => {
           <CircleDot size={32} className="text-emerald-400" />
           <div className="sidebar-logo-text">
             <h1 className="sidebar-title">{settings.clubName}</h1>
-            <p className="sidebar-subtitle">{t("nav.subtitle")}</p>
+            {/* Подзаголовок «Система управления» убран: нулевая ценность для
+                сотой смены и низкий контраст (3.65:1). Освобождает место под именем. */}
           </div>
         </div>
       </div>
@@ -176,7 +181,9 @@ const Sidebar: React.FC = () => {
               <span className="sidebar-nav-icon">
                 <MoreHorizontal size={20} />
               </span>
-              <span className="sidebar-nav-label">{t("nav.more")}</span>
+              <span className="sidebar-nav-label">
+                {t("nav.more")} ({moreItems.length})
+              </span>
               <ChevronDown
                 size={16}
                 className={`sidebar-more-chevron ${moreOpen || activeInMore ? "rot" : ""}`}
